@@ -1,9 +1,16 @@
 import { z } from "zod";
 
-import { calculateBuyerTotal, calculatePlatformFee } from "@/lib/fees";
-import { completePiPayment } from "@/lib/pi-platform";
+import {
+  completePiPayment,
+  getPiPayment,
+  hasPiNetworkApiKey,
+} from "@/lib/pi-platform";
 import { jsonError, requireAppUser } from "@/server/auth";
 import { createNotification } from "@/server/notifications";
+import {
+  getCompletedPaymentForTrade,
+  validatePiEscrowPayment,
+} from "@/server/pi-payments";
 import {
   rateLimit,
   rateLimitProfiles,
@@ -11,8 +18,6 @@ import {
   secureJson,
 } from "@/server/security";
 import {
-  assertSelectedBuyerCanFund,
-  assertTradeStatus,
   getServiceClientOrThrow,
   getTradeForAction,
   insertTradeEvent,
@@ -37,59 +42,60 @@ export async function POST(request: Request) {
       );
     }
 
-    if (!process.env.PI_API_KEY) {
-      return secureJson({
-        mode: "demo",
-        message:
-          "PI_API_KEY is not configured. Completion was simulated for local testnet UI.",
-        paymentId: parsed.data.paymentId,
-        tradeId: parsed.data.tradeId,
-        txid: parsed.data.txid,
-      });
+    if (!hasPiNetworkApiKey()) {
+      throw new Error("PI_NETWORK_API_KEY is not configured.");
     }
 
     const user = await requireAppUser(request);
     const trade = await getTradeForAction(parsed.data.tradeId);
-    assertTradeStatus(trade, ["PendingFunding"]);
-    assertSelectedBuyerCanFund(trade, user);
-
     const supabase = getServiceClientOrThrow();
-    const { data: existingPayment, error: existingPaymentError } = await supabase
-      .from("payments")
-      .select("id, pi_payment_id, status")
-      .eq("trade_id", parsed.data.tradeId)
-      .in("status", ["Completed"])
-      .maybeSingle();
+    const completedPayment = await getCompletedPaymentForTrade(parsed.data.tradeId);
 
-    if (existingPaymentError) {
-      throw new Error(existingPaymentError.message);
+    if (
+      completedPayment &&
+      completedPayment.pi_payment_id !== parsed.data.paymentId
+    ) {
+      throw new Error("This trade already has a completed payment.");
     }
 
-    if (existingPayment) {
-      throw new Error("This trade already has a completed payment.");
+    const paymentBeforeCompletion = await getPiPayment(parsed.data.paymentId);
+    const amounts = validatePiEscrowPayment({
+      payment: paymentBeforeCompletion,
+      trade,
+      user,
+      allowExpiredSelection: true,
+    });
+
+    if (completedPayment) {
+      const payload = await listTradesForUser(user);
+
+      return secureJson({
+        mode: "already_completed",
+        payment: paymentBeforeCompletion,
+        tradeId: parsed.data.tradeId,
+        ...payload,
+      });
     }
 
     const payment = await completePiPayment(
       parsed.data.paymentId,
       parsed.data.txid,
     );
-    const amount = Number(payment.amount);
-    const sellerAmount = Number(trade.amount_test_pi);
-    const platformFee = calculatePlatformFee(sellerAmount);
-    const expectedAmount = calculateBuyerTotal(sellerAmount);
-
-    if (amount !== expectedAmount) {
-      throw new Error("Pi payment amount does not match the trade total.");
-    }
+    validatePiEscrowPayment({
+      payment,
+      trade,
+      user,
+      allowExpiredSelection: true,
+    });
 
     const { error: paymentError } = await supabase.from("payments").upsert(
       {
         trade_id: parsed.data.tradeId,
         pi_payment_id: parsed.data.paymentId,
-        amount_test_pi: amount,
-        seller_amount_test_pi: sellerAmount,
-        platform_fee_test_pi: platformFee,
-        buyer_total_test_pi: expectedAmount,
+        amount_test_pi: amounts.buyerTotal,
+        seller_amount_test_pi: amounts.sellerAmount,
+        platform_fee_test_pi: amounts.platformFee,
+        buyer_total_test_pi: amounts.buyerTotal,
         status: "Completed",
         raw_provider_status: payment,
         updated_at: new Date().toISOString(),
@@ -117,7 +123,7 @@ export async function POST(request: Request) {
       parsed.data.tradeId,
       user.id,
       "Payment completed",
-      paymentVerifiedEvent(sellerAmount),
+      paymentVerifiedEvent(amounts.sellerAmount),
       { piPaymentId: parsed.data.paymentId, txid: parsed.data.txid },
     );
     await createNotification({

@@ -1,8 +1,15 @@
 import { z } from "zod";
 
-import { calculateBuyerTotal, calculatePlatformFee } from "@/lib/fees";
-import { approvePiPayment } from "@/lib/pi-platform";
+import {
+  approvePiPayment,
+  getPiPayment,
+  hasPiNetworkApiKey,
+} from "@/lib/pi-platform";
 import { jsonError, requireAppUser } from "@/server/auth";
+import {
+  assertNoCompletedPayment,
+  validatePiEscrowPayment,
+} from "@/server/pi-payments";
 import {
   rateLimit,
   rateLimitProfiles,
@@ -10,8 +17,6 @@ import {
   secureJson,
 } from "@/server/security";
 import {
-  assertSelectedBuyerCanFund,
-  assertTradeStatus,
   getServiceClientOrThrow,
   getTradeForAction,
 } from "@/server/trades";
@@ -30,55 +35,31 @@ export async function POST(request: Request) {
       throw new Error(parsed.error.issues[0]?.message ?? "Invalid approval request.");
     }
 
-    if (!process.env.PI_API_KEY) {
-      return secureJson({
-        mode: "demo",
-        message:
-          "PI_API_KEY is not configured. Approval was simulated for local testnet UI.",
-        paymentId: parsed.data.paymentId,
-        tradeId: parsed.data.tradeId,
-      });
+    if (!hasPiNetworkApiKey()) {
+      throw new Error("PI_NETWORK_API_KEY is not configured.");
     }
 
     const user = await requireAppUser(request);
     const trade = await getTradeForAction(parsed.data.tradeId);
-    assertTradeStatus(trade, ["PendingFunding"]);
-    assertSelectedBuyerCanFund(trade, user);
+    await assertNoCompletedPayment(parsed.data.tradeId);
 
-    const payment = await approvePiPayment(parsed.data.paymentId);
+    const paymentBeforeApproval = await getPiPayment(parsed.data.paymentId);
     const supabase = getServiceClientOrThrow();
-    const amount = Number(payment.amount);
-    const sellerAmount = Number(trade.amount_test_pi);
-    const platformFee = calculatePlatformFee(sellerAmount);
-    const expectedAmount = calculateBuyerTotal(sellerAmount);
-
-    const { data: existingCompleted, error: existingCompletedError } = await supabase
-      .from("payments")
-      .select("id")
-      .eq("trade_id", parsed.data.tradeId)
-      .eq("status", "Completed")
-      .maybeSingle();
-
-    if (existingCompletedError) {
-      throw new Error(existingCompletedError.message);
-    }
-
-    if (existingCompleted) {
-      throw new Error("This trade already has a completed payment.");
-    }
-
-    if (amount !== expectedAmount) {
-      throw new Error("Pi payment amount does not match the trade total.");
-    }
+    const { buyerTotal, platformFee, sellerAmount } = validatePiEscrowPayment({
+      payment: paymentBeforeApproval,
+      trade,
+      user,
+    });
+    const payment = await approvePiPayment(parsed.data.paymentId);
 
     const { error } = await supabase.from("payments").upsert(
       {
         trade_id: parsed.data.tradeId,
         pi_payment_id: parsed.data.paymentId,
-        amount_test_pi: amount,
+        amount_test_pi: buyerTotal,
         seller_amount_test_pi: sellerAmount,
         platform_fee_test_pi: platformFee,
-        buyer_total_test_pi: expectedAmount,
+        buyer_total_test_pi: buyerTotal,
         status: "Approved",
         raw_provider_status: payment,
         updated_at: new Date().toISOString(),

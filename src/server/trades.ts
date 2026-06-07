@@ -18,7 +18,7 @@ type UserRow = {
   verification_requested_at?: string | null;
 };
 
-type TradeRow = {
+export type TradeRow = {
   id: string;
   seller_user_id: string | null;
   seller_pi_username: string;

@@ -81,14 +81,14 @@ NEXT_PUBLIC_PISCROW_MAINTENANCE_ENABLED=false
 NEXT_PUBLIC_PISCROW_MAINTENANCE_MESSAGE=PiScrow is receiving updates. The app remains online, but some actions may be slower than usual.
 
 SUPABASE_SERVICE_ROLE_KEY=your-server-only-service-role-key
-PI_API_KEY=your-server-only-pi-api-key
+PI_NETWORK_API_KEY=your-server-only-pi-network-api-key
 PI_PLATFORM_API_BASE=https://api.minepi.com
 PISCROW_ADMIN_PI_USERNAMES=@villari002
 UPSTASH_REDIS_REST_URL=https://your-upstash-redis-rest-url
 UPSTASH_REDIS_REST_TOKEN=your-upstash-redis-rest-token
 ```
 
-Never expose `PI_API_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, or `PISCROW_ADMIN_PI_USERNAMES` with a `NEXT_PUBLIC_` prefix.
+Never expose `PI_NETWORK_API_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, or `PISCROW_ADMIN_PI_USERNAMES` with a `NEXT_PUBLIC_` prefix.
 
 ## Supabase Workflow
 
@@ -120,6 +120,12 @@ seller price + PiScrow transaction fee
 ```
 
 The default fee is 2%, controlled by `NEXT_PUBLIC_PISCROW_PLATFORM_FEE_BPS=200`.
+
+PiScrow uses the Pi U2A payment product `PiScrow escrow funding`. The frontend
+creates payments with `Pi.createPayment(...)`, then the backend approves and
+completes them through the Pi Platform API with `PI_NETWORK_API_KEY`. Payment
+metadata includes the trade ID, selected buyer username, seller username, offer
+title, seller amount, fee amount, and buyer total.
 
 When a seller selects a buyer, PiScrow gives that buyer a 20-minute Test Pi
 funding window. Funding routes reject any non-selected buyer and reject expired

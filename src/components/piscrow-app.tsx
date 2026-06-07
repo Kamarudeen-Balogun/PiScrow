@@ -47,6 +47,10 @@ import {
   calculateSellerReceivable,
   feePercentLabel,
 } from "@/lib/fees";
+import {
+  piEscrowMemo,
+  piscrowPaymentProduct,
+} from "@/lib/pi-payment-product";
 import { formatTestPi, tradeVisibilityLabels } from "@/lib/trade-state";
 import {
   createTradeInterestSchema,
@@ -56,7 +60,7 @@ import {
   disputeFollowUpSchema,
   disputeSchema,
 } from "@/lib/validation";
-import type { PiAuthResult, PiBrowserSDK, PiUser } from "@/types/pi";
+import type { PiAuthResult, PiBrowserSDK, PiPaymentDTO, PiUser } from "@/types/pi";
 import type { UserReputation } from "@/types/profile";
 import type { Trade, TradeEvent, TradeInterest, TradeStatus } from "@/types/trade";
 
@@ -1520,19 +1524,62 @@ export function PiScrowApp({
     });
   }
 
+  async function initializePiSdk(pi: PiBrowserSDK) {
+    await Promise.resolve(pi.init({ version: "2.0", sandbox: nextPublicSandbox }));
+    await wait(350);
+  }
+
+  async function recoverIncompletePayment(payment: PiPaymentDTO) {
+    setPaymentState("Recovering an unfinished Pi payment...");
+
+    try {
+      const payload = await fetch("/api/pi/incomplete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ paymentId: payment.identifier }),
+      });
+
+      if (!payload.ok) {
+        const body = (await payload.json().catch(() => null)) as
+          | { error?: string }
+          | null;
+        throw new Error(body?.error ?? "Could not recover unfinished payment.");
+      }
+
+      const recovered = (await payload.json()) as { mode?: string; tradeId?: string };
+      setPaymentState(
+        recovered.mode === "already_completed"
+          ? "PiScrow already completed the unfinished payment."
+          : "Recovered unfinished Pi payment with PiScrow.",
+      );
+      pushNotice(
+        "Payment recovered",
+        recovered.tradeId
+          ? `Unfinished payment for trade ${recovered.tradeId} was checked by PiScrow.`
+          : "Unfinished payment was checked by PiScrow.",
+        "success",
+      );
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Could not recover unfinished Pi payment.";
+      setPaymentState(message);
+      pushNotice("Payment recovery needed", message, "warning");
+    }
+  }
+
   async function authenticateWithPi(pi: PiBrowserSDK) {
     let lastError: unknown;
 
     for (let attempt = 0; attempt < 2; attempt += 1) {
       try {
-        pi.init({ version: "2.0", sandbox: nextPublicSandbox });
-        await wait(attempt === 0 ? 350 : 800);
+        await initializePiSdk(pi);
+        await wait(attempt === 0 ? 0 : 450);
 
         return await withTimeout<PiAuthResult | PiUser>(
-          pi.authenticate(["username", "payments"], () => {
-            setPaymentState(
-              "An unfinished Pi payment was found. Finish or cancel it in Pi Browser, then refresh PiScrow.",
-            );
+          pi.authenticate(["username", "payments"], (payment) => {
+            void recoverIncompletePayment(payment);
           }),
           piAuthTimeoutMs,
           "Pi Browser authentication timed out before it completed.",
@@ -2233,9 +2280,10 @@ export function PiScrowApp({
     });
   }
 
-  function fundTradeConfirmed(trade: Trade) {
+  async function fundTradeConfirmed(trade: Trade) {
     setPaymentState("Preparing Test Pi payment...");
     const buyerTotal = calculateBuyerTotal(trade.amountTestPi);
+    const platformFee = calculatePlatformFee(trade.amountTestPi);
 
     if (allowDemo && (!window.Pi || !piConnected)) {
       updateTrade(trade.id, "Funded");
@@ -2258,44 +2306,79 @@ export function PiScrowApp({
       return;
     }
 
+    try {
+      await initializePiSdk(window.Pi);
+    } catch (error) {
+      const message = friendlyPiError(error);
+      setPaymentState(message);
+      pushNotice("Payment setup failed", message, "warning");
+      return;
+    }
+
     window.Pi.createPayment(
       {
         amount: buyerTotal,
-        memo: `PiScrow funding for ${trade.title}`,
+        memo: piEscrowMemo(trade.id),
         metadata: {
+          product: piscrowPaymentProduct,
           tradeId: trade.id,
-          app: "PiScrow",
+          buyerUsername: normalizeUsername(user?.username ?? ""),
+          sellerUsername: normalizeUsername(trade.sellerPiUsername),
+          offerTitle: trade.title,
+          sellerAmountTestPi: trade.amountTestPi,
+          feeAmountTestPi: platformFee,
+          buyerTotalTestPi: buyerTotal,
           mode: "testnet",
-          platformFeeTestPi: calculatePlatformFee(trade.amountTestPi),
         },
       },
       {
-        onReadyForServerApproval: async (paymentId) => {
-          setPaymentState("Payment is waiting for PiScrow approval.");
-          await apiRequest(`/api/pi/approve`, piAccessToken, {
-            method: "POST",
-            body: JSON.stringify({ paymentId, tradeId: trade.id }),
-          });
+        onReadyForServerApproval: (paymentId) => {
+          void (async () => {
+            try {
+              setPaymentState("Payment is waiting for PiScrow approval.");
+              await apiRequest(`/api/pi/approve`, piAccessToken, {
+                method: "POST",
+                body: JSON.stringify({ paymentId, tradeId: trade.id }),
+              });
+              setPaymentState("PiScrow approved the Test Pi payment.");
+            } catch (error) {
+              const message =
+                error instanceof Error ? error.message : "Payment approval failed.";
+              setPaymentState(message);
+              pushNotice("Payment approval failed", message, "warning");
+            }
+          })();
         },
-        onReadyForServerCompletion: async (paymentId, txid) => {
-          setPaymentState("Finalizing Test Pi payment...");
-          const payload = await apiRequest<
-            (TradePayload & { mode?: string }) | { mode: string }
-          >(`/api/pi/complete`, piAccessToken, {
-            method: "POST",
-            body: JSON.stringify({ paymentId, tradeId: trade.id, txid }),
-          });
+        onReadyForServerCompletion: (paymentId, txid) => {
+          void (async () => {
+            try {
+              setPaymentState("Finalizing Test Pi payment...");
+              const payload = await apiRequest<
+                (TradePayload & { mode?: string }) | { mode: string }
+              >(`/api/pi/complete`, piAccessToken, {
+                method: "POST",
+                body: JSON.stringify({ paymentId, tradeId: trade.id, txid }),
+              });
 
-          if ("trades" in payload) {
-            applyTradePayload(payload);
-          }
+              if ("trades" in payload) {
+                applyTradePayload(payload);
+              }
 
-          setPaymentState("Test Pi payment completed.");
-          pushNotice(
-            "Trade funded",
-            "The buyer payment is now held for seller delivery proof.",
-            "success",
-          );
+              setPaymentState("Test Pi payment completed.");
+              pushNotice(
+                "Trade funded",
+                "The buyer payment is now held for seller delivery proof.",
+                "success",
+              );
+            } catch (error) {
+              const message =
+                error instanceof Error
+                  ? error.message
+                  : "Payment completion failed.";
+              setPaymentState(message);
+              pushNotice("Payment completion failed", message, "warning");
+            }
+          })();
         },
         onCancel: () => {
           setPaymentState("Payment was cancelled.");
