@@ -127,8 +127,8 @@ def main() -> None:
         mobile.goto(DEMO_URL, wait_until="domcontentloaded")
         mobile.wait_for_load_state("networkidle")
         expect(mobile.get_by_role("heading", name="PiScrow", exact=True)).to_be_visible()
-        expect(mobile.get_by_role("button", name="Open workspace menu")).to_be_visible()
-        mobile.get_by_role("button", name="Open workspace menu").click()
+        expect(mobile.get_by_role("button", name="Workspace menu")).to_be_visible()
+        mobile.get_by_role("button", name="Workspace menu").click()
         expect(mobile.get_by_role("dialog", name="Workspace menu")).to_be_visible()
         expect(mobile.get_by_role("button", name=re.compile("^Ledger"))).to_be_visible()
         mobile.screenshot(

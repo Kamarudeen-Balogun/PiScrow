@@ -16,6 +16,10 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "PiScrow",
   description: "Pi Testnet escrow-style P2P barter workflow demo.",
+  icons: {
+    icon: "/piscrow-logo.svg",
+    apple: "/piscrow-logo.svg",
+  },
 };
 
 export default function RootLayout({
