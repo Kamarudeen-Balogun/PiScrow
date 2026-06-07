@@ -216,6 +216,31 @@ def main() -> None:
         expect(page.get_by_text("Full QA private test").first).to_be_visible()
         page.screenshot(path=str(ARTIFACT_DIR / "full-ledger.png"), full_page=True)
 
+        feedback_requests = []
+
+        def capture_feedback(route):
+            feedback_requests.append(route.request.post_data_json)
+            route.fulfill(
+                status=200,
+                content_type="application/json",
+                body='{"ok":true,"webhookStatus":"not_configured"}',
+            )
+
+        page.route("**/api/feedback", capture_feedback)
+        expect(page.get_by_text("Developer contact")).to_be_visible()
+        expect(page.get_by_text("coodeflowx1@gmail.com")).to_be_visible()
+        expect(page.get_by_text("Pi username: @villari002")).to_be_visible()
+        page.get_by_label("Type").select_option("improvement")
+        page.get_by_placeholder("What should PiScrow improve, fix, or add next?").fill(
+            "Please add clearer payment recovery status for testnet reviewers."
+        )
+        page.get_by_placeholder("Optional").fill("reviewer@example.com")
+        page.get_by_role("button", name="Send feedback").click()
+        expect(page.get_by_text("Feedback sent").first).to_be_visible()
+        assert feedback_requests
+        assert feedback_requests[0]["category"] == "improvement"
+        assert feedback_requests[0]["contactEmail"] == "reviewer@example.com"
+
         page.get_by_role("button", name=re.compile("^Profile$")).click()
         expect(page.get_by_text("Trust score", exact=True)).to_be_visible()
         expect(page.get_by_text("Your Recent Trade History")).to_be_visible()

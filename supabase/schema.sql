@@ -141,6 +141,23 @@ create table public.notifications (
   created_at timestamptz not null default now()
 );
 
+create table public.feedback_messages (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid references public.users(id) on delete set null,
+  pi_uid text,
+  pi_username text,
+  contact_email text,
+  category text not null default 'suggestion'
+    check (category in ('suggestion', 'improvement', 'issue', 'other')),
+  message text not null check (char_length(message) between 10 and 1500),
+  page_url text,
+  user_agent text,
+  webhook_status text not null default 'not_configured'
+    check (webhook_status in ('not_configured', 'sent', 'failed')),
+  webhook_error text,
+  created_at timestamptz not null default now()
+);
+
 create index trades_buyer_user_id_idx on public.trades (buyer_user_id);
 create index trades_seller_pi_username_idx on public.trades (seller_pi_username);
 create index trades_seller_user_id_idx on public.trades (seller_user_id);
@@ -172,6 +189,11 @@ create index disputes_status_idx on public.disputes (status);
 create index notifications_user_created_at_idx
   on public.notifications (user_id, created_at desc);
 create index notifications_trade_id_idx on public.notifications (trade_id);
+create index feedback_messages_created_at_idx
+  on public.feedback_messages (created_at desc);
+create index feedback_messages_user_id_idx
+  on public.feedback_messages (user_id, created_at desc)
+  where user_id is not null;
 create index users_verification_requested_idx
   on public.users (verification_requested_at desc)
   where verification_requested_at is not null
@@ -186,6 +208,7 @@ alter table public.trade_events enable row level security;
 alter table public.disputes enable row level security;
 alter table public.admin_actions enable row level security;
 alter table public.notifications enable row level security;
+alter table public.feedback_messages enable row level security;
 
 -- MVP policies are intentionally conservative. Server routes should use the
 -- service role key after validating Pi identity and trade permissions.

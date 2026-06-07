@@ -196,4 +196,5 @@ export const rateLimitProfiles = {
   payment: { limit: 12, windowMs: 60_000 },
   upload: { limit: 10, windowMs: 60_000 },
   admin: { limit: 20, windowMs: 60_000 },
+  feedback: { limit: 8, windowMs: 60_000 },
 };

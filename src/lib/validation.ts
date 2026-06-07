@@ -128,6 +128,22 @@ export const confirmReceiptSchema = z.object({
   buyerReceiptImagePath: sanitizedString().optional().or(z.literal("")),
 });
 
+export const feedbackSchema = z.object({
+  category: z.enum(["suggestion", "improvement", "issue", "other"]),
+  message: sanitizedString(
+    z
+      .string()
+      .min(10, "Add a little more detail before sending feedback.")
+      .max(1500, "Keep feedback under 1,500 characters."),
+  ),
+  contactEmail: sanitizedString(z.string().email("Use a valid email address."))
+    .optional()
+    .or(z.literal("")),
+  pageUrl: sanitizedString(z.string().url("Use a valid page URL."))
+    .optional()
+    .or(z.literal("")),
+});
+
 export type CreateTradeInput = z.infer<typeof createTradeSchema>;
 export type CreateTradeInterestInput = z.infer<typeof createTradeInterestSchema>;
 export type SelectTradeInterestInput = z.infer<typeof selectTradeInterestSchema>;
@@ -135,3 +151,4 @@ export type DeliveryProofInput = z.infer<typeof deliveryProofSchema>;
 export type DisputeInput = z.infer<typeof disputeSchema>;
 export type DisputeFollowUpInput = z.infer<typeof disputeFollowUpSchema>;
 export type ConfirmReceiptInput = z.infer<typeof confirmReceiptSchema>;
+export type FeedbackInput = z.infer<typeof feedbackSchema>;

@@ -62,6 +62,14 @@ const sections = [
     ],
   },
   {
+    title: "Feedback And Support",
+    body: [
+      "Users may submit feedback, suggestions, issues, and optional contact email through the PiScrow feedback form.",
+      "Feedback is stored for developer review and may be forwarded to a configured automation webhook so the developer can receive and respond to reports.",
+      "Users should not include wallet seed phrases, private keys, payment secrets, identity documents, or unrelated personal information in feedback messages.",
+    ],
+  },
+  {
     title: "Admin Review And Disputes",
     body: [
       "Approved PiScrow admins can review disputed trades, proof uploads, event logs, and party activity before marking a trade completed or cancelled.",
@@ -71,9 +79,9 @@ const sections = [
   {
     title: "Privacy And Data Use",
     body: [
-      "PiScrow collects only app data needed to authenticate Pi users, operate listings, handle interests, process testnet payment flows, store proof, show notifications, maintain activity logs, and support admin review.",
+      "PiScrow collects only app data needed to authenticate Pi users, operate listings, handle interests, process testnet payment flows, store proof, show notifications, maintain activity logs, receive feedback, and support admin review.",
       "PiScrow should not request wallet seed phrases, Mainnet wallet credentials, private keys, or unnecessary personal identity documents.",
-      "Users can request support or deletion review through the developer contact provided in the Pi Developer Portal or app support channel.",
+      "Users can request support or deletion review through coodeflowx1@gmail.com or the developer Pi username @villari002.",
     ],
   },
 ];

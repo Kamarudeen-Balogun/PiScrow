@@ -24,9 +24,6 @@ PiScrow is testnet-only. It does not custody Mainnet Pi and should not be descri
 | --- | --- |
 | ![PiScrow profile trust](docs/screenshots/05-profile.png) | ![PiScrow admin review](docs/screenshots/06-admin-review.png) |
 
-| Mobile ledger | Mobile workspace menu |
-| --- | --- |
-| ![PiScrow mobile ledger](docs/screenshots/07-mobile-ledger.png) | ![PiScrow mobile workspace menu](docs/screenshots/08-mobile-workspace-menu.png) |
 
 ## Core Features
 
@@ -84,11 +81,12 @@ SUPABASE_SERVICE_ROLE_KEY=your-server-only-service-role-key
 PI_NETWORK_API_KEY=your-server-only-pi-network-api-key
 PI_PLATFORM_API_BASE=https://api.minepi.com
 PISCROW_ADMIN_PI_USERNAMES=@villari002
+PISCROW_FEEDBACK_WEBHOOK_URL=https://hook.us1.make.com/your-feedback-webhook
 UPSTASH_REDIS_REST_URL=https://your-upstash-redis-rest-url
 UPSTASH_REDIS_REST_TOKEN=your-upstash-redis-rest-token
 ```
 
-Never expose `PI_NETWORK_API_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, or `PISCROW_ADMIN_PI_USERNAMES` with a `NEXT_PUBLIC_` prefix.
+Never expose `PI_NETWORK_API_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `PISCROW_ADMIN_PI_USERNAMES`, or `PISCROW_FEEDBACK_WEBHOOK_URL` with a `NEXT_PUBLIC_` prefix.
 
 ## Supabase Workflow
 
@@ -103,6 +101,11 @@ npm run supabase:push
 The configured project ref is `yxyzdpolgodzbgqbxdcz`.
 
 Proof images use the private `trade-proofs` bucket. Supported image types are JPEG, PNG, and WebP up to 5 MB. Server routes sign proof URLs only for the seller, selected buyer, or approved admin.
+
+Feedback submissions are stored in the `feedback_messages` table. If
+`PISCROW_FEEDBACK_WEBHOOK_URL` is configured, PiScrow also forwards each
+submission to that webhook for Make.com, email, Slack, or another automation
+workflow. Supabase remains the source of record even if the webhook fails.
 
 ## Pi Browser Testing
 

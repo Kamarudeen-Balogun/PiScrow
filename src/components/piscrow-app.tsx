@@ -2,6 +2,7 @@
 
 import {
   AlertTriangle,
+  AtSign,
   ArrowRight,
   BadgeCheck,
   CirclePlay,
@@ -13,9 +14,12 @@ import {
   Eye,
   FileWarning,
   HandCoins,
+  Heart,
   History,
   LockKeyhole,
   Megaphone,
+  Mail,
+  MessageSquare,
   Plus,
   RefreshCcw,
   Send,
@@ -59,6 +63,7 @@ import {
   deliveryProofSchema,
   disputeFollowUpSchema,
   disputeSchema,
+  feedbackSchema,
 } from "@/lib/validation";
 import type { PiAuthResult, PiBrowserSDK, PiPaymentDTO, PiUser } from "@/types/pi";
 import type { UserReputation } from "@/types/profile";
@@ -117,6 +122,10 @@ type AuthMessageState = {
   key?: AuthMessageKey;
   text?: string;
 };
+type FeedbackStatus = {
+  tone: "success" | "warning";
+  message: string;
+} | null;
 
 type SavedNotification = {
   id: string;
@@ -1130,6 +1139,8 @@ export function PiScrowApp({
   );
   const [profileLoading, setProfileLoading] = useState(false);
   const [verificationLoading, setVerificationLoading] = useState(false);
+  const [feedbackSending, setFeedbackSending] = useState(false);
+  const [feedbackStatus, setFeedbackStatus] = useState<FeedbackStatus>(null);
   const [consentState, setConsentState] = useState<ConsentState>(
     allowDemo ? "accepted" : "checking",
   );
@@ -2392,6 +2403,79 @@ export function PiScrowApp({
     );
   }
 
+  async function submitFeedback(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setFormError("");
+    setFeedbackStatus(null);
+
+    const form = event.currentTarget;
+    const formData = new FormData(form);
+    const parsed = feedbackSchema.safeParse({
+      category: String(formData.get("category") ?? "suggestion"),
+      message: String(formData.get("message") ?? ""),
+      contactEmail: String(formData.get("contactEmail") ?? ""),
+      pageUrl: window.location.href,
+    });
+
+    if (!parsed.success) {
+      const message =
+        parsed.error.issues[0]?.message ?? "Check the feedback form.";
+      setFeedbackStatus({ tone: "warning", message });
+      pushNotice(
+        "Feedback needs detail",
+        message,
+        "warning",
+      );
+      return;
+    }
+
+    setFeedbackSending(true);
+
+    try {
+      if (piAccessToken) {
+        await apiRequest<{ ok: boolean }>("/api/feedback", piAccessToken, {
+          method: "POST",
+          body: JSON.stringify(parsed.data),
+        });
+      } else {
+        const response = await fetch("/api/feedback", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(parsed.data),
+        });
+
+        if (!response.ok) {
+          const body = (await response.json().catch(() => null)) as
+            | { error?: string }
+            | null;
+          throw new Error(body?.error ?? "Could not send feedback.");
+        }
+      }
+
+      form.reset();
+      setFeedbackStatus({
+        tone: "success",
+        message: "Feedback sent. Thanks for helping improve PiScrow.",
+      });
+      pushNotice(
+        "Feedback sent",
+        "Thanks. Your PiScrow feedback was saved for review.",
+        "success",
+      );
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Could not send feedback.";
+      setFeedbackStatus({ tone: "warning", message });
+      pushNotice(
+        "Feedback failed",
+        message,
+        "warning",
+      );
+    } finally {
+      setFeedbackSending(false);
+    }
+  }
+
   function submitDelivery(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setFormError("");
@@ -3003,15 +3087,13 @@ export function PiScrowApp({
             )}
           </>
         )}
-        <footer className="flex flex-col gap-2 border-t border-black/10 py-5 text-xs font-semibold text-zinc-500 sm:flex-row sm:items-center sm:justify-between">
-          <p>{copy.footerDisclaimer}</p>
-          <Link
-            className="w-fit underline underline-offset-4 hover:text-zinc-950"
-            href="/rules"
-          >
-            {copy.rulesLink}
-          </Link>
-        </footer>
+        <AppFooter
+          feedbackStatus={feedbackStatus}
+          feedbackSending={feedbackSending}
+          footerDisclaimer={copy.footerDisclaimer}
+          rulesLink={copy.rulesLink}
+          onSubmitFeedback={submitFeedback}
+        />
       </section>
     </main>
   );
@@ -3040,6 +3122,158 @@ async function apiRequest<T>(
   }
 
   return response.json() as Promise<T>;
+}
+
+function AppFooter({
+  feedbackStatus,
+  feedbackSending,
+  footerDisclaimer,
+  rulesLink,
+  onSubmitFeedback,
+}: {
+  feedbackStatus: FeedbackStatus;
+  feedbackSending: boolean;
+  footerDisclaimer: string;
+  rulesLink: string;
+  onSubmitFeedback: (event: FormEvent<HTMLFormElement>) => void;
+}) {
+  return (
+    <footer className="border-t border-black/10 py-6">
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(320px,440px)]">
+        <section className="grid gap-4 border border-black/10 bg-white p-4">
+          <div>
+            <p className="text-xs font-bold uppercase text-zinc-500">Developer contact</p>
+            <h2 className="mt-1 text-lg font-black text-zinc-950">
+              Help improve PiScrow
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-zinc-600">
+              Send product issues, marketplace suggestions, payment-flow feedback,
+              or hackathon review notes directly to the builder.
+            </p>
+          </div>
+          <div className="grid gap-2 text-sm font-semibold text-zinc-700">
+            <a
+              className="inline-flex w-fit items-center gap-2 underline-offset-4 hover:text-emerald-800 hover:underline"
+              href="mailto:coodeflowx1@gmail.com"
+            >
+              <Mail className="h-4 w-4" />
+              coodeflowx1@gmail.com
+            </a>
+            <p className="inline-flex items-center gap-2">
+              <AtSign className="h-4 w-4" />
+              Pi username: @villari002
+            </p>
+          </div>
+          <div className="flex flex-col gap-2 text-xs font-semibold text-zinc-500 sm:flex-row sm:items-center sm:justify-between">
+            <p>{footerDisclaimer}</p>
+            <Link
+              className="w-fit underline underline-offset-4 hover:text-zinc-950"
+              href="/rules"
+            >
+              {rulesLink}
+            </Link>
+          </div>
+          <p className="inline-flex items-center gap-1 text-xs font-black uppercase tracking-normal text-zinc-500">
+            Built with
+            <Heart className="h-3.5 w-3.5 fill-rose-600 text-rose-600" />
+            by Kamarudeen
+          </p>
+        </section>
+
+        <FeedbackForm
+          sending={feedbackSending}
+          status={feedbackStatus}
+          onSubmit={onSubmitFeedback}
+        />
+      </div>
+    </footer>
+  );
+}
+
+function FeedbackForm({
+  sending,
+  status,
+  onSubmit,
+}: {
+  sending: boolean;
+  status: FeedbackStatus;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+}) {
+  return (
+    <form
+      className="grid gap-3 border border-emerald-200 bg-white p-4"
+      onSubmit={onSubmit}
+    >
+      <div className="flex items-start gap-3">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center bg-emerald-100 text-emerald-800">
+          <MessageSquare className="h-5 w-5" />
+        </div>
+        <div>
+          <h2 className="font-black text-zinc-950">Feedback</h2>
+          <p className="mt-1 text-sm leading-6 text-zinc-600">
+            Your message is saved for review. Add your email only if you want a reply.
+          </p>
+        </div>
+      </div>
+      <label className="grid gap-2">
+        <span className="text-xs font-bold uppercase text-zinc-500">Type</span>
+        <select
+          className="h-11 border border-black/15 bg-white px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-emerald-700"
+          defaultValue="suggestion"
+          name="category"
+        >
+          <option value="suggestion">Suggestion</option>
+          <option value="improvement">Improvement</option>
+          <option value="issue">Issue</option>
+          <option value="other">Other</option>
+        </select>
+      </label>
+      <label className="grid gap-2">
+        <span className="text-xs font-bold uppercase text-zinc-500">Message</span>
+        <textarea
+          className="min-h-28 resize-y border border-black/15 bg-white p-3 text-sm leading-6 outline-none focus:border-emerald-700"
+          maxLength={1500}
+          name="message"
+          placeholder="What should PiScrow improve, fix, or add next?"
+        />
+      </label>
+      <label className="grid gap-2">
+        <span className="text-xs font-bold uppercase text-zinc-500">
+          Email for reply
+        </span>
+        <input
+          className="h-11 border border-black/15 bg-white px-3 text-sm outline-none focus:border-emerald-700"
+          name="contactEmail"
+          placeholder="Optional"
+          type="email"
+        />
+      </label>
+      <button
+        className="inline-flex h-11 items-center justify-center gap-2 bg-zinc-950 px-4 text-sm font-black text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-zinc-400"
+        disabled={sending}
+        type="submit"
+      >
+        {sending ? (
+          <LoaderCircle className="h-4 w-4 animate-spin" />
+        ) : (
+          <Send className="h-4 w-4" />
+        )}
+        {sending ? "Sending" : "Send feedback"}
+      </button>
+      {status && (
+        <p
+          className={`border px-3 py-2 text-sm font-semibold leading-6 ${
+            status.tone === "success"
+              ? "border-emerald-200 bg-emerald-50 text-emerald-900"
+              : "border-rose-200 bg-rose-50 text-rose-900"
+          }`}
+          role="status"
+        >
+          {status.message}
+        </p>
+      )}
+    </form>
+  );
 }
 
 function LanguageSelector({

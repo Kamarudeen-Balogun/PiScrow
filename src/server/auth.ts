@@ -46,16 +46,48 @@ export async function requireAppUser(request: Request): Promise<AppUser> {
   }
 
   const normalizedUsername = normalizePiUsername(piUser.username);
-  const { data, error } = await supabase
+  const now = new Date().toISOString();
+  const { data: existingUser, error: lookupError } = await supabase
     .from("users")
-    .upsert(
-      {
+    .select("id, pi_uid, pi_username")
+    .or(`pi_uid.eq.${piUser.uid},pi_username.eq.${normalizedUsername}`)
+    .maybeSingle();
+
+  if (lookupError) {
+    throw new Error(lookupError.message);
+  }
+
+  if (existingUser) {
+    const { data, error } = await supabase
+      .from("users")
+      .update({
         pi_uid: piUser.uid,
         pi_username: normalizedUsername,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: "pi_uid" },
-    )
+        updated_at: now,
+      })
+      .eq("id", existingUser.id)
+      .select("id, pi_uid, pi_username")
+      .single();
+
+    if (error || !data) {
+      throw new Error(error?.message ?? "Could not update PiScrow user.");
+    }
+
+    return {
+      id: data.id as string,
+      uid: data.pi_uid as string,
+      username: data.pi_username as string,
+      isAdmin: isAdminUsername(data.pi_username as string),
+    };
+  }
+
+  const { data, error } = await supabase
+    .from("users")
+    .insert({
+      pi_uid: piUser.uid,
+      pi_username: normalizedUsername,
+      updated_at: now,
+    })
     .select("id, pi_uid, pi_username")
     .single();
 
