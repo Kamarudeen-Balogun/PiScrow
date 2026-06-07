@@ -12,6 +12,7 @@
 
 # testing
 /coverage
+/test-artifacts/
 
 # next.js
 /.next/
@@ -29,12 +30,22 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
+*.log
+*.err.log
+dev-server*.log
+dev-server*.err.log
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.example
+.env.*.local
 
 # vercel
 .vercel
+
+# local supabase runtime/cache; keep migrations and config tracked
+/supabase/.branches/
+/supabase/.temp/
 
 # typescript
 *.tsbuildinfo

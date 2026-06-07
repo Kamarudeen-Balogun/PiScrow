@@ -1,0 +1,64 @@
+import type { PiPaymentDTO, PiUser } from "@/types/pi";
+
+const piApiBase =
+  process.env.PI_PLATFORM_API_BASE?.replace(/\/$/, "") ?? "https://api.minepi.com";
+
+function getPiApiKey() {
+  const apiKey = process.env.PI_API_KEY;
+
+  if (!apiKey) {
+    throw new Error("PI_API_KEY is not configured.");
+  }
+
+  return apiKey;
+}
+
+async function piPlatformRequest<T>(
+  path: string,
+  init: RequestInit = {},
+): Promise<T> {
+  const response = await fetch(`${piApiBase}${path}`, {
+    ...init,
+    headers: {
+      Authorization: `Key ${getPiApiKey()}`,
+      "Content-Type": "application/json",
+      ...init.headers,
+    },
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`Pi Platform request failed: ${response.status} ${body}`);
+  }
+
+  return response.json() as Promise<T>;
+}
+
+export async function approvePiPayment(paymentId: string) {
+  return piPlatformRequest<PiPaymentDTO>(`/v2/payments/${paymentId}/approve`, {
+    method: "POST",
+  });
+}
+
+export async function completePiPayment(paymentId: string, txid: string) {
+  return piPlatformRequest<PiPaymentDTO>(`/v2/payments/${paymentId}/complete`, {
+    method: "POST",
+    body: JSON.stringify({ txid }),
+  });
+}
+
+export async function verifyPiAccessToken(accessToken: string) {
+  const response = await fetch(`${piApiBase}/v2/me`, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`Pi access token verification failed: ${response.status} ${body}`);
+  }
+
+  return response.json() as Promise<PiUser>;
+}

@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  allowedDevOrigins: ["chip-chaplain-tapeless.ngrok-free.dev"],
   reactCompiler: true,
 };
 

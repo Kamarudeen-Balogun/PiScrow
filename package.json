@@ -6,12 +6,21 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test:smoke": "python src/tests/piscrow_smoke.py",
+    "test:full": "python src/tests/piscrow_full_site.py",
+    "supabase": "supabase",
+    "supabase:link": "supabase link --project-ref yxyzdpolgodzbgqbxdcz",
+    "supabase:push": "supabase db push",
+    "supabase:status": "supabase status"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.107.0",
+    "lucide-react": "^1.17.0",
     "next": "16.2.7",
     "react": "19.2.4",
-    "react-dom": "19.2.4"
+    "react-dom": "19.2.4",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
@@ -21,6 +30,7 @@
     "babel-plugin-react-compiler": "1.0.0",
     "eslint": "^9",
     "eslint-config-next": "16.2.7",
+    "supabase": "^2.105.0",
     "tailwindcss": "^4",
     "typescript": "^5"
   }

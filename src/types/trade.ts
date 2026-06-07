@@ -1,0 +1,91 @@
+export const tradeStatuses = [
+  "Draft",
+  "PendingFunding",
+  "Funded",
+  "DeliverySubmitted",
+  "Completed",
+  "Disputed",
+  "Cancelled",
+] as const;
+
+export type TradeStatus = (typeof tradeStatuses)[number];
+
+export const tradeVisibilities = ["public", "private"] as const;
+
+export type TradeVisibility = (typeof tradeVisibilities)[number];
+
+export const tradeInterestStatuses = [
+  "Open",
+  "Selected",
+  "Declined",
+  "Withdrawn",
+] as const;
+
+export type TradeInterestStatus = (typeof tradeInterestStatuses)[number];
+
+export type Trade = {
+  id: string;
+  sellerUserId?: string;
+  sellerPiUsername: string;
+  buyerUserId?: string;
+  buyerPiUsername?: string;
+  title: string;
+  description: string;
+  amountTestPi: number;
+  status: TradeStatus;
+  visibility: TradeVisibility;
+  targetBuyerPiUsernames: string[];
+  selectedInterestId?: string;
+  interestCount?: number;
+  locationLabel?: string;
+  locationArea?: string;
+  deliveryTerms: string;
+  deliveryProofNote?: string;
+  deliveryProofUrl?: string;
+  buyerReceiptNote?: string;
+  buyerReceiptProofUrl?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type TradeInterest = {
+  id: string;
+  tradeId: string;
+  buyerUserId: string;
+  buyerPiUsername: string;
+  responseNote: string;
+  status: TradeInterestStatus;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type TradeEvent = {
+  id: string;
+  tradeId: string;
+  actor: string;
+  eventType: string;
+  notes: string;
+  createdAt: string;
+};
+
+export type Payment = {
+  id: string;
+  tradeId: string;
+  piPaymentId: string;
+  amountTestPi: number;
+  status: "Pending" | "Approved" | "Completed" | "Failed" | "Cancelled";
+  rawProviderStatus?: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type Dispute = {
+  id: string;
+  tradeId: string;
+  openedBy: string;
+  reason: string;
+  evidenceNote?: string;
+  status: "Open" | "Resolved" | "Cancelled";
+  resolution?: string;
+  createdAt: string;
+};
