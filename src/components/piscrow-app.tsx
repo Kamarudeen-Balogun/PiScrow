@@ -21,6 +21,7 @@ import {
   Send,
   ShieldCheck,
   LoaderCircle,
+  Menu,
   Star,
   Store,
   Trash2,
@@ -330,6 +331,7 @@ export function PiScrowApp({
   const [ledgerLoading, setLedgerLoading] = useState(false);
   const [notices, setNotices] = useState<AppNotice[]>([]);
   const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [sellerFormResetKey, setSellerFormResetKey] = useState(0);
   const [connectingPi, setConnectingPi] = useState(false);
   const [profile, setProfile] = useState<UserReputation | null>(
@@ -404,6 +406,8 @@ export function PiScrowApp({
   );
 
   function changeMode(nextMode: ViewMode) {
+    setMobileNavOpen(false);
+
     if (nextMode === "admin" && !user?.isAdmin) {
       setMode("market");
       return;
@@ -520,6 +524,27 @@ export function PiScrowApp({
     setConfirmAction(null);
     action?.onConfirm();
   }
+
+  useEffect(() => {
+    if (!mobileNavOpen) {
+      return;
+    }
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setMobileNavOpen(false);
+      }
+    }
+
+    window.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [mobileNavOpen]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -1979,7 +2004,10 @@ export function PiScrowApp({
           <>
             <WorkspaceSwitcher
               mode={activeMode}
+              mobileOpen={mobileNavOpen}
               navItems={navItems}
+              username={normalizedUsername}
+              onMobileOpenChange={setMobileNavOpen}
               onModeChange={changeMode}
             />
 
@@ -2369,31 +2397,53 @@ function ConsentGate({
 
 function WorkspaceSwitcher({
   mode,
+  mobileOpen,
   navItems,
+  username,
+  onMobileOpenChange,
   onModeChange,
 }: {
   mode: ViewMode;
+  mobileOpen: boolean;
   navItems: ViewMode[];
+  username: string;
+  onMobileOpenChange: (open: boolean) => void;
   onModeChange: (mode: ViewMode) => void;
 }) {
   const active = viewMeta[mode];
   const Icon = active.icon;
 
   return (
-    <section className="flex flex-col gap-3 border border-black/10 bg-white p-3 sm:flex-row sm:items-center sm:justify-between">
+    <section className="relative flex flex-col gap-3 border border-black/10 bg-white p-3 sm:flex-row sm:items-center sm:justify-between">
       <div className="flex min-w-0 items-center gap-3">
         <div className="flex h-11 w-11 shrink-0 items-center justify-center bg-zinc-950 text-white">
           <Icon className="h-5 w-5" />
         </div>
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <p className="text-xs font-bold uppercase text-zinc-500">Workspace</p>
-          <h2 className="text-lg font-black text-zinc-950">{active.label}</h2>
-          <p className="text-sm leading-6 text-zinc-600">{active.description}</p>
+          <div className="flex min-w-0 items-center justify-between gap-3">
+            <h2 className="truncate text-lg font-black text-zinc-950">
+              {active.label}
+            </h2>
+            <button
+              aria-expanded={mobileOpen}
+              aria-label="Open workspace menu"
+              className="inline-flex h-11 shrink-0 items-center justify-center gap-2 border border-zinc-950 bg-zinc-950 px-3 text-sm font-black text-white transition hover:bg-emerald-700 sm:hidden"
+              type="button"
+              onClick={() => onMobileOpenChange(true)}
+            >
+              <Menu className="h-4 w-4" />
+              Menu
+            </button>
+          </div>
+          <p className="mt-1 text-sm leading-6 text-zinc-600 sm:mt-0">
+            {active.description}
+          </p>
         </div>
       </div>
       <div
         aria-label="Switch workspace"
-        className="grid grid-cols-2 gap-1 border border-black/15 bg-zinc-50 p-1 sm:w-auto sm:grid-flow-col sm:auto-cols-fr sm:grid-cols-none"
+        className="hidden gap-1 border border-black/15 bg-zinc-50 p-1 sm:grid sm:w-auto sm:grid-flow-col sm:auto-cols-fr sm:grid-cols-none"
         role="group"
       >
         {navItems.map((item) => {
@@ -2418,6 +2468,98 @@ function WorkspaceSwitcher({
           );
         })}
       </div>
+      {mobileOpen && (
+        <div
+          aria-label="Workspace menu"
+          aria-modal="true"
+          className="fixed inset-0 z-[80] sm:hidden"
+          role="dialog"
+        >
+          <button
+            aria-label="Close workspace menu"
+            className="absolute inset-0 bg-zinc-950/45"
+            type="button"
+            onClick={() => onMobileOpenChange(false)}
+          />
+          <aside className="absolute right-0 top-0 flex h-full w-[72vw] min-w-[280px] max-w-[360px] flex-col border-l border-black/20 bg-white shadow-[-8px_0_0_#111827]">
+            <div className="flex items-start justify-between gap-3 border-b border-black/10 p-4">
+              <div className="min-w-0">
+                <p className="text-xs font-black uppercase text-emerald-700">
+                  PiScrow workspace
+                </p>
+                <h2 className="mt-1 truncate text-xl font-black text-zinc-950">
+                  @{username || "pi-user"}
+                </h2>
+                <p className="mt-1 text-xs font-bold uppercase text-zinc-500">
+                  Pi Testnet / Sandbox
+                </p>
+              </div>
+              <button
+                aria-label="Close workspace menu"
+                className="inline-flex h-10 w-10 shrink-0 items-center justify-center border border-zinc-950 bg-white text-zinc-950 transition hover:bg-zinc-950 hover:text-white"
+                type="button"
+                onClick={() => onMobileOpenChange(false)}
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <nav className="grid content-start gap-2 overflow-y-auto p-3">
+              {navItems.map((item) => {
+                const ItemIcon = viewMeta[item].icon;
+                const selected = mode === item;
+
+                return (
+                  <button
+                    key={item}
+                    aria-current={selected ? "page" : undefined}
+                    className={`grid min-h-20 grid-cols-[2.75rem_minmax(0,1fr)] items-center gap-3 border p-3 text-left transition ${
+                      selected
+                        ? "border-zinc-950 bg-zinc-950 text-white shadow-[4px_4px_0_#10b981]"
+                        : "border-black/10 bg-zinc-50 text-zinc-950 hover:border-zinc-950 hover:bg-white"
+                    }`}
+                    type="button"
+                    onClick={() => onModeChange(item)}
+                  >
+                    <span className="flex h-11 w-11 items-center justify-center bg-white text-zinc-950">
+                      <ItemIcon className="h-5 w-5" />
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block text-base font-black">
+                        {viewMeta[item].label}
+                      </span>
+                      <span
+                        className={`mt-1 block text-xs font-semibold leading-5 ${
+                          selected ? "text-zinc-200" : "text-zinc-600"
+                        }`}
+                      >
+                        {viewMeta[item].description}
+                      </span>
+                    </span>
+                  </button>
+                );
+              })}
+            </nav>
+            <div className="mt-auto grid grid-cols-2 gap-2 border-t border-black/10 bg-emerald-50 p-4">
+              <div className="border border-black/10 bg-white p-2">
+                <p className="text-[10px] font-bold uppercase text-zinc-500">
+                  Current
+                </p>
+                <p className="mt-1 truncate text-sm font-black text-zinc-950">
+                  {active.label}
+                </p>
+              </div>
+              <div className="border border-black/10 bg-white p-2">
+                <p className="text-[10px] font-bold uppercase text-zinc-500">
+                  Network
+                </p>
+                <p className="mt-1 truncate text-sm font-black text-zinc-950">
+                  Testnet
+                </p>
+              </div>
+            </div>
+          </aside>
+        </div>
+      )}
     </section>
   );
 }

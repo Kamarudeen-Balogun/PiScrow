@@ -11,3 +11,4 @@ These curated images come from the Playwright smoke and full-site runs. The raw 
 - `05-profile.png`: reputation profile and verified badge state.
 - `06-admin-review.png`: admin dispute and verification review.
 - `07-mobile-ledger.png`: mobile ledger view.
+- `08-mobile-workspace-menu.png`: mobile workspace drawer for Buyer, Seller, Ledger, Profile, and Admin access.
