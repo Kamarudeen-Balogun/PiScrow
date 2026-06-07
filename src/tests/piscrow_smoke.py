@@ -56,6 +56,11 @@ def main() -> None:
         expect(desktop.get_by_text("Buyer").first).to_be_visible()
         expect(desktop.get_by_text("Private spare parts offer").first).to_be_visible()
         desktop.get_by_text("Private spare parts offer").first.click()
+        desktop.get_by_role("button", name="Show interest").click()
+        expect(desktop.get_by_role("alertdialog")).to_be_visible()
+        expect(desktop.get_by_text("Action needed")).to_be_visible()
+        expect(desktop.get_by_text("Add a short response so the seller can compare buyers.")).to_be_visible()
+        desktop.get_by_role("button", name="Got it").click()
         desktop.get_by_placeholder("Tell the seller why you are the right buyer").fill(
             "I can confirm the model today and fund immediately after selection."
         )
@@ -67,7 +72,7 @@ def main() -> None:
         expect(desktop.get_by_text("Used Android phone barter").first).to_be_visible()
         expect(desktop.get_by_text("@abuja_tradehub").first).to_be_visible()
         desktop.get_by_role("button", name="Select buyer").first.click()
-        expect(desktop.get_by_text("Seller @lagos_phone_hub selected @abuja_tradehub").first).to_be_visible()
+        expect(desktop.get_by_text("Seller selected @abuja_tradehub").first).to_be_visible()
 
         desktop.get_by_placeholder("Offer title").fill("Playwright market test")
         desktop.get_by_placeholder("Item or service details").fill(
@@ -96,7 +101,8 @@ def main() -> None:
 
         desktop.get_by_role("button", name=re.compile("^Admin$")).click()
         expect(desktop.get_by_text("Laptop repair deposit")).to_be_visible()
-        expect(desktop.get_by_role("button", name="Release after review")).to_be_visible()
+        expect(desktop.get_by_role("button", name="Approve seller release")).to_be_visible()
+        expect(desktop.get_by_role("button", name="Approve buyer refund")).to_be_visible()
         desktop.screenshot(
             path=str(ARTIFACT_DIR / "piscrow-admin.png"),
             full_page=True,

@@ -75,10 +75,6 @@ export function secureJson(data: unknown, init?: ResponseInit) {
   return applySecurityHeaders(NextResponse.json(data, init));
 }
 
-export function isSecurityResponse(value: unknown): value is NextResponse {
-  return value instanceof NextResponse;
-}
-
 export function bodyTooLarge(request: Request, limitBytes: number) {
   const contentLength = Number(request.headers.get("content-length") ?? "0");
 

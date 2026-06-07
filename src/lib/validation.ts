@@ -104,6 +104,16 @@ export const disputeSchema = z.object({
   ).optional(),
 });
 
+export const disputeFollowUpSchema = z.object({
+  tradeId: z.string().min(1),
+  followUpNote: sanitizedString(
+    z
+      .string()
+      .min(8, "Add a short dispute update before submitting.")
+      .max(600, "Keep dispute updates under 600 characters."),
+  ),
+});
+
 export const confirmReceiptSchema = z.object({
   tradeId: z.string().min(1),
   buyerReceiptNote: sanitizedString(
@@ -123,4 +133,5 @@ export type CreateTradeInterestInput = z.infer<typeof createTradeInterestSchema>
 export type SelectTradeInterestInput = z.infer<typeof selectTradeInterestSchema>;
 export type DeliveryProofInput = z.infer<typeof deliveryProofSchema>;
 export type DisputeInput = z.infer<typeof disputeSchema>;
+export type DisputeFollowUpInput = z.infer<typeof disputeFollowUpSchema>;
 export type ConfirmReceiptInput = z.infer<typeof confirmReceiptSchema>;

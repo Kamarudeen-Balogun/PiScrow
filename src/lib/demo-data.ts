@@ -14,7 +14,7 @@ export const demoTrades: Trade[] = [
     targetBuyerPiUsernames: [],
     title: "Used Android phone barter",
     description:
-      "Seller posted a clean used Android phone with charger and local pickup terms.",
+      "Clean Android phone with charger, battery checked, and screen condition disclosed for in-person inspection.",
     amountTestPi: 42,
     status: "Draft",
     interestCount: 2,
@@ -58,7 +58,7 @@ export const demoTrades: Trade[] = [
     selectedInterestId: "interest-005",
     title: "Funded camera lens handoff",
     description:
-      "A funded demo trade waiting for the seller to upload package proof.",
+      "Used camera lens with courier pickup arranged; seller must upload package proof before dispatch.",
     amountTestPi: 26,
     status: "Funded",
     interestCount: 1,
@@ -80,7 +80,7 @@ export const demoTrades: Trade[] = [
     selectedInterestId: "interest-004",
     title: "Laptop repair deposit",
     description:
-      "Repair technician is waiting for parts and the buyer opened a dispute until proof arrives.",
+      "Repair deposit for replacement parts; buyer opened a dispute because the uploaded invoice details need review.",
     amountTestPi: 18,
     status: "Disputed",
     interestCount: 1,
@@ -101,7 +101,7 @@ export const demoTrades: Trade[] = [
     targetBuyerPiUsernames: ["lagos_phone_hub"],
     title: "Private spare parts offer",
     description:
-      "A private offer only visible to selected buyers for phone spare parts.",
+      "Private phone spare-parts offer with the target buyer asked to confirm the exact device model before selection.",
     amountTestPi: 15,
     status: "Draft",
     interestCount: 0,
@@ -231,5 +231,21 @@ export const demoEvents: TradeEvent[] = [
     eventType: "Payment completed",
     notes: "Buyer funding is held while seller prepares delivery proof.",
     createdAt: "2026-06-06T19:00:00.000Z",
+  },
+  {
+    id: "event-009",
+    tradeId: "trade-003",
+    actor: "admin",
+    eventType: "Admin requested seller follow-up",
+    notes: "Admin asked the seller to upload clearer part photos and tracking details before resolution.",
+    createdAt: "2026-06-06T13:20:00.000Z",
+  },
+  {
+    id: "event-010",
+    tradeId: "trade-003",
+    actor: "pi_buyer_demo",
+    eventType: "Seller dispute update",
+    notes: "Seller replied that the replacement part is ready and will add clearer proof before release.",
+    createdAt: "2026-06-06T13:45:00.000Z",
   },
 ];

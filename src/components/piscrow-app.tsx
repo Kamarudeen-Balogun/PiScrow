@@ -47,6 +47,7 @@ import {
   createTradeSchema,
   confirmReceiptSchema,
   deliveryProofSchema,
+  disputeFollowUpSchema,
   disputeSchema,
 } from "@/lib/validation";
 import type { PiAuthResult, PiBrowserSDK, PiUser } from "@/types/pi";
@@ -81,6 +82,8 @@ type SavedNotification = {
   readAt?: string;
   createdAt: string;
 };
+
+type AdminFollowUpAction = "request_buyer_followup" | "request_seller_followup";
 
 const nextPublicSandbox =
   process.env.NEXT_PUBLIC_PI_SANDBOX === undefined
@@ -1296,8 +1299,82 @@ export function PiScrowApp({
     form.reset();
   }
 
-  function adminResolve(trade: Trade, status: "Completed" | "Cancelled") {
+  function submitDisputeUpdate(
+    trade: Trade,
+    event: FormEvent<HTMLFormElement>,
+  ) {
+    event.preventDefault();
     setFormError("");
+
+    const form = event.currentTarget;
+    const formData = new FormData(form);
+    const parsed = disputeFollowUpSchema.safeParse({
+      tradeId: trade.id,
+      followUpNote: formData.get("followUpNote"),
+    });
+
+    if (!parsed.success) {
+      setFormError(parsed.error.issues[0]?.message ?? "Dispute update failed.");
+      return;
+    }
+
+    if (piConnected && piAccessToken) {
+      void apiRequest<TradePayload>(
+        `/api/trades/${trade.id}/dispute-update`,
+        piAccessToken,
+        {
+          method: "POST",
+          body: JSON.stringify(parsed.data),
+        },
+      )
+        .then(applyTradePayload)
+        .then(() => {
+          form.reset();
+          pushNotice(
+            "Dispute update sent",
+            "Your response was added to the trade timeline.",
+            "success",
+          );
+        })
+        .catch((error) => {
+          setFormError(
+            error instanceof Error ? error.message : "Could not add dispute update.",
+          );
+        });
+      return;
+    }
+
+    appendEvent(
+      trade.id,
+      "Dispute update",
+      parsed.data.followUpNote,
+      user?.username ?? "demo_actor",
+    );
+    pushNotice(
+      "Dispute update sent",
+      "Your response was added to the trade timeline.",
+      "success",
+    );
+    form.reset();
+  }
+
+  function adminRequestFollowUp(
+    trade: Trade,
+    action: AdminFollowUpAction,
+    event: FormEvent<HTMLFormElement>,
+  ) {
+    event.preventDefault();
+    setFormError("");
+
+    const form = event.currentTarget;
+    const formData = new FormData(form);
+    const note = String(formData.get("notes") ?? "").trim();
+    const targetRole = action === "request_buyer_followup" ? "buyer" : "seller";
+
+    if (note.length < 8) {
+      setFormError(`Add a short ${targetRole} follow-up request before sending.`);
+      return;
+    }
 
     if (piConnected && piAccessToken) {
       void apiRequest<TradePayload>(
@@ -1306,11 +1383,62 @@ export function PiScrowApp({
         {
           method: "POST",
           body: JSON.stringify({
+            action,
+            notes: note,
+          }),
+        },
+      )
+        .then(applyTradePayload)
+        .then(() => {
+          form.reset();
+          pushNotice(
+            "Follow-up requested",
+            `The ${targetRole} was notified and the request is on the ledger.`,
+            "info",
+          );
+        })
+        .catch((error) => {
+          setFormError(
+            error instanceof Error ? error.message : "Could not request follow-up.",
+          );
+        });
+      return;
+    }
+
+    appendEvent(
+      trade.id,
+      action === "request_buyer_followup"
+        ? "Admin requested buyer follow-up"
+        : "Admin requested seller follow-up",
+      note,
+      user?.username ?? "admin",
+    );
+    pushNotice(
+      "Follow-up requested",
+      `The ${targetRole} request is on the demo timeline.`,
+      "info",
+    );
+    form.reset();
+  }
+
+  function adminResolve(trade: Trade, status: "Completed" | "Cancelled") {
+    setFormError("");
+
+    const notes =
+      status === "Completed"
+        ? "Admin approved the seller release path after reviewing buyer receipt and party evidence."
+        : "Admin approved the buyer refund path after reviewing the dispute and party evidence.";
+
+    if (piConnected && piAccessToken) {
+      void apiRequest<TradePayload>(
+        `/api/trades/${trade.id}/admin-resolve`,
+        piAccessToken,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            action: "resolve",
             status,
-            notes:
-              status === "Completed"
-                ? "Admin confirmed both parties were satisfied before release."
-                : "Admin cancelled after reviewing the dispute.",
+            notes,
           }),
         },
       )
@@ -1319,8 +1447,8 @@ export function PiScrowApp({
           pushNotice(
             "Dispute resolved",
             status === "Completed"
-              ? "Admin marked the trade complete after review."
-              : "Admin cancelled the trade after review.",
+              ? "Seller release path approved after review."
+              : "Buyer refund path approved after cancellation review.",
             status === "Completed" ? "success" : "warning",
           );
         })
@@ -1335,17 +1463,17 @@ export function PiScrowApp({
     updateTrade(trade.id, status);
     appendEvent(
       trade.id,
-      `Admin resolved as ${status.toLowerCase()}`,
       status === "Completed"
-        ? "Admin confirmed both parties were satisfied before release."
-        : "Admin cancelled after reviewing the dispute.",
+        ? "Admin approved seller release"
+        : "Admin approved buyer refund",
+      notes,
       user?.username ?? "admin",
     );
     pushNotice(
       "Dispute resolved",
       status === "Completed"
-        ? "Admin marked the trade complete after review."
-        : "Admin cancelled the trade after review.",
+        ? "Seller release path approved after review."
+        : "Buyer refund path approved after cancellation review.",
       status === "Completed" ? "success" : "warning",
     );
   }
@@ -1385,6 +1513,13 @@ export function PiScrowApp({
         )}
 
         {allowDemo && <DemoModeBanner />}
+
+        {formError && (
+          <ActionFeedbackDialog
+            message={formError}
+            onDismiss={() => setFormError("")}
+          />
+        )}
 
         {!signedIn && (
           <>
@@ -1446,12 +1581,6 @@ export function PiScrowApp({
               <NotificationStack notices={notices} onDismiss={dismissNotice} />
             )}
 
-            {formError && (
-              <div className="border border-rose-300 bg-rose-50 p-4 text-sm font-semibold text-rose-950">
-                {formError}
-              </div>
-            )}
-
             {activeMode === "market" && (
               <section className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_380px]">
                 <OfferFeed
@@ -1468,9 +1597,11 @@ export function PiScrowApp({
                 />
                 <SideRail
                   trade={selectedTrade}
+                  currentUsername={normalizedUsername}
                   events={events}
                   paymentState={paymentState}
                   onOpenDispute={openDispute}
+                  onSubmitDisputeUpdate={submitDisputeUpdate}
                 />
               </section>
             )}
@@ -1486,6 +1617,7 @@ export function PiScrowApp({
                   trades={sellerTrades}
                   interests={interests}
                   events={events}
+                  currentUsername={normalizedUsername}
                   selectedTrade={selectedTrade}
                   onSelect={(tradeId) => {
                     setSelectedTradeId(tradeId);
@@ -1495,6 +1627,7 @@ export function PiScrowApp({
                   onDeleteOffer={deleteOffer}
                   onSubmitDelivery={submitDelivery}
                   onOpenDispute={openDispute}
+                  onSubmitDisputeUpdate={submitDisputeUpdate}
                 />
               </section>
             )}
@@ -1512,6 +1645,7 @@ export function PiScrowApp({
               <AdminDesk
                 trades={adminTrades}
                 events={events}
+                onRequestFollowUp={adminRequestFollowUp}
                 onResolve={adminResolve}
               />
             )}
@@ -1910,6 +2044,59 @@ function NotificationStack({
   );
 }
 
+function ActionFeedbackDialog({
+  message,
+  onDismiss,
+}: {
+  message: string;
+  onDismiss: () => void;
+}) {
+  return (
+    <section
+      aria-labelledby="action-feedback-title"
+      aria-modal="true"
+      className="fixed inset-0 z-[60] grid place-items-center bg-zinc-950/40 px-4 py-6"
+      role="alertdialog"
+    >
+      <div className="w-full max-w-md border border-rose-300 bg-white p-5 shadow-[10px_10px_0_#111827]">
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex items-start gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center bg-rose-100 text-rose-800">
+              <AlertTriangle className="h-5 w-5" />
+            </div>
+            <div>
+              <h2
+                className="text-lg font-black text-zinc-950"
+                id="action-feedback-title"
+              >
+                Action needed
+              </h2>
+              <p className="mt-2 text-sm font-semibold leading-6 text-zinc-700">
+                {message}
+              </p>
+            </div>
+          </div>
+          <button
+            aria-label="Dismiss action message"
+            className="inline-flex h-9 w-9 shrink-0 items-center justify-center border border-black/10 bg-zinc-50 text-zinc-700 transition hover:bg-zinc-950 hover:text-white"
+            type="button"
+            onClick={onDismiss}
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <button
+          className="mt-5 inline-flex h-11 w-full items-center justify-center bg-zinc-950 px-4 text-sm font-black text-white transition hover:bg-emerald-700"
+          type="button"
+          onClick={onDismiss}
+        >
+          Got it
+        </button>
+      </div>
+    </section>
+  );
+}
+
 function SellerPostPanel({
   username,
   onCreateTrade,
@@ -2174,28 +2361,53 @@ function OfferFeed({
 }
 
 function OfferSummary({ trade }: { trade: Trade }) {
+  const location = [trade.locationLabel, trade.locationArea]
+    .filter(Boolean)
+    .join(" / ");
+
   return (
-    <div>
+    <div className="grid gap-3">
       <div className="flex flex-wrap items-center gap-2">
         <StatusBadge status={trade.status} />
-        <span className="inline-flex h-7 items-center border border-black/10 bg-zinc-50 px-2.5 text-xs font-semibold text-zinc-700">
-          {tradeVisibilityLabels[trade.visibility]}
-        </span>
-        <span className="text-xs font-bold uppercase text-zinc-500">
-          {trade.interestCount ?? 0} interest
-        </span>
+        <Chip>{tradeVisibilityLabels[trade.visibility]}</Chip>
+        <Chip>{trade.interestCount ?? 0} interest</Chip>
       </div>
-      <h3 className="mt-3 text-lg font-black text-zinc-950">{trade.title}</h3>
-      <p className="mt-1 text-sm leading-6 text-zinc-600">
-        Seller @{trade.sellerPiUsername}
-        {trade.buyerPiUsername ? ` selected @${trade.buyerPiUsername}` : ""}
-      </p>
-      {trade.locationLabel && (
-        <p className="mt-1 text-sm font-semibold text-zinc-700">
-          {trade.locationLabel}
-          {trade.locationArea ? ` / ${trade.locationArea}` : ""}
+      <div>
+        <h3 className="text-lg font-black leading-snug text-zinc-950">
+          {trade.title}
+        </h3>
+        <p className="mt-1 line-clamp-2 text-sm leading-6 text-zinc-600">
+          {trade.description}
         </p>
-      )}
+      </div>
+      <div className="grid gap-2 text-sm sm:grid-cols-3">
+        <RecordField label="Seller" value={`@${trade.sellerPiUsername}`} />
+        <RecordField
+          label="Buyer"
+          value={trade.buyerPiUsername ? `@${trade.buyerPiUsername}` : "Not selected"}
+        />
+        <RecordField label="Location" value={location || "Not provided"} />
+      </div>
+      <p className="text-xs font-bold uppercase text-zinc-500">
+        Buyer funds {formatTestPi(calculateBuyerTotal(trade.amountTestPi))}
+      </p>
+    </div>
+  );
+}
+
+function Chip({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="inline-flex h-7 items-center border border-black/10 bg-zinc-50 px-2.5 text-xs font-semibold text-zinc-700">
+      {children}
+    </span>
+  );
+}
+
+function RecordField({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="min-w-0">
+      <p className="text-[11px] font-bold uppercase text-zinc-400">{label}</p>
+      <p className="truncate font-semibold text-zinc-700">{value}</p>
     </div>
   );
 }
@@ -2265,26 +2477,33 @@ function SellerDesk({
   trades,
   interests,
   events,
+  currentUsername,
   selectedTrade,
   onSelect,
   onSelectInterest,
   onDeleteOffer,
   onSubmitDelivery,
   onOpenDispute,
+  onSubmitDisputeUpdate,
 }: {
   trades: Trade[];
   interests: TradeInterest[];
   events: TradeEvent[];
+  currentUsername: string;
   selectedTrade?: Trade;
   onSelect: (tradeId: string) => void;
   onSelectInterest: (trade: Trade, interest: TradeInterest) => void;
   onDeleteOffer: (trade: Trade) => void;
   onSubmitDelivery: (event: FormEvent<HTMLFormElement>) => void;
   onOpenDispute: (event: FormEvent<HTMLFormElement>) => void;
+  onSubmitDisputeUpdate: (trade: Trade, event: FormEvent<HTMLFormElement>) => void;
 }) {
   if (trades.length === 0) {
     return <EmptyState label="No seller offers yet. Post one to begin." />;
   }
+
+  const activeTrade =
+    trades.find((trade) => trade.id === selectedTrade?.id) ?? trades[0];
 
   return (
     <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
@@ -2360,11 +2579,13 @@ function SellerDesk({
         })}
       </div>
       <SideRail
-        trade={selectedTrade}
+        trade={activeTrade}
+        currentUsername={currentUsername}
         events={events}
         paymentState="Seller actions"
         onSubmitDelivery={onSubmitDelivery}
         onOpenDispute={onOpenDispute}
+        onSubmitDisputeUpdate={onSubmitDisputeUpdate}
       />
     </section>
   );
@@ -2372,18 +2593,26 @@ function SellerDesk({
 
 function SideRail({
   trade,
+  currentUsername,
   events,
   paymentState,
   onSubmitDelivery,
   onOpenDispute,
+  onSubmitDisputeUpdate,
 }: {
   trade?: Trade;
+  currentUsername: string;
   events: TradeEvent[];
   paymentState: string;
   onSubmitDelivery?: (event: FormEvent<HTMLFormElement>) => void;
   onOpenDispute: (event: FormEvent<HTMLFormElement>) => void;
+  onSubmitDisputeUpdate?: (trade: Trade, event: FormEvent<HTMLFormElement>) => void;
 }) {
   const tradeEvents = events.filter((event) => event.tradeId === trade?.id);
+  const canRespondToDispute =
+    trade?.status === "Disputed" &&
+    (normalizeUsername(trade.sellerPiUsername) === currentUsername ||
+      normalizeUsername(trade.buyerPiUsername ?? "") === currentUsername);
 
   return (
     <aside className="grid content-start gap-4">
@@ -2490,6 +2719,27 @@ function SideRail({
         </ActionPanel>
       )}
 
+      {trade && canRespondToDispute && onSubmitDisputeUpdate && (
+        <ActionPanel title="Dispute Follow-up" icon={<FileWarning className="h-4 w-4" />}>
+          <form
+            className="grid gap-3"
+            onSubmit={(event) => onSubmitDisputeUpdate(trade, event)}
+          >
+            <textarea
+              className="min-h-24 border border-black/15 bg-white p-3 text-sm outline-none focus:border-rose-700"
+              name="followUpNote"
+              placeholder="Respond to admin or add new dispute evidence"
+            />
+            <button
+              className="inline-flex h-11 items-center justify-center gap-2 bg-zinc-950 px-4 text-sm font-black text-white transition hover:bg-rose-700"
+              type="submit"
+            >
+              Send dispute update
+            </button>
+          </form>
+        </ActionPanel>
+      )}
+
       <ActionPanel title="Payment Status" icon={<RefreshCcw className="h-4 w-4" />}>
         <p className="text-sm leading-6 text-zinc-700">{paymentState}</p>
       </ActionPanel>
@@ -2546,10 +2796,16 @@ function PublicLedger({
 function AdminDesk({
   trades,
   events,
+  onRequestFollowUp,
   onResolve,
 }: {
   trades: Trade[];
   events: TradeEvent[];
+  onRequestFollowUp: (
+    trade: Trade,
+    action: AdminFollowUpAction,
+    event: FormEvent<HTMLFormElement>,
+  ) => void;
   onResolve: (trade: Trade, status: "Completed" | "Cancelled") => void;
 }) {
   if (trades.length === 0) {
@@ -2567,6 +2823,9 @@ function AdminDesk({
             </div>
             <div className="mt-4 grid gap-3 border-t border-black/10 pt-3">
               <LocationBlock trade={trade} />
+              {trade.buyerPiUsername && (
+                <TextBlock label="Buyer under review" value={`@${trade.buyerPiUsername}`} />
+              )}
               {trade.deliveryProofNote && (
                 <TextBlock
                   label="Seller package proof"
@@ -2589,20 +2848,36 @@ function AdminDesk({
                 />
               )}
             </div>
-            <div className="mt-4 flex flex-wrap gap-2 border-t border-black/10 pt-3">
+            <div className="mt-4 grid gap-3 border-t border-black/10 pt-3 lg:grid-cols-2">
+              <AdminFollowUpForm
+                action="request_buyer_followup"
+                label="Request buyer update"
+                placeholder="Ask the buyer what they received, what is missing, or what proof they can add."
+                trade={trade}
+                onSubmit={onRequestFollowUp}
+              />
+              <AdminFollowUpForm
+                action="request_seller_followup"
+                label="Request seller update"
+                placeholder="Ask the seller for delivery proof, tracking details, or a response to the buyer claim."
+                trade={trade}
+                onSubmit={onRequestFollowUp}
+              />
+            </div>
+            <div className="mt-4 grid gap-3 border-t border-black/10 pt-3 sm:grid-cols-2">
               <button
-                className="inline-flex h-10 items-center gap-2 bg-emerald-700 px-3 text-sm font-black text-white"
+                className="inline-flex min-h-11 items-center justify-center gap-2 bg-emerald-700 px-3 py-2 text-sm font-black text-white"
                 type="button"
                 onClick={() => onResolve(trade, "Completed")}
               >
-                Release after review
+                Approve seller release
               </button>
               <button
-                className="inline-flex h-10 items-center gap-2 bg-zinc-800 px-3 text-sm font-black text-white"
+                className="inline-flex min-h-11 items-center justify-center gap-2 bg-zinc-800 px-3 py-2 text-sm font-black text-white"
                 type="button"
                 onClick={() => onResolve(trade, "Cancelled")}
               >
-                Cancel trade
+                Approve buyer refund
               </button>
             </div>
           </article>
@@ -2610,6 +2885,44 @@ function AdminDesk({
       </div>
       <Timeline events={events.filter((event) => trades.some((trade) => trade.id === event.tradeId))} />
     </section>
+  );
+}
+
+function AdminFollowUpForm({
+  action,
+  label,
+  placeholder,
+  trade,
+  onSubmit,
+}: {
+  action: AdminFollowUpAction;
+  label: string;
+  placeholder: string;
+  trade: Trade;
+  onSubmit: (
+    trade: Trade,
+    action: AdminFollowUpAction,
+    event: FormEvent<HTMLFormElement>,
+  ) => void;
+}) {
+  return (
+    <form
+      className="grid gap-2 border border-black/10 bg-zinc-50 p-3"
+      onSubmit={(event) => onSubmit(trade, action, event)}
+    >
+      <p className="text-sm font-black text-zinc-950">{label}</p>
+      <textarea
+        className="min-h-20 border border-black/15 bg-white p-3 text-sm outline-none focus:border-rose-700"
+        name="notes"
+        placeholder={placeholder}
+      />
+      <button
+        className="inline-flex h-10 items-center justify-center bg-zinc-950 px-3 text-sm font-black text-white transition hover:bg-rose-700"
+        type="submit"
+      >
+        Send request
+      </button>
+    </form>
   );
 }
 

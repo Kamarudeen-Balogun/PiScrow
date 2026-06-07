@@ -148,6 +148,11 @@ def main() -> None:
         page.get_by_text("Private spare parts offer").first.click()
         expect(page.get_by_text("Private requested trade from @market_runner")).to_be_visible()
         expect(page.get_by_role("button", name="Decline request")).to_be_visible()
+        page.get_by_role("button", name="Show interest").click()
+        expect(page.get_by_role("alertdialog")).to_be_visible()
+        expect(page.get_by_text("Action needed")).to_be_visible()
+        expect(page.get_by_text("Add a short response so the seller can compare buyers.")).to_be_visible()
+        page.get_by_role("button", name="Got it").click()
         page.get_by_placeholder("Tell the seller why you are the right buyer").fill(
             "I know the exact model and can fund once the seller chooses me."
         )
@@ -162,7 +167,7 @@ def main() -> None:
         expect(page.get_by_text("Package Sent Proof")).to_be_visible()
         expect(page.get_by_label("Package proof image")).to_be_visible()
         page.get_by_role("button", name="Select buyer").first.click()
-        expect(page.get_by_text("Seller @lagos_phone_hub selected @abuja_tradehub").first).to_be_visible()
+        expect(page.get_by_text("Seller selected @abuja_tradehub").first).to_be_visible()
 
         page.get_by_placeholder("Offer title").fill("Full QA private test")
         page.get_by_placeholder("Item or service details").fill(
@@ -207,7 +212,14 @@ def main() -> None:
         expect(page.get_by_text("Laptop repair deposit")).to_be_visible()
         expect(page.get_by_text("Seller package proof")).to_be_visible()
         expect(page.get_by_text("Seller proof image / link")).to_be_visible()
-        page.get_by_role("button", name="Release after review").click()
+        expect(page.get_by_text("Request buyer update")).to_be_visible()
+        expect(page.get_by_text("Request seller update")).to_be_visible()
+        page.get_by_placeholder("Ask the buyer what they received").fill(
+            "Please confirm whether the replacement part arrived and upload any receipt proof."
+        )
+        page.get_by_role("button", name="Send request").first.click()
+        expect(page.get_by_text("Admin requested buyer follow-up").first).to_be_visible()
+        page.get_by_role("button", name="Approve seller release").click()
         expect(page.get_by_text("Dispute resolved").first).to_be_visible()
         page.screenshot(path=str(ARTIFACT_DIR / "full-admin-resolved.png"), full_page=True)
 
