@@ -1,6 +1,5 @@
-import { NextResponse } from "next/server";
-
 import { jsonError, normalizePiUsername, requireAppUser } from "@/server/auth";
+import { rateLimit, rateLimitProfiles, secureJson } from "@/server/security";
 import {
   assertTradeIsOpenForInterest,
   getServiceClientOrThrow,
@@ -14,6 +13,7 @@ export async function POST(
   context: { params: Promise<{ tradeId: string }> },
 ) {
   try {
+    rateLimit(request, { key: "decline-private:post", ...rateLimitProfiles.write });
     const user = await requireAppUser(request);
     const { tradeId } = await context.params;
     const trade = await getTradeForAction(tradeId);
@@ -94,7 +94,7 @@ export async function POST(
       `@${normalizedUsername} declined the private offer.`,
     );
 
-    return NextResponse.json(await listTradesForUser(user));
+    return secureJson(await listTradesForUser(user));
   } catch (error) {
     return jsonError(error);
   }

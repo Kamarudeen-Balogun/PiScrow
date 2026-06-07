@@ -1,8 +1,12 @@
-import { NextResponse } from "next/server";
-
 import { createTradeSchema } from "@/lib/validation";
 import { jsonError, normalizePiUsername, requireAppUser } from "@/server/auth";
 import { createNotification } from "@/server/notifications";
+import {
+  rateLimit,
+  rateLimitProfiles,
+  readJsonBody,
+  secureJson,
+} from "@/server/security";
 import {
   getServiceClientOrThrow,
   insertTradeEvent,
@@ -11,10 +15,11 @@ import {
 
 export async function GET(request: Request) {
   try {
+    rateLimit(request, { key: "trades:get", ...rateLimitProfiles.read });
     const user = await requireAppUser(request);
     const payload = await listTradesForUser(user);
 
-    return NextResponse.json(payload);
+    return secureJson(payload);
   } catch (error) {
     return jsonError(error, 401);
   }
@@ -22,8 +27,9 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    rateLimit(request, { key: "trades:post", ...rateLimitProfiles.write });
     const user = await requireAppUser(request);
-    const parsed = createTradeSchema.safeParse(await request.json());
+    const parsed = createTradeSchema.safeParse(await readJsonBody(request));
 
     if (!parsed.success) {
       throw new Error(parsed.error.issues[0]?.message ?? "Invalid trade form.");
@@ -93,7 +99,7 @@ export async function POST(request: Request) {
     }
 
     const payload = await listTradesForUser(user);
-    return NextResponse.json(payload);
+    return secureJson(payload);
   } catch (error) {
     return jsonError(error);
   }

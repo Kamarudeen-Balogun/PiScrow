@@ -1,67 +1,75 @@
 import { z } from "zod";
 
+import { sanitizeText } from "@/lib/sanitize";
+
+const sanitizedString = (schema = z.string()) =>
+  z.string().transform((value) => sanitizeText(value)).pipe(schema);
+
 const piUsernameListSchema = z.preprocess((value) => {
   if (Array.isArray(value)) {
     return value.join(",");
   }
 
   return value;
-}, z
-  .string()
-  .trim()
-  .max(64, "Private buyer username is too long.")
+}, sanitizedString(z.string().max(64, "Private buyer username is too long."))
   .default("")
-  .transform((value) =>
+  .transform((value: string) =>
     [...new Set(
       value
         .split(/[\n,]/)
-        .map((username) => username.trim().replace(/^@+/, "").toLowerCase())
+        .map((username: string) =>
+          username.trim().replace(/^@+/, "").toLowerCase(),
+        )
         .filter(Boolean),
     )].slice(0, 1),
   ));
 
 export const createTradeSchema = z.object({
-  title: z
-    .string()
-    .trim()
-    .min(4, "Trade title is required.")
-    .max(90, "Keep the trade title under 90 characters."),
+  title: sanitizedString(
+    z
+      .string()
+      .min(4, "Trade title is required.")
+      .max(90, "Keep the trade title under 90 characters."),
+  ),
   amountTestPi: z.coerce
     .number()
     .positive("Amount must be greater than zero.")
     .max(1000, "MVP trades are capped at 1,000 Test Pi."),
-  description: z
-    .string()
-    .trim()
-    .min(12, "Add a short description of the item or service.")
-    .max(600, "Keep the description under 600 characters."),
-  locationLabel: z
-    .string()
-    .trim()
-    .min(2, "Add the trade location.")
-    .max(120, "Keep the location under 120 characters."),
-  locationArea: z
-    .string()
-    .trim()
-    .max(120, "Keep the area under 120 characters.")
+  description: sanitizedString(
+    z
+      .string()
+      .min(12, "Add a short description of the item or service.")
+      .max(600, "Keep the description under 600 characters."),
+  ),
+  locationLabel: sanitizedString(
+    z
+      .string()
+      .min(2, "Add the trade location.")
+      .max(120, "Keep the location under 120 characters."),
+  ),
+  locationArea: sanitizedString(
+    z.string().max(120, "Keep the area under 120 characters."),
+  )
     .optional()
     .or(z.literal("")),
-  deliveryTerms: z
-    .string()
-    .trim()
-    .min(12, "Delivery terms are required.")
-    .max(600, "Keep delivery terms under 600 characters."),
+  deliveryTerms: sanitizedString(
+    z
+      .string()
+      .min(12, "Delivery terms are required.")
+      .max(600, "Keep delivery terms under 600 characters."),
+  ),
   visibility: z.enum(["public", "private"]),
   targetBuyerPiUsernames: piUsernameListSchema,
 });
 
 export const createTradeInterestSchema = z.object({
   tradeId: z.string().min(1),
-  responseNote: z
-    .string()
-    .trim()
-    .min(12, "Add a short response so the seller can compare buyers.")
-    .max(600, "Keep the response under 600 characters."),
+  responseNote: sanitizedString(
+    z
+      .string()
+      .min(12, "Add a short response so the seller can compare buyers.")
+      .max(600, "Keep the response under 600 characters."),
+  ),
 });
 
 export const selectTradeInterestSchema = z.object({
@@ -71,48 +79,43 @@ export const selectTradeInterestSchema = z.object({
 
 export const deliveryProofSchema = z.object({
   tradeId: z.string().min(1),
-  deliveryProofNote: z
-    .string()
-    .trim()
-    .min(8, "Add delivery proof details.")
-    .max(600, "Keep proof notes under 600 characters."),
-  deliveryProofUrl: z
-    .string()
-    .trim()
-    .url("Use a valid proof URL.")
+  deliveryProofNote: sanitizedString(
+    z
+      .string()
+      .min(8, "Add delivery proof details.")
+      .max(600, "Keep proof notes under 600 characters."),
+  ),
+  deliveryProofUrl: sanitizedString(z.string().url("Use a valid proof URL."))
     .optional()
     .or(z.literal("")),
-  deliveryProofImagePath: z.string().trim().optional().or(z.literal("")),
+  deliveryProofImagePath: sanitizedString().optional().or(z.literal("")),
 });
 
 export const disputeSchema = z.object({
   tradeId: z.string().min(1),
-  reason: z
-    .string()
-    .trim()
-    .min(12, "Dispute reason is required.")
-    .max(600, "Keep dispute reason under 600 characters."),
-  evidenceNote: z
-    .string()
-    .trim()
-    .max(600, "Keep evidence notes under 600 characters.")
-    .optional(),
+  reason: sanitizedString(
+    z
+      .string()
+      .min(12, "Dispute reason is required.")
+      .max(600, "Keep dispute reason under 600 characters."),
+  ),
+  evidenceNote: sanitizedString(
+    z.string().max(600, "Keep evidence notes under 600 characters."),
+  ).optional(),
 });
 
 export const confirmReceiptSchema = z.object({
   tradeId: z.string().min(1),
-  buyerReceiptNote: z
-    .string()
-    .trim()
-    .min(8, "Add a short receipt confirmation note.")
-    .max(600, "Keep receipt notes under 600 characters."),
-  buyerReceiptProofUrl: z
-    .string()
-    .trim()
-    .url("Use a valid proof URL.")
+  buyerReceiptNote: sanitizedString(
+    z
+      .string()
+      .min(8, "Add a short receipt confirmation note.")
+      .max(600, "Keep receipt notes under 600 characters."),
+  ),
+  buyerReceiptProofUrl: sanitizedString(z.string().url("Use a valid proof URL."))
     .optional()
     .or(z.literal("")),
-  buyerReceiptImagePath: z.string().trim().optional().or(z.literal("")),
+  buyerReceiptImagePath: sanitizedString().optional().or(z.literal("")),
 });
 
 export type CreateTradeInput = z.infer<typeof createTradeSchema>;

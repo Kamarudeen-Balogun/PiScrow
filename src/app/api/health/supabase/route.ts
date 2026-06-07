@@ -1,12 +1,11 @@
-import { NextResponse } from "next/server";
-
 import { createServiceSupabaseClient } from "@/lib/supabase";
+import { secureJson } from "@/server/security";
 
 export async function GET() {
   const supabase = createServiceSupabaseClient();
 
   if (!supabase) {
-    return NextResponse.json(
+    return secureJson(
       {
         ok: false,
         error: "Supabase service client is not configured.",
@@ -20,16 +19,16 @@ export async function GET() {
     .select("id", { count: "exact", head: true });
 
   if (error) {
-    return NextResponse.json(
+    return secureJson(
       {
         ok: false,
-        error: error.message,
+        error: "Supabase health check failed.",
       },
       { status: 500 },
     );
   }
 
-  return NextResponse.json({
+  return secureJson({
     ok: true,
     table: "trades",
     count: count ?? 0,

@@ -1,9 +1,15 @@
-import { NextResponse } from "next/server";
-
 import { deliveryProofSchema } from "@/lib/validation";
 import { jsonError, requireAppUser } from "@/server/auth";
 import { createNotification } from "@/server/notifications";
 import { uploadTradeProofImage } from "@/server/proof-storage";
+import {
+  rateLimit,
+  rateLimitProfiles,
+  readFormDataBody,
+  readJsonObject,
+  sanitizeFormFields,
+  secureJson,
+} from "@/server/security";
 import {
   assertSeller,
   assertTradeStatus,
@@ -18,15 +24,16 @@ export async function POST(
   context: { params: Promise<{ tradeId: string }> },
 ) {
   try {
+    rateLimit(request, { key: "delivery:post", ...rateLimitProfiles.upload });
     const user = await requireAppUser(request);
     const { tradeId } = await context.params;
     const contentType = request.headers.get("content-type") ?? "";
     const body =
       contentType.includes("multipart/form-data")
-        ? await request.formData()
-        : await request.json();
+        ? await readFormDataBody(request)
+        : await readJsonObject(request);
     const parsed = deliveryProofSchema.safeParse({
-      ...(body instanceof FormData ? Object.fromEntries(body) : body),
+      ...(body instanceof FormData ? sanitizeFormFields(body) : body),
       tradeId,
     });
 
@@ -78,7 +85,7 @@ export async function POST(
       body: `@${user.username} submitted seller delivery proof for your review.`,
     });
 
-    return NextResponse.json(await listTradesForUser(user));
+    return secureJson(await listTradesForUser(user));
   } catch (error) {
     return jsonError(error);
   }

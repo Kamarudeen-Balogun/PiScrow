@@ -1,13 +1,13 @@
-import { NextResponse } from "next/server";
-
 import { jsonError, requireAppUser } from "@/server/auth";
 import { listNotificationsForUser } from "@/server/notifications";
+import { rateLimit, rateLimitProfiles, secureJson } from "@/server/security";
 
 export async function GET(request: Request) {
   try {
+    rateLimit(request, { key: "notifications:get", ...rateLimitProfiles.read });
     const user = await requireAppUser(request);
 
-    return NextResponse.json({
+    return secureJson({
       notifications: await listNotificationsForUser(user.id),
     });
   } catch (error) {

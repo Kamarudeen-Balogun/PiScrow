@@ -1,8 +1,12 @@
-import { NextResponse } from "next/server";
-
 import { createTradeInterestSchema } from "@/lib/validation";
 import { jsonError, requireAppUser } from "@/server/auth";
 import { createNotification } from "@/server/notifications";
+import {
+  rateLimit,
+  rateLimitProfiles,
+  readJsonObject,
+  secureJson,
+} from "@/server/security";
 import {
   assertBuyerIsEligibleForListing,
   assertTradeIsOpenForInterest,
@@ -18,10 +22,11 @@ export async function POST(
   context: { params: Promise<{ tradeId: string }> },
 ) {
   try {
+    rateLimit(request, { key: "trade-interest:post", ...rateLimitProfiles.write });
     const user = await requireAppUser(request);
     const { tradeId } = await context.params;
     const parsed = createTradeInterestSchema.safeParse({
-      ...(await request.json()),
+      ...(await readJsonObject(request)),
       tradeId,
     });
 
@@ -75,7 +80,7 @@ export async function POST(
       body: `@${user.username} responded to your seller offer.`,
     });
 
-    return NextResponse.json(await listTradesForUser(user));
+    return secureJson(await listTradesForUser(user));
   } catch (error) {
     return jsonError(error);
   }

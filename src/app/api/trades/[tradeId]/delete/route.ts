@@ -1,6 +1,5 @@
-import { NextResponse } from "next/server";
-
 import { jsonError, requireAppUser } from "@/server/auth";
+import { rateLimit, rateLimitProfiles, secureJson } from "@/server/security";
 import {
   assertTradeListingOwner,
   assertTradeStatus,
@@ -15,6 +14,7 @@ export async function POST(
   context: { params: Promise<{ tradeId: string }> },
 ) {
   try {
+    rateLimit(request, { key: "delete-offer:post", ...rateLimitProfiles.write });
     const user = await requireAppUser(request);
     const { tradeId } = await context.params;
     const trade = await getTradeForAction(tradeId);
@@ -44,7 +44,7 @@ export async function POST(
       "Seller removed the open offer before selecting a buyer.",
     );
 
-    return NextResponse.json(await listTradesForUser(user));
+    return secureJson(await listTradesForUser(user));
   } catch (error) {
     return jsonError(error);
   }

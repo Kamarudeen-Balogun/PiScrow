@@ -1,9 +1,14 @@
-import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { calculateBuyerTotal, calculatePlatformFee } from "@/lib/fees";
 import { approvePiPayment } from "@/lib/pi-platform";
 import { jsonError, requireAppUser } from "@/server/auth";
+import {
+  rateLimit,
+  rateLimitProfiles,
+  readJsonBody,
+  secureJson,
+} from "@/server/security";
 import {
   assertBuyer,
   assertTradeStatus,
@@ -17,26 +22,24 @@ const approveSchema = z.object({
 });
 
 export async function POST(request: Request) {
-  const parsed = approveSchema.safeParse(await request.json());
-
-  if (!parsed.success) {
-    return NextResponse.json(
-      { error: parsed.error.issues[0]?.message ?? "Invalid approval request." },
-      { status: 400 },
-    );
-  }
-
-  if (!process.env.PI_API_KEY) {
-    return NextResponse.json({
-      mode: "demo",
-      message:
-        "PI_API_KEY is not configured. Approval was simulated for local testnet UI.",
-      paymentId: parsed.data.paymentId,
-      tradeId: parsed.data.tradeId,
-    });
-  }
-
   try {
+    rateLimit(request, { key: "pi-approve:post", ...rateLimitProfiles.payment });
+    const parsed = approveSchema.safeParse(await readJsonBody(request));
+
+    if (!parsed.success) {
+      throw new Error(parsed.error.issues[0]?.message ?? "Invalid approval request.");
+    }
+
+    if (!process.env.PI_API_KEY) {
+      return secureJson({
+        mode: "demo",
+        message:
+          "PI_API_KEY is not configured. Approval was simulated for local testnet UI.",
+        paymentId: parsed.data.paymentId,
+        tradeId: parsed.data.tradeId,
+      });
+    }
+
     const user = await requireAppUser(request);
     const trade = await getTradeForAction(parsed.data.tradeId);
     assertBuyer(trade, user);
@@ -72,7 +75,7 @@ export async function POST(request: Request) {
       throw new Error(error.message);
     }
 
-    return NextResponse.json({
+    return secureJson({
       mode: "platform",
       payment,
       tradeId: parsed.data.tradeId,

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { verifyPiAccessToken } from "@/lib/pi-platform";
 import { createServiceSupabaseClient } from "@/lib/supabase";
+import { secureJson } from "@/server/security";
 import type { PiUser } from "@/types/pi";
 
 export type AppUser = PiUser & {
@@ -71,9 +72,20 @@ export async function requireAppUser(request: Request): Promise<AppUser> {
 }
 
 export function jsonError(error: unknown, status = 400) {
-  return NextResponse.json(
+  if (error instanceof NextResponse) {
+    return error;
+  }
+
+  const message =
+    status >= 500
+      ? "PiScrow could not complete this request. Please try again."
+      : error instanceof Error
+        ? error.message
+        : "Unexpected PiScrow error.";
+
+  return secureJson(
     {
-      error: error instanceof Error ? error.message : "Unexpected PiScrow error.",
+      error: message,
     },
     { status },
   );

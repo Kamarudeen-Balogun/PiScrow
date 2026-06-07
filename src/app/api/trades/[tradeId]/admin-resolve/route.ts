@@ -1,8 +1,13 @@
-import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { jsonError, requireAppUser } from "@/server/auth";
 import { createNotification } from "@/server/notifications";
+import {
+  rateLimit,
+  rateLimitProfiles,
+  readJsonBody,
+  secureJson,
+} from "@/server/security";
 import {
   assertTradeStatus,
   getServiceClientOrThrow,
@@ -21,6 +26,7 @@ export async function POST(
   context: { params: Promise<{ tradeId: string }> },
 ) {
   try {
+    rateLimit(request, { key: "admin-resolve:post", ...rateLimitProfiles.admin });
     const user = await requireAppUser(request);
 
     if (!user.isAdmin) {
@@ -28,7 +34,7 @@ export async function POST(
     }
 
     const { tradeId } = await context.params;
-    const parsed = adminResolveSchema.safeParse(await request.json());
+    const parsed = adminResolveSchema.safeParse(await readJsonBody(request));
 
     if (!parsed.success) {
       throw new Error(parsed.error.issues[0]?.message ?? "Invalid admin action.");
@@ -99,7 +105,7 @@ export async function POST(
       }),
     ]);
 
-    return NextResponse.json(await listTradesForUser(user));
+    return secureJson(await listTradesForUser(user));
   } catch (error) {
     return jsonError(error);
   }

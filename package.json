@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "test:security": "python src/tests/piscrow_security.py",
     "test:smoke": "python src/tests/piscrow_smoke.py",
     "test:full": "python src/tests/piscrow_full_site.py",
     "supabase": "supabase",

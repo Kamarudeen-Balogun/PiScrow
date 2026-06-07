@@ -1,8 +1,12 @@
-import { NextResponse } from "next/server";
-
 import { disputeSchema } from "@/lib/validation";
 import { jsonError, normalizePiUsername, requireAppUser } from "@/server/auth";
 import { createNotification } from "@/server/notifications";
+import {
+  rateLimit,
+  rateLimitProfiles,
+  readJsonObject,
+  secureJson,
+} from "@/server/security";
 import {
   getServiceClientOrThrow,
   getTradeForAction,
@@ -15,9 +19,13 @@ export async function POST(
   context: { params: Promise<{ tradeId: string }> },
 ) {
   try {
+    rateLimit(request, { key: "dispute:post", ...rateLimitProfiles.write });
     const user = await requireAppUser(request);
     const { tradeId } = await context.params;
-    const parsed = disputeSchema.safeParse({ ...(await request.json()), tradeId });
+    const parsed = disputeSchema.safeParse({
+      ...(await readJsonObject(request)),
+      tradeId,
+    });
 
     if (!parsed.success) {
       throw new Error(parsed.error.issues[0]?.message ?? "Invalid dispute form.");
@@ -72,7 +80,7 @@ export async function POST(
       body: `@${user.username} opened a dispute on this trade.`,
     });
 
-    return NextResponse.json(await listTradesForUser(user));
+    return secureJson(await listTradesForUser(user));
   } catch (error) {
     return jsonError(error);
   }
