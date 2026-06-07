@@ -14,8 +14,10 @@ PiScrow is testnet-only. It does not custody Mainnet Pi and should not be descri
 
 - Pi Browser authentication with approved-admin username gating
 - Seller-first public and private offers
-- Buyer interest responses with seller selection
+- Buyer interest responses with one active seller-selected buyer
+- 20-minute selected-buyer funding window before seller reselection
 - Buyer funding amount validation with PiScrow fee calculation
+- Profile reputation scores, trade stats, and admin-approved verified badges
 - Supabase-backed users, trades, interests, payments, events, disputes, notifications, and proof storage
 - Private proof image uploads through Supabase Storage signed URLs
 - Public transparency ledger for listings, funding, delivery, disputes, admin follow-up, and outcomes
@@ -33,7 +35,7 @@ PiScrow is testnet-only. It does not custody Mainnet Pi and should not be descri
 - Supabase database, service client, and Storage
 - Pi Browser SDK and Pi Platform API boundaries
 - Zod validation and server-side input sanitization
-- In-memory API rate limiting for MVP/testnet use
+- Upstash Redis REST rate limiting with in-memory fallback
 
 ## Local Setup
 
@@ -64,6 +66,8 @@ SUPABASE_SERVICE_ROLE_KEY=your-server-only-service-role-key
 PI_API_KEY=your-server-only-pi-api-key
 PI_PLATFORM_API_BASE=https://api.minepi.com
 PISCROW_ADMIN_PI_USERNAMES=@villari002
+UPSTASH_REDIS_REST_URL=https://your-upstash-redis-rest-url
+UPSTASH_REDIS_REST_TOKEN=your-upstash-redis-rest-token
 ```
 
 Never expose `PI_API_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, or `PISCROW_ADMIN_PI_USERNAMES` with a `NEXT_PUBLIC_` prefix.
@@ -99,6 +103,10 @@ seller price + PiScrow transaction fee
 
 The default fee is 2%, controlled by `NEXT_PUBLIC_PISCROW_PLATFORM_FEE_BPS=200`.
 
+When a seller selects a buyer, PiScrow gives that buyer a 20-minute Test Pi
+funding window. Funding routes reject any non-selected buyer and reject expired
+selections. If no funding has started, the seller can choose another buyer.
+
 ## Demo Mode
 
 Use the demo URL to show the product without Pi Browser or Supabase writes:
@@ -108,6 +116,10 @@ https://pi-scrow.vercel.app/?demo=1
 ```
 
 Demo mode includes public offers, private requests, selected buyers, funded trades, proof states, disputes, admin follow-up, and local simulated actions. It does not affect real Testnet data.
+
+The demo workspace also includes profile trust scores and an admin verified
+badge approval queue, so reviewers can see reputation features without Pi
+Browser or Supabase writes.
 
 ## Validation
 
@@ -137,10 +149,14 @@ Screenshots are written to `test-artifacts/`, which is intentionally gitignored.
 - Admin routes require verified Pi usernames configured server-side.
 - Zod schemas sanitize trade, interest, proof, dispute, and admin inputs.
 - API routes include rate limits, body size checks, and secure response headers.
+- Rate limiting uses Upstash Redis when `UPSTASH_REDIS_REST_URL` and
+  `UPSTASH_REDIS_REST_TOKEN` are configured, then falls back to in-memory limits
+  if Upstash is unavailable.
 - Normal trade transitions are blocked while disputed.
 - Sellers cannot show interest in their own offers.
+- Only the currently selected buyer can fund a trade, and expired selections are rejected server-side.
+- Reputation scores are computed from trade history and admin verification state.
 - Public ledger hides private buyer targets and proof URLs.
-- The current rate limiter is process-local and suitable for MVP/testnet validation. For larger Vercel traffic, move rate limits to a shared store such as Upstash Redis.
 
 ## Dependency Notes
 

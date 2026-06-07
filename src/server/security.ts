@@ -18,6 +18,25 @@ type RateBucket = {
 
 const rateBuckets = new Map<string, RateBucket>();
 
+function memoryRateLimit(bucketKey: string, options: RateLimitOptions) {
+  const now = Date.now();
+  const bucket = rateBuckets.get(bucketKey);
+
+  if (!bucket || bucket.resetAt <= now) {
+    rateBuckets.set(bucketKey, {
+      count: 1,
+      resetAt: now + options.windowMs,
+    });
+    return;
+  }
+
+  if (bucket.count >= options.limit) {
+    throwRateLimitResponse(Math.max(1, Math.ceil((bucket.resetAt - now) / 1000)));
+  }
+
+  bucket.count += 1;
+}
+
 export function clientIp(request: Request) {
   const forwardedFor = request.headers.get("x-forwarded-for");
 
@@ -32,30 +51,81 @@ export function clientIp(request: Request) {
   );
 }
 
-export function rateLimit(request: Request, options: RateLimitOptions) {
-  const now = Date.now();
+export async function rateLimit(request: Request, options: RateLimitOptions) {
   const bucketKey = `${options.key}:${clientIp(request)}`;
-  const bucket = rateBuckets.get(bucketKey);
 
-  if (!bucket || bucket.resetAt <= now) {
-    rateBuckets.set(bucketKey, {
-      count: 1,
-      resetAt: now + options.windowMs,
-    });
+  if (await upstashRateLimit(bucketKey, options)) {
     return;
   }
 
-  if (bucket.count >= options.limit) {
-    const retryAfter = Math.max(1, Math.ceil((bucket.resetAt - now) / 1000));
-    const response = secureJson(
-      { error: "Too many requests. Please wait before trying again." },
-      { status: 429 },
-    );
-    response.headers.set("Retry-After", String(retryAfter));
-    throw response;
+  memoryRateLimit(bucketKey, options);
+}
+
+async function upstashRateLimit(
+  bucketKey: string,
+  options: RateLimitOptions,
+) {
+  const url = process.env.UPSTASH_REDIS_REST_URL?.replace(/\/$/, "");
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
+
+  if (!url || !token) {
+    return false;
   }
 
-  bucket.count += 1;
+  try {
+    const encodedKey = encodeURIComponent(bucketKey);
+    const increment = await fetch(`${url}/incr/${encodedKey}`, {
+      cache: "no-store",
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    if (!increment.ok) {
+      throw new Error(`Upstash increment failed with ${increment.status}.`);
+    }
+
+    const body = (await increment.json()) as { result?: number | string };
+    const count = Number(body.result ?? 0);
+
+    if (!Number.isFinite(count) || count < 1) {
+      throw new Error("Upstash returned an invalid counter.");
+    }
+
+    if (count === 1) {
+      await fetch(
+        `${url}/expire/${encodedKey}/${Math.max(1, Math.ceil(options.windowMs / 1000))}`,
+        {
+          cache: "no-store",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        },
+      );
+    }
+
+    if (count > options.limit) {
+      throwRateLimitResponse(Math.max(1, Math.ceil(options.windowMs / 1000)));
+    }
+
+    return true;
+  } catch (error) {
+    if (error instanceof NextResponse) {
+      throw error;
+    }
+
+    console.warn("PiScrow Upstash rate limit fallback:", error);
+    return false;
+  }
+}
+
+function throwRateLimitResponse(retryAfter: number): never {
+  const response = secureJson(
+    { error: "Too many requests. Please wait before trying again." },
+    { status: 429 },
+  );
+  response.headers.set("Retry-After", String(retryAfter));
+  throw response;
 }
 
 export function applySecurityHeaders(response: NextResponse) {

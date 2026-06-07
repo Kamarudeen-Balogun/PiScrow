@@ -101,6 +101,11 @@ def main() -> None:
             content_type="application/json",
             body='{"notifications":[]}',
         ))
+        auth_page.route("**/api/profile", lambda route: route.fulfill(
+            status=200,
+            content_type="application/json",
+            body='{"profile":{"userId":"mock-user-id","piUsername":"mock_friend","verifiedBadge":false,"successfulTrades":0,"disputedTrades":0,"cancelledTrades":0,"buyCount":0,"sellCount":0,"trustScore":80}}',
+        ))
         auth_page.goto(BASE_URL, wait_until="domcontentloaded")
         auth_page.wait_for_load_state("networkidle")
         auth_page.evaluate(
@@ -135,6 +140,7 @@ def main() -> None:
         expect(page.get_by_role("button", name=re.compile("^Buyer$"))).to_be_visible()
         expect(page.get_by_role("button", name=re.compile("^Seller$"))).to_be_visible()
         expect(page.get_by_role("button", name=re.compile("^Ledger$"))).to_be_visible()
+        expect(page.get_by_role("button", name=re.compile("^Profile$"))).to_be_visible()
         expect(page.get_by_role("button", name=re.compile("^Admin$"))).to_be_visible()
 
         own_offer_notice = page.get_by_text("This is your seller offer.")
@@ -208,7 +214,17 @@ def main() -> None:
         expect(page.get_by_text("Full QA private test").first).to_be_visible()
         page.screenshot(path=str(ARTIFACT_DIR / "full-ledger.png"), full_page=True)
 
+        page.get_by_role("button", name=re.compile("^Profile$")).click()
+        expect(page.get_by_text("Trust score", exact=True)).to_be_visible()
+        expect(page.get_by_text("Your Recent Trade History")).to_be_visible()
+        expect(page.get_by_role("button", name="Verified")).to_be_visible()
+        page.screenshot(path=str(ARTIFACT_DIR / "full-profile.png"), full_page=True)
+
         page.get_by_role("button", name=re.compile("^Admin$")).click()
+        expect(page.get_by_text("Verified Badge Requests")).to_be_visible()
+        expect(page.get_by_text("@market_runner")).to_be_visible()
+        page.get_by_role("button", name="Approve badge").click()
+        expect(page.get_by_text("Verified badge approved").first).to_be_visible()
         expect(page.get_by_text("Laptop repair deposit")).to_be_visible()
         expect(page.get_by_text("Seller package proof")).to_be_visible()
         expect(page.get_by_text("Seller proof image / link")).to_be_visible()

@@ -11,7 +11,7 @@ import {
   secureJson,
 } from "@/server/security";
 import {
-  assertBuyer,
+  assertSelectedBuyerCanFund,
   assertTradeStatus,
   getServiceClientOrThrow,
   getTradeForAction,
@@ -28,7 +28,7 @@ const completeSchema = z.object({
 
 export async function POST(request: Request) {
   try {
-    rateLimit(request, { key: "pi-complete:post", ...rateLimitProfiles.payment });
+    await rateLimit(request, { key: "pi-complete:post", ...rateLimitProfiles.payment });
     const parsed = completeSchema.safeParse(await readJsonBody(request));
 
     if (!parsed.success) {
@@ -50,8 +50,8 @@ export async function POST(request: Request) {
 
     const user = await requireAppUser(request);
     const trade = await getTradeForAction(parsed.data.tradeId);
-    assertBuyer(trade, user);
     assertTradeStatus(trade, ["PendingFunding"]);
+    assertSelectedBuyerCanFund(trade, user);
 
     const payment = await completePiPayment(
       parsed.data.paymentId,

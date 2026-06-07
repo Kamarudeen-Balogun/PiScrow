@@ -4,7 +4,7 @@ import { listPublicLedger } from "@/server/trades";
 
 export async function GET(request: Request) {
   try {
-    rateLimit(request, { key: "public-feed:get", ...rateLimitProfiles.read });
+    await rateLimit(request, { key: "public-feed:get", ...rateLimitProfiles.read });
     return secureJson(await listPublicLedger());
   } catch (error) {
     return jsonError(error, 500);

@@ -15,7 +15,7 @@ import {
 
 export async function GET(request: Request) {
   try {
-    rateLimit(request, { key: "trades:get", ...rateLimitProfiles.read });
+    await rateLimit(request, { key: "trades:get", ...rateLimitProfiles.read });
     const user = await requireAppUser(request);
     const payload = await listTradesForUser(user);
 
@@ -27,7 +27,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    rateLimit(request, { key: "trades:post", ...rateLimitProfiles.write });
+    await rateLimit(request, { key: "trades:post", ...rateLimitProfiles.write });
     const user = await requireAppUser(request);
     const parsed = createTradeSchema.safeParse(await readJsonBody(request));
 

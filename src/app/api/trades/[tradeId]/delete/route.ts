@@ -14,7 +14,7 @@ export async function POST(
   context: { params: Promise<{ tradeId: string }> },
 ) {
   try {
-    rateLimit(request, { key: "delete-offer:post", ...rateLimitProfiles.write });
+    await rateLimit(request, { key: "delete-offer:post", ...rateLimitProfiles.write });
     const user = await requireAppUser(request);
     const { tradeId } = await context.params;
     const trade = await getTradeForAction(tradeId);

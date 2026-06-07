@@ -33,7 +33,7 @@ export async function POST(
   context: { params: Promise<{ tradeId: string }> },
 ) {
   try {
-    rateLimit(request, { key: "admin-resolve:post", ...rateLimitProfiles.admin });
+    await rateLimit(request, { key: "admin-resolve:post", ...rateLimitProfiles.admin });
     const user = await requireAppUser(request);
 
     if (!user.isAdmin) {

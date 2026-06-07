@@ -3,7 +3,9 @@
 import {
   AlertTriangle,
   ArrowRight,
+  BadgeCheck,
   CirclePlay,
+  Clock,
   X,
   CheckCircle2,
   ChevronDown,
@@ -19,8 +21,10 @@ import {
   Send,
   ShieldCheck,
   LoaderCircle,
+  Star,
   Store,
   Trash2,
+  UserCircle,
   UserRoundCheck,
   Users,
   Wrench,
@@ -51,9 +55,10 @@ import {
   disputeSchema,
 } from "@/lib/validation";
 import type { PiAuthResult, PiBrowserSDK, PiUser } from "@/types/pi";
+import type { UserReputation } from "@/types/profile";
 import type { Trade, TradeEvent, TradeInterest, TradeStatus } from "@/types/trade";
 
-type ViewMode = "market" | "sell" | "ledger" | "admin";
+type ViewMode = "market" | "sell" | "ledger" | "profile" | "admin";
 type SessionUser = PiUser & {
   id?: string;
   isAdmin?: boolean;
@@ -63,6 +68,14 @@ type TradePayload = {
   trades: Trade[];
   interests: TradeInterest[];
   events: TradeEvent[];
+};
+
+type ProfilePayload = {
+  profile: UserReputation;
+};
+
+type VerificationQueuePayload = {
+  requests: UserReputation[];
 };
 
 type AppNotice = {
@@ -119,6 +132,11 @@ const viewMeta: Record<
     description: "Transparent trade activity across PiScrow testnet.",
     icon: History,
   },
+  profile: {
+    label: "Profile",
+    description: "Track your trust score, trade history, and badge status.",
+    icon: UserCircle,
+  },
   admin: {
     label: "Admin",
     description: "Resolve disputed trades from approved Pi usernames.",
@@ -148,6 +166,113 @@ function normalizeUsername(username: string) {
 
 function isTerminal(status: TradeStatus) {
   return status === "Completed" || status === "Cancelled";
+}
+
+function selectionExpired(trade: Trade) {
+  return Boolean(
+    trade.selectionExpiresAt &&
+      new Date(trade.selectionExpiresAt).getTime() <= Date.now(),
+  );
+}
+
+function fundingWindowLabel(trade: Trade) {
+  if (!trade.selectionExpiresAt) {
+    return "20-minute funding window pending";
+  }
+
+  const remainingMs = new Date(trade.selectionExpiresAt).getTime() - Date.now();
+
+  if (remainingMs <= 0) {
+    return "Selection expired";
+  }
+
+  const minutes = Math.max(1, Math.ceil(remainingMs / 60_000));
+  return `${minutes} min funding window`;
+}
+
+function trustScoreFromProfile(profile: Pick<
+  UserReputation,
+  | "successfulTrades"
+  | "disputedTrades"
+  | "cancelledTrades"
+  | "buyCount"
+  | "sellCount"
+  | "verifiedBadge"
+>) {
+  const completedBonus = Math.min(profile.successfulTrades * 4, 16);
+  const volumeBonus = Math.min((profile.buyCount + profile.sellCount) * 1.5, 9);
+  const disputePenalty = Math.min(profile.disputedTrades * 9, 27);
+  const cancelledPenalty = Math.min(profile.cancelledTrades * 4, 16);
+  const verifiedBonus = profile.verifiedBadge ? 5 : 0;
+
+  return Math.max(
+    40,
+    Math.min(
+      99,
+      Math.round(
+        80 + completedBonus + volumeBonus + verifiedBonus - disputePenalty - cancelledPenalty,
+      ),
+    ),
+  );
+}
+
+function buildDemoProfile(username: string, tradeRows: Trade[]): UserReputation {
+  const normalized = normalizeUsername(username);
+  const profile: UserReputation = {
+    userId: `demo-${normalized}`,
+    piUsername: normalized,
+    verifiedBadge: normalized === "lagos_phone_hub",
+    verificationRequestedAt:
+      normalized === "market_runner" ? "2026-06-06T19:30:00.000Z" : undefined,
+    successfulTrades: 0,
+    disputedTrades: 0,
+    cancelledTrades: 0,
+    buyCount: 0,
+    sellCount: 0,
+    trustScore: 80,
+  };
+
+  for (const trade of tradeRows) {
+    const isSeller = normalizeUsername(trade.sellerPiUsername) === normalized;
+    const isBuyer = normalizeUsername(trade.buyerPiUsername ?? "") === normalized;
+
+    if (!isSeller && !isBuyer) {
+      continue;
+    }
+
+    if (isSeller) {
+      profile.sellCount += 1;
+    }
+
+    if (isBuyer) {
+      profile.buyCount += 1;
+    }
+
+    if (trade.status === "Completed") {
+      profile.successfulTrades += 1;
+    }
+
+    if (trade.status === "Disputed") {
+      profile.disputedTrades += 1;
+    }
+
+    if (trade.status === "Cancelled") {
+      profile.cancelledTrades += 1;
+    }
+  }
+
+  profile.trustScore = trustScoreFromProfile(profile);
+  return profile;
+}
+
+function buildDemoVerificationRequests(tradeRows: Trade[]) {
+  return [
+    {
+      ...buildDemoProfile("market_runner", tradeRows),
+      verifiedBadge: false,
+      verificationRequestedAt: "2026-06-06T19:30:00.000Z",
+    },
+  ];
 }
 
 function dateLabel(value: string) {
@@ -198,6 +323,14 @@ export function PiScrowApp({
   const [notices, setNotices] = useState<AppNotice[]>([]);
   const [sellerFormResetKey, setSellerFormResetKey] = useState(0);
   const [connectingPi, setConnectingPi] = useState(false);
+  const [profile, setProfile] = useState<UserReputation | null>(
+    allowDemo ? buildDemoProfile(demoUser.username, demoTrades) : null,
+  );
+  const [verificationRequests, setVerificationRequests] = useState<UserReputation[]>(
+    allowDemo ? buildDemoVerificationRequests(demoTrades) : [],
+  );
+  const [profileLoading, setProfileLoading] = useState(false);
+  const [verificationLoading, setVerificationLoading] = useState(false);
   const [consentState, setConsentState] = useState<ConsentState>(
     allowDemo ? "accepted" : "checking",
   );
@@ -208,8 +341,8 @@ export function PiScrowApp({
   const maintenanceEnabled = forceMaintenance || nextPublicMaintenanceEnabled;
   const normalizedUsername = normalizeUsername(user?.username ?? "");
   const navItems: ViewMode[] = user?.isAdmin
-    ? ["market", "sell", "ledger", "admin"]
-    : ["market", "sell", "ledger"];
+    ? ["market", "sell", "ledger", "profile", "admin"]
+    : ["market", "sell", "ledger", "profile"];
   const activeMode: ViewMode = mode === "admin" && !user?.isAdmin ? "market" : mode;
 
   const selectedTrade =
@@ -256,6 +389,11 @@ export function PiScrowApp({
     .filter((trade) => !isTerminal(trade.status))
     .reduce((total, trade) => total + trade.amountTestPi, 0);
 
+  const profileStats = useMemo(
+    () => profile ?? (user ? buildDemoProfile(user.username, trades) : null),
+    [profile, trades, user],
+  );
+
   function changeMode(nextMode: ViewMode) {
     if (nextMode === "admin" && !user?.isAdmin) {
       setMode("market");
@@ -266,6 +404,14 @@ export function PiScrowApp({
 
     if (nextMode === "ledger") {
       void refreshPublicLedger();
+    }
+
+    if (nextMode === "profile") {
+      void refreshProfile();
+    }
+
+    if (nextMode === "admin") {
+      void refreshVerificationRequests();
     }
   }
 
@@ -374,6 +520,8 @@ export function PiScrowApp({
         setEvents([]);
         setLedgerTrades([]);
         setLedgerEvents([]);
+        setProfile(null);
+        setVerificationRequests([]);
         setSelectedTradeId("");
         setExpandedTradeId("");
         setPaymentState("No payment started.");
@@ -395,6 +543,8 @@ export function PiScrowApp({
       setEvents(demoEvents);
       setLedgerTrades(demoTrades);
       setLedgerEvents(demoEvents);
+      setProfile(buildDemoProfile(demoUser.username, demoTrades));
+      setVerificationRequests(buildDemoVerificationRequests(demoTrades));
       setSelectedTradeId(demoTrades[0]?.id ?? "");
       setExpandedTradeId(demoTrades[0]?.id ?? "");
       setPaymentState("Demo mode is active. Test Pi payments are simulated.");
@@ -692,6 +842,7 @@ export function PiScrowApp({
         notifications: SavedNotification[];
       }>("/api/notifications", accessToken);
       mergeSavedNotifications(notificationPayload.notifications);
+      void refreshProfile(accessToken);
       pushNotice("Pi account connected", "Your PiScrow workspace is ready.", "success");
     } catch (error) {
       setPiConnected(false);
@@ -730,6 +881,153 @@ export function PiScrowApp({
       setFormError(error instanceof Error ? error.message : "Could not load ledger.");
     } finally {
       setLedgerLoading(false);
+    }
+  }
+
+  async function refreshProfile(accessToken = piAccessToken) {
+    if (allowDemo) {
+      setProfile(buildDemoProfile(user?.username ?? demoUser.username, trades));
+      return;
+    }
+
+    if (!accessToken) {
+      return;
+    }
+
+    setProfileLoading(true);
+
+    try {
+      const payload = await apiRequest<ProfilePayload>("/api/profile", accessToken);
+      setProfile(payload.profile);
+    } catch (error) {
+      setFormError(error instanceof Error ? error.message : "Could not load profile.");
+    } finally {
+      setProfileLoading(false);
+    }
+  }
+
+  async function requestVerifiedBadge() {
+    setFormError("");
+
+    if (allowDemo) {
+      setProfile((current) => {
+        const next = current ?? buildDemoProfile(user?.username ?? demoUser.username, trades);
+        return {
+          ...next,
+          verifiedBadge: false,
+          verificationRequestedAt: new Date().toISOString(),
+        };
+      });
+      pushNotice(
+        "Verification requested",
+        "Demo admin can now approve the badge request.",
+        "success",
+      );
+      return;
+    }
+
+    if (!piAccessToken) {
+      setFormError("Connect your Pi account before requesting verification.");
+      return;
+    }
+
+    setProfileLoading(true);
+
+    try {
+      const payload = await apiRequest<ProfilePayload>(
+        "/api/profile/verification-request",
+        piAccessToken,
+        { method: "POST" },
+      );
+      setProfile(payload.profile);
+      pushNotice(
+        "Verification requested",
+        "Your profile is waiting for admin review.",
+        "success",
+      );
+    } catch (error) {
+      setFormError(
+        error instanceof Error ? error.message : "Could not request verification.",
+      );
+    } finally {
+      setProfileLoading(false);
+    }
+  }
+
+  async function refreshVerificationRequests(accessToken = piAccessToken) {
+    if (!user?.isAdmin) {
+      return;
+    }
+
+    if (allowDemo) {
+      setVerificationRequests(buildDemoVerificationRequests(trades));
+      return;
+    }
+
+    if (!accessToken) {
+      return;
+    }
+
+    setVerificationLoading(true);
+
+    try {
+      const payload = await apiRequest<VerificationQueuePayload>(
+        "/api/admin/verification-requests",
+        accessToken,
+      );
+      setVerificationRequests(payload.requests);
+    } catch (error) {
+      setFormError(
+        error instanceof Error ? error.message : "Could not load verification requests.",
+      );
+    } finally {
+      setVerificationLoading(false);
+    }
+  }
+
+  async function approveVerifiedBadge(request: UserReputation) {
+    setFormError("");
+
+    if (allowDemo) {
+      setVerificationRequests((current) =>
+        current.filter((item) => item.userId !== request.userId),
+      );
+      pushNotice(
+        "Verified badge approved",
+        `@${request.piUsername} is verified in the demo queue.`,
+        "success",
+      );
+      return;
+    }
+
+    if (!piAccessToken) {
+      setFormError("Connect your admin Pi account before approving badges.");
+      return;
+    }
+
+    setVerificationLoading(true);
+
+    try {
+      const payload = await apiRequest<VerificationQueuePayload>(
+        "/api/admin/verification-requests",
+        piAccessToken,
+        {
+          method: "POST",
+          body: JSON.stringify({ userId: request.userId }),
+        },
+      );
+      setVerificationRequests(payload.requests);
+      pushNotice(
+        "Verified badge approved",
+        `@${request.piUsername} received a verified badge.`,
+        "success",
+      );
+    } catch (error) {
+      setFormError(
+        error instanceof Error ? error.message : "Could not approve badge.",
+      );
+    } finally {
+      setVerificationLoading(false);
     }
   }
 
@@ -1002,10 +1300,16 @@ export function PiScrowApp({
       return;
     }
 
+    const selectedAt = new Date().toISOString();
+    const selectionExpiresAt = new Date(Date.now() + 20 * 60 * 1000).toISOString();
+
     updateTrade(trade.id, "PendingFunding", {
       buyerUserId: interest.buyerUserId,
       buyerPiUsername: interest.buyerPiUsername,
       selectedInterestId: interest.id,
+      selectedAt,
+      selectionExpiresAt,
+      buyerProfile: interest.buyerProfile,
     });
     setSelectedTradeId(trade.id);
     setExpandedTradeId(trade.id);
@@ -1641,10 +1945,25 @@ export function PiScrowApp({
               />
             )}
 
+            {activeMode === "profile" && (
+              <ProfileDesk
+                loading={profileLoading}
+                profile={profileStats}
+                trades={trades}
+                username={normalizedUsername}
+                onRefresh={() => void refreshProfile()}
+                onRequestVerifiedBadge={() => void requestVerifiedBadge()}
+              />
+            )}
+
             {activeMode === "admin" && user?.isAdmin && (
               <AdminDesk
                 trades={adminTrades}
                 events={events}
+                verificationLoading={verificationLoading}
+                verificationRequests={verificationRequests}
+                onApproveVerification={(request) => void approveVerifiedBadge(request)}
+                onRefreshVerifications={() => void refreshVerificationRequests()}
                 onRequestFollowUp={adminRequestFollowUp}
                 onResolve={adminResolve}
               />
@@ -1952,7 +2271,7 @@ function WorkspaceSwitcher({
       </div>
       <div
         aria-label="Switch workspace"
-        className="grid grid-cols-3 gap-1 border border-black/15 bg-zinc-50 p-1 sm:w-auto sm:grid-flow-col sm:auto-cols-fr sm:grid-cols-none"
+        className="grid grid-cols-2 gap-1 border border-black/15 bg-zinc-50 p-1 sm:w-auto sm:grid-flow-col sm:auto-cols-fr sm:grid-cols-none"
         role="group"
       >
         {navItems.map((item) => {
@@ -2313,14 +2632,27 @@ function OfferFeed({
                   </div>
                 )}
                 {selectedForUser && trade.status === "PendingFunding" && (
-                  <button
-                    className="inline-flex h-11 items-center justify-center gap-2 bg-emerald-700 px-4 text-sm font-black text-white"
-                    type="button"
-                    onClick={() => onFund(trade)}
-                  >
-                    <HandCoins className="h-4 w-4" />
-                    Fund {formatTestPi(calculateBuyerTotal(trade.amountTestPi))}
-                  </button>
+                  <div className="grid gap-2">
+                    <div
+                      className={`flex items-center gap-2 border p-3 text-sm font-bold ${
+                        selectionExpired(trade)
+                          ? "border-rose-200 bg-rose-50 text-rose-950"
+                          : "border-emerald-200 bg-emerald-50 text-emerald-950"
+                      }`}
+                    >
+                      <Clock className="h-4 w-4" />
+                      {fundingWindowLabel(trade)}
+                    </div>
+                    <button
+                      className="inline-flex h-11 items-center justify-center gap-2 bg-emerald-700 px-4 text-sm font-black text-white disabled:bg-zinc-400"
+                      disabled={selectionExpired(trade)}
+                      type="button"
+                      onClick={() => onFund(trade)}
+                    >
+                      <HandCoins className="h-4 w-4" />
+                      Fund {formatTestPi(calculateBuyerTotal(trade.amountTestPi))}
+                    </button>
+                  </div>
                 )}
                 {selectedForUser && trade.status === "DeliverySubmitted" && (
                   <form
@@ -2371,6 +2703,10 @@ function OfferSummary({ trade }: { trade: Trade }) {
         <StatusBadge status={trade.status} />
         <Chip>{tradeVisibilityLabels[trade.visibility]}</Chip>
         <Chip>{trade.interestCount ?? 0} interest</Chip>
+        {trade.status === "PendingFunding" && (
+          <Chip>{fundingWindowLabel(trade)}</Chip>
+        )}
+        {trade.sellerProfile && <TrustChip profile={trade.sellerProfile} />}
       </div>
       <div>
         <h3 className="text-lg font-black leading-snug text-zinc-950">
@@ -2392,6 +2728,19 @@ function OfferSummary({ trade }: { trade: Trade }) {
         Buyer funds {formatTestPi(calculateBuyerTotal(trade.amountTestPi))}
       </p>
     </div>
+  );
+}
+
+function TrustChip({ profile }: { profile: UserReputation }) {
+  return (
+    <span className="inline-flex h-7 items-center gap-1 border border-emerald-200 bg-emerald-50 px-2.5 text-xs font-black text-emerald-950">
+      {profile.verifiedBadge ? (
+        <BadgeCheck className="h-3.5 w-3.5" />
+      ) : (
+        <Star className="h-3.5 w-3.5" />
+      )}
+      {profile.trustScore}% trust
+    </span>
   );
 }
 
@@ -2473,6 +2822,141 @@ function LocationBlock({ trade }: { trade: Trade }) {
   );
 }
 
+function ProfileDesk({
+  loading,
+  profile,
+  trades,
+  username,
+  onRefresh,
+  onRequestVerifiedBadge,
+}: {
+  loading: boolean;
+  profile: UserReputation | null;
+  trades: Trade[];
+  username: string;
+  onRefresh: () => void;
+  onRequestVerifiedBadge: () => void;
+}) {
+  if (!profile) {
+    return <EmptyState label="Profile data is not ready yet." />;
+  }
+
+  const personalTrades = trades
+    .filter(
+      (trade) =>
+        normalizeUsername(trade.sellerPiUsername) === username ||
+        normalizeUsername(trade.buyerPiUsername ?? "") === username,
+    )
+    .slice(0, 8);
+  const hasRequested = Boolean(profile.verificationRequestedAt);
+
+  return (
+    <section className="grid gap-5 lg:grid-cols-[360px_minmax(0,1fr)]">
+      <aside className="grid content-start gap-4">
+        <section className="border border-black/10 bg-white p-5">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-xs font-bold uppercase text-zinc-500">Profile</p>
+              <h2 className="mt-2 text-2xl font-black text-zinc-950">
+                @{profile.piUsername}
+              </h2>
+            </div>
+            {profile.verifiedBadge ? (
+              <BadgeCheck className="h-8 w-8 text-emerald-700" />
+            ) : (
+              <UserCircle className="h-8 w-8 text-zinc-400" />
+            )}
+          </div>
+          <div className="mt-5 border border-emerald-200 bg-emerald-50 p-4 text-emerald-950">
+            <p className="text-sm font-bold uppercase">Trust score</p>
+            <p className="mt-2 text-4xl font-black">{profile.trustScore}%</p>
+            <p className="mt-2 text-sm leading-6">
+              Based on completed trades, dispute history, cancellation history,
+              marketplace volume, and admin verification.
+            </p>
+          </div>
+          <div className="mt-4 grid gap-2">
+            <button
+              className="inline-flex h-11 items-center justify-center gap-2 border border-zinc-950 bg-white px-4 text-sm font-black text-zinc-950 transition hover:bg-zinc-50"
+              type="button"
+              onClick={onRefresh}
+            >
+              <RefreshCcw className="h-4 w-4" />
+              {loading ? "Refreshing" : "Refresh profile"}
+            </button>
+            <button
+              className="inline-flex h-11 items-center justify-center gap-2 bg-zinc-950 px-4 text-sm font-black text-white transition hover:bg-emerald-700 disabled:bg-zinc-400"
+              disabled={loading || profile.verifiedBadge || hasRequested}
+              type="button"
+              onClick={onRequestVerifiedBadge}
+            >
+              <BadgeCheck className="h-4 w-4" />
+              {profile.verifiedBadge
+                ? "Verified"
+                : hasRequested
+                  ? "Request pending"
+                  : "Request verified badge"}
+            </button>
+          </div>
+        </section>
+      </aside>
+      <div className="grid gap-4">
+        <section className="grid gap-3 md:grid-cols-3">
+          <Metric
+            icon={<CheckCircle2 className="h-5 w-5" />}
+            label="Successful"
+            value={profile.successfulTrades}
+          />
+          <Metric
+            icon={<AlertTriangle className="h-5 w-5" />}
+            label="Disputed"
+            value={profile.disputedTrades}
+          />
+          <Metric
+            icon={<X className="h-5 w-5" />}
+            label="Cancelled"
+            value={profile.cancelledTrades}
+          />
+          <Metric
+            icon={<HandCoins className="h-5 w-5" />}
+            label="Buys"
+            value={profile.buyCount}
+          />
+          <Metric
+            icon={<Megaphone className="h-5 w-5" />}
+            label="Sells"
+            value={profile.sellCount}
+          />
+          <Metric
+            icon={<BadgeCheck className="h-5 w-5" />}
+            label="Badge"
+            value={profile.verifiedBadge ? "Verified" : hasRequested ? "Pending" : "Open"}
+          />
+        </section>
+        <section className="border border-black/10 bg-white p-4">
+          <div className="mb-4 flex items-center gap-2">
+            <History className="h-4 w-4 text-zinc-500" />
+            <h2 className="font-black text-zinc-950">Your Recent Trade History</h2>
+          </div>
+          {personalTrades.length === 0 ? (
+            <p className="text-sm font-semibold text-zinc-500">
+              No trades connected to this profile yet.
+            </p>
+          ) : (
+            <div className="grid gap-3">
+              {personalTrades.map((trade) => (
+                <article key={trade.id} className="border border-black/10 bg-zinc-50 p-3">
+                  <OfferSummary trade={trade} />
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
+      </div>
+    </section>
+  );
+}
+
 function SellerDesk({
   trades,
   interests,
@@ -2551,25 +3035,51 @@ function SellerDesk({
                       className="grid gap-3 border border-black/10 bg-zinc-50 p-3 md:grid-cols-[1fr_auto]"
                     >
                       <div>
-                        <p className="font-black text-zinc-950">
-                          @{interest.buyerPiUsername}
-                        </p>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="font-black text-zinc-950">
+                            @{interest.buyerPiUsername}
+                          </p>
+                          {interest.buyerProfile && (
+                            <TrustChip profile={interest.buyerProfile} />
+                          )}
+                        </div>
                         <p className="mt-1 text-sm leading-6 text-zinc-600">
                           {interest.responseNote}
                         </p>
                         <p className="mt-2 text-xs font-bold uppercase text-zinc-500">
                           {interest.status}
+                          {trade.selectedInterestId === interest.id
+                            ? ` / ${fundingWindowLabel(trade)}`
+                            : ""}
                         </p>
                       </div>
-                      {trade.status === "Draft" && interest.status === "Open" && (
+                      {((trade.status === "Draft" && interest.status === "Open") ||
+                        (trade.status === "PendingFunding" &&
+                          !selectionExpired(trade) &&
+                          interest.status !== "Withdrawn")) &&
+                        trade.selectedInterestId !== interest.id && (
                         <button
                           className="inline-flex h-10 items-center justify-center gap-2 bg-zinc-950 px-3 text-sm font-black text-white"
                           type="button"
                           onClick={() => onSelectInterest(trade, interest)}
                         >
-                          Select buyer
+                          {trade.status === "PendingFunding"
+                            ? "Change buyer"
+                            : "Select buyer"}
                         </button>
                       )}
+                      {trade.status === "PendingFunding" &&
+                        selectionExpired(trade) &&
+                        trade.selectedInterestId !== interest.id &&
+                        interest.status !== "Withdrawn" && (
+                          <button
+                            className="inline-flex h-10 items-center justify-center gap-2 bg-zinc-950 px-3 text-sm font-black text-white"
+                            type="button"
+                            onClick={() => onSelectInterest(trade, interest)}
+                          >
+                            Reselect buyer
+                          </button>
+                        )}
                     </div>
                   ))
                 )}
@@ -2796,11 +3306,19 @@ function PublicLedger({
 function AdminDesk({
   trades,
   events,
+  verificationLoading,
+  verificationRequests,
+  onApproveVerification,
+  onRefreshVerifications,
   onRequestFollowUp,
   onResolve,
 }: {
   trades: Trade[];
   events: TradeEvent[];
+  verificationLoading: boolean;
+  verificationRequests: UserReputation[];
+  onApproveVerification: (request: UserReputation) => void;
+  onRefreshVerifications: () => void;
   onRequestFollowUp: (
     trade: Trade,
     action: AdminFollowUpAction,
@@ -2808,82 +3326,158 @@ function AdminDesk({
   ) => void;
   onResolve: (trade: Trade, status: "Completed" | "Cancelled") => void;
 }) {
-  if (trades.length === 0) {
-    return <EmptyState label="No disputed trades waiting for admin review." />;
-  }
-
   return (
     <section className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_420px]">
       <div className="grid gap-3">
-        {trades.map((trade) => (
-          <article key={trade.id} className="border border-rose-200 bg-white p-4">
-            <OfferSummary trade={trade} />
-            <div className="mt-4">
-              <TradeEconomics trade={trade} />
-            </div>
-            <div className="mt-4 grid gap-3 border-t border-black/10 pt-3">
-              <LocationBlock trade={trade} />
-              {trade.buyerPiUsername && (
-                <TextBlock label="Buyer under review" value={`@${trade.buyerPiUsername}`} />
-              )}
-              {trade.deliveryProofNote && (
-                <TextBlock
-                  label="Seller package proof"
-                  value={trade.deliveryProofNote}
+        <VerificationQueue
+          loading={verificationLoading}
+          requests={verificationRequests}
+          onApprove={onApproveVerification}
+          onRefresh={onRefreshVerifications}
+        />
+        {trades.length === 0 ? (
+          <EmptyState label="No disputed trades waiting for admin review." />
+        ) : (
+          trades.map((trade) => (
+            <article key={trade.id} className="border border-rose-200 bg-white p-4">
+              <OfferSummary trade={trade} />
+              <div className="mt-4">
+                <TradeEconomics trade={trade} />
+              </div>
+              <div className="mt-4 grid gap-3 border-t border-black/10 pt-3">
+                <LocationBlock trade={trade} />
+                {trade.buyerPiUsername && (
+                  <TextBlock label="Buyer under review" value={`@${trade.buyerPiUsername}`} />
+                )}
+                {trade.deliveryProofNote && (
+                  <TextBlock
+                    label="Seller package proof"
+                    value={trade.deliveryProofNote}
+                  />
+                )}
+                {trade.deliveryProofUrl && (
+                  <ProofLink label="Seller proof image / link" url={trade.deliveryProofUrl} />
+                )}
+                {trade.buyerReceiptNote && (
+                  <TextBlock
+                    label="Buyer receipt proof"
+                    value={trade.buyerReceiptNote}
+                  />
+                )}
+                {trade.buyerReceiptProofUrl && (
+                  <ProofLink
+                    label="Buyer receipt image / link"
+                    url={trade.buyerReceiptProofUrl}
+                  />
+                )}
+              </div>
+              <div className="mt-4 grid gap-3 border-t border-black/10 pt-3 lg:grid-cols-2">
+                <AdminFollowUpForm
+                  action="request_buyer_followup"
+                  label="Request buyer update"
+                  placeholder="Ask the buyer what they received, what is missing, or what proof they can add."
+                  trade={trade}
+                  onSubmit={onRequestFollowUp}
                 />
-              )}
-              {trade.deliveryProofUrl && (
-                <ProofLink label="Seller proof image / link" url={trade.deliveryProofUrl} />
-              )}
-              {trade.buyerReceiptNote && (
-                <TextBlock
-                  label="Buyer receipt proof"
-                  value={trade.buyerReceiptNote}
+                <AdminFollowUpForm
+                  action="request_seller_followup"
+                  label="Request seller update"
+                  placeholder="Ask the seller for delivery proof, tracking details, or a response to the buyer claim."
+                  trade={trade}
+                  onSubmit={onRequestFollowUp}
                 />
-              )}
-              {trade.buyerReceiptProofUrl && (
-                <ProofLink
-                  label="Buyer receipt image / link"
-                  url={trade.buyerReceiptProofUrl}
-                />
-              )}
-            </div>
-            <div className="mt-4 grid gap-3 border-t border-black/10 pt-3 lg:grid-cols-2">
-              <AdminFollowUpForm
-                action="request_buyer_followup"
-                label="Request buyer update"
-                placeholder="Ask the buyer what they received, what is missing, or what proof they can add."
-                trade={trade}
-                onSubmit={onRequestFollowUp}
-              />
-              <AdminFollowUpForm
-                action="request_seller_followup"
-                label="Request seller update"
-                placeholder="Ask the seller for delivery proof, tracking details, or a response to the buyer claim."
-                trade={trade}
-                onSubmit={onRequestFollowUp}
-              />
-            </div>
-            <div className="mt-4 grid gap-3 border-t border-black/10 pt-3 sm:grid-cols-2">
-              <button
-                className="inline-flex min-h-11 items-center justify-center gap-2 bg-emerald-700 px-3 py-2 text-sm font-black text-white"
-                type="button"
-                onClick={() => onResolve(trade, "Completed")}
-              >
-                Approve seller release
-              </button>
-              <button
-                className="inline-flex min-h-11 items-center justify-center gap-2 bg-zinc-800 px-3 py-2 text-sm font-black text-white"
-                type="button"
-                onClick={() => onResolve(trade, "Cancelled")}
-              >
-                Approve buyer refund
-              </button>
-            </div>
-          </article>
-        ))}
+              </div>
+              <div className="mt-4 grid gap-3 border-t border-black/10 pt-3 sm:grid-cols-2">
+                <button
+                  className="inline-flex min-h-11 items-center justify-center gap-2 bg-emerald-700 px-3 py-2 text-sm font-black text-white"
+                  type="button"
+                  onClick={() => onResolve(trade, "Completed")}
+                >
+                  Approve seller release
+                </button>
+                <button
+                  className="inline-flex min-h-11 items-center justify-center gap-2 bg-zinc-800 px-3 py-2 text-sm font-black text-white"
+                  type="button"
+                  onClick={() => onResolve(trade, "Cancelled")}
+                >
+                  Approve buyer refund
+                </button>
+              </div>
+            </article>
+          ))
+        )}
       </div>
       <Timeline events={events.filter((event) => trades.some((trade) => trade.id === event.tradeId))} />
+    </section>
+  );
+}
+
+function VerificationQueue({
+  loading,
+  requests,
+  onApprove,
+  onRefresh,
+}: {
+  loading: boolean;
+  requests: UserReputation[];
+  onApprove: (request: UserReputation) => void;
+  onRefresh: () => void;
+}) {
+  return (
+    <section className="border border-emerald-200 bg-white p-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h2 className="font-black text-zinc-950">Verified Badge Requests</h2>
+          <p className="mt-1 text-sm leading-6 text-zinc-600">
+            Review profile history before granting public trust badges.
+          </p>
+        </div>
+        <button
+          className="inline-flex h-10 items-center justify-center gap-2 border border-zinc-950 px-3 text-sm font-black text-zinc-950"
+          type="button"
+          onClick={onRefresh}
+        >
+          <RefreshCcw className="h-4 w-4" />
+          {loading ? "Refreshing" : "Refresh"}
+        </button>
+      </div>
+      <div className="mt-4 grid gap-3">
+        {requests.length === 0 ? (
+          <p className="text-sm font-semibold text-zinc-500">
+            No badge requests waiting.
+          </p>
+        ) : (
+          requests.map((request) => (
+            <article
+              key={request.userId}
+              className="grid gap-3 border border-black/10 bg-zinc-50 p-3 md:grid-cols-[1fr_auto]"
+            >
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="font-black text-zinc-950">@{request.piUsername}</p>
+                  <TrustChip profile={request} />
+                </div>
+                <p className="mt-2 text-sm leading-6 text-zinc-600">
+                  {request.successfulTrades} successful / {request.disputedTrades} disputed / {request.cancelledTrades} cancelled
+                </p>
+                {request.verificationRequestedAt && (
+                  <p className="mt-1 text-xs font-bold uppercase text-zinc-400">
+                    Requested {dateLabel(request.verificationRequestedAt)}
+                  </p>
+                )}
+              </div>
+              <button
+                className="inline-flex h-10 items-center justify-center gap-2 bg-emerald-700 px-3 text-sm font-black text-white"
+                type="button"
+                onClick={() => onApprove(request)}
+              >
+                <BadgeCheck className="h-4 w-4" />
+                Approve badge
+              </button>
+            </article>
+          ))
+        )}
+      </div>
     </section>
   );
 }

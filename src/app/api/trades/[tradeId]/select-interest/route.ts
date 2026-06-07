@@ -8,7 +8,6 @@ import {
   secureJson,
 } from "@/server/security";
 import {
-  assertTradeIsOpenForInterest,
   assertTradeListingOwner,
   getServiceClientOrThrow,
   getTradeForAction,
@@ -23,7 +22,7 @@ export async function POST(
   context: { params: Promise<{ tradeId: string }> },
 ) {
   try {
-    rateLimit(request, { key: "select-interest:post", ...rateLimitProfiles.write });
+    await rateLimit(request, { key: "select-interest:post", ...rateLimitProfiles.write });
     const user = await requireAppUser(request);
     const { tradeId } = await context.params;
     const parsed = selectTradeInterestSchema.safeParse({
@@ -37,7 +36,6 @@ export async function POST(
 
     const trade = await getTradeForAction(tradeId);
     assertTradeListingOwner(trade, user);
-    assertTradeIsOpenForInterest(trade);
 
     const interest = await getTradeInterestForAction(parsed.data.interestId);
 
@@ -45,14 +43,56 @@ export async function POST(
       throw new Error("That interest does not belong to this listing.");
     }
 
+    if (interest.buyer_user_id === user.id) {
+      throw new Error("You cannot select yourself as buyer for your own listing.");
+    }
+
+    if (interest.status === "Withdrawn") {
+      throw new Error("This buyer response has been withdrawn.");
+    }
+
     const supabase = getServiceClientOrThrow();
     const now = new Date().toISOString();
+    const expiresAt = new Date(Date.now() + 20 * 60 * 1000).toISOString();
+
+    if (trade.status === "Funded" || trade.status === "DeliverySubmitted") {
+      throw new Error("This trade is already funded and cannot be reassigned.");
+    }
+
+    if (trade.status === "Completed" || trade.status === "Cancelled") {
+      throw new Error("This trade is already closed.");
+    }
+
+    if (trade.status === "Disputed") {
+      throw new Error("This trade is disputed and cannot be reassigned.");
+    }
+
+    if (trade.status === "PendingFunding") {
+      const { data: startedPayment, error: paymentError } = await supabase
+        .from("payments")
+        .select("id")
+        .eq("trade_id", tradeId)
+        .in("status", ["Approved", "Completed"])
+        .maybeSingle();
+
+      if (paymentError) {
+        throw new Error(paymentError.message);
+      }
+
+      if (startedPayment) {
+        throw new Error("Buyer funding has already started, so this trade cannot be reassigned.");
+      }
+    } else if (trade.status !== "Draft") {
+      throw new Error("This listing is not open for buyer selection.");
+    }
 
     const { error: tradeError } = await supabase
       .from("trades")
       .update({
         buyer_user_id: interest.buyer_user_id,
         selected_interest_id: interest.id,
+        selected_at: now,
+        selection_expires_at: expiresAt,
         status: "PendingFunding",
         updated_at: now,
       })
@@ -72,14 +112,14 @@ export async function POST(
       .update({ status: "Declined", updated_at: now })
       .eq("trade_id", tradeId)
       .neq("id", interest.id)
-      .eq("status", "Open");
+      .in("status", ["Open", "Selected"]);
 
     await insertTradeEvent(
       tradeId,
       user.id,
       "Buyer selected",
       sellerSelectedBuyerEvent(interest.buyer_pi_username),
-      { interestId: interest.id },
+      { interestId: interest.id, selectionExpiresAt: expiresAt },
     );
 
     await createNotification({
@@ -87,7 +127,7 @@ export async function POST(
       tradeId,
       type: "buyer_selected",
       title: "Seller selected you",
-      body: `@${user.username} selected your response. You can now fund the trade.`,
+      body: `@${user.username} selected your response. Start funding within 20 minutes to keep this offer.`,
     });
 
     return secureJson(await listTradesForUser(user));

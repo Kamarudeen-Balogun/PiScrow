@@ -9,10 +9,13 @@ import type {
   TradeInterest,
   TradeStatus,
 } from "@/types/trade";
+import type { UserReputation } from "@/types/profile";
 
 type UserRow = {
   id: string;
   pi_username: string;
+  verified_badge?: boolean;
+  verification_requested_at?: string | null;
 };
 
 type TradeRow = {
@@ -23,6 +26,8 @@ type TradeRow = {
   visibility: "public" | "private";
   target_buyer_pi_usernames: string[] | null;
   selected_interest_id: string | null;
+  selected_at: string | null;
+  selection_expires_at: string | null;
   title: string;
   description: string;
   amount_test_pi: number | string;
@@ -38,6 +43,12 @@ type TradeRow = {
   disputed_at: string | null;
   created_at: string;
   updated_at: string;
+};
+
+type ReputationTradeRow = {
+  seller_user_id: string | null;
+  buyer_user_id: string | null;
+  status: TradeStatus;
 };
 
 type TradeInterestRow = {
@@ -74,6 +85,7 @@ export function mapTrade(
   row: TradeRow,
   users: Map<string, string>,
   interestCount = 0,
+  reputations = new Map<string, UserReputation>(),
 ): Trade {
   return {
     id: row.id,
@@ -90,7 +102,15 @@ export function mapTrade(
     visibility: row.visibility,
     targetBuyerPiUsernames: row.target_buyer_pi_usernames ?? [],
     selectedInterestId: row.selected_interest_id ?? undefined,
+    selectedAt: row.selected_at ?? undefined,
+    selectionExpiresAt: row.selection_expires_at ?? undefined,
     interestCount,
+    sellerProfile: row.seller_user_id
+      ? reputations.get(row.seller_user_id)
+      : undefined,
+    buyerProfile: row.buyer_user_id
+      ? reputations.get(row.buyer_user_id)
+      : undefined,
     locationLabel: row.location_label ?? undefined,
     locationArea: row.location_area ?? undefined,
     deliveryTerms: row.delivery_terms,
@@ -108,8 +128,9 @@ export async function mapTradeWithSignedProofs(
   users: Map<string, string>,
   interestCount = 0,
   canViewProofs = false,
+  reputations = new Map<string, UserReputation>(),
 ) {
-  const trade = mapTrade(row, users, interestCount);
+  const trade = mapTrade(row, users, interestCount, reputations);
 
   if (!canViewProofs) {
     return {
@@ -126,12 +147,16 @@ export async function mapTradeWithSignedProofs(
   };
 }
 
-export function mapInterest(row: TradeInterestRow): TradeInterest {
+export function mapInterest(
+  row: TradeInterestRow,
+  reputations = new Map<string, UserReputation>(),
+): TradeInterest {
   return {
     id: row.id,
     tradeId: row.trade_id,
     buyerUserId: row.buyer_user_id,
     buyerPiUsername: row.buyer_pi_username,
+    buyerProfile: reputations.get(row.buyer_user_id),
     responseNote: row.response_note,
     status: row.status,
     createdAt: row.created_at,
@@ -171,6 +196,127 @@ export async function getUserMap(userIds: string[]) {
 
   return new Map(
     ((data ?? []) as UserRow[]).map((user) => [user.id, user.pi_username]),
+  );
+}
+
+export async function getUserReputations(userIds: string[]) {
+  const supabase = getServiceClientOrThrow();
+  const uniqueIds = [...new Set(userIds.filter(Boolean))];
+
+  if (uniqueIds.length === 0) {
+    return new Map<string, UserReputation>();
+  }
+
+  const { data: userData, error: userError } = await supabase
+    .from("users")
+    .select("id, pi_username, verified_badge, verification_requested_at")
+    .in("id", uniqueIds);
+
+  if (userError) {
+    throw new Error(userError.message);
+  }
+
+  const { data: tradeData, error: tradeError } = await supabase
+    .from("trades")
+    .select("seller_user_id, buyer_user_id, status")
+    .or(
+      `seller_user_id.in.(${uniqueIds.join(",")}),buyer_user_id.in.(${uniqueIds.join(",")})`,
+    );
+
+  if (tradeError) {
+    throw new Error(tradeError.message);
+  }
+
+  const profiles = new Map<string, UserReputation>(
+    ((userData ?? []) as UserRow[]).map((user) => [
+      user.id,
+      {
+        userId: user.id,
+        piUsername: user.pi_username,
+        verifiedBadge: Boolean(user.verified_badge),
+        verificationRequestedAt: user.verification_requested_at ?? undefined,
+        successfulTrades: 0,
+        disputedTrades: 0,
+        cancelledTrades: 0,
+        buyCount: 0,
+        sellCount: 0,
+        trustScore: 80,
+      },
+    ]),
+  );
+
+  for (const trade of (tradeData ?? []) as ReputationTradeRow[]) {
+    const seller = trade.seller_user_id
+      ? profiles.get(trade.seller_user_id)
+      : undefined;
+    const buyer = trade.buyer_user_id
+      ? profiles.get(trade.buyer_user_id)
+      : undefined;
+
+    if (seller) {
+      seller.sellCount += 1;
+    }
+
+    if (buyer) {
+      buyer.buyCount += 1;
+    }
+
+    if (trade.status === "Completed") {
+      if (seller) {
+        seller.successfulTrades += 1;
+      }
+      if (buyer) {
+        buyer.successfulTrades += 1;
+      }
+    }
+
+    if (trade.status === "Disputed") {
+      if (seller) {
+        seller.disputedTrades += 1;
+      }
+      if (buyer) {
+        buyer.disputedTrades += 1;
+      }
+    }
+
+    if (trade.status === "Cancelled") {
+      if (seller) {
+        seller.cancelledTrades += 1;
+      }
+      if (buyer) {
+        buyer.cancelledTrades += 1;
+      }
+    }
+  }
+
+  for (const profile of profiles.values()) {
+    profile.trustScore = calculateTrustScore(profile);
+  }
+
+  return profiles;
+}
+
+export function calculateTrustScore(profile: Pick<
+  UserReputation,
+  | "successfulTrades"
+  | "disputedTrades"
+  | "cancelledTrades"
+  | "buyCount"
+  | "sellCount"
+  | "verifiedBadge"
+>) {
+  const completedBonus = Math.min(profile.successfulTrades * 4, 16);
+  const volumeBonus = Math.min((profile.buyCount + profile.sellCount) * 1.5, 9);
+  const disputePenalty = Math.min(profile.disputedTrades * 9, 27);
+  const cancelledPenalty = Math.min(profile.cancelledTrades * 4, 16);
+  const verifiedBonus = profile.verifiedBadge ? 5 : 0;
+
+  return Math.max(
+    40,
+    Math.min(
+      99,
+      Math.round(80 + completedBonus + volumeBonus + verifiedBonus - disputePenalty - cancelledPenalty),
+    ),
   );
 }
 
@@ -234,6 +380,7 @@ export async function listTradesForUser(user: AppUser) {
     ...actorIds,
   ].filter((userId): userId is string => Boolean(userId));
   const users = await getUserMap(userIds);
+  const reputations = await getUserReputations(userIds);
   const interests = allInterestRows.filter((interest) => {
     const trade = visibleRows.find((item) => item.id === interest.trade_id);
 
@@ -269,10 +416,11 @@ export async function listTradesForUser(user: AppUser) {
           users,
           interestCounts.get(trade.id) ?? 0,
           canViewProofs,
+          reputations,
         );
       }),
     ),
-    interests: interests.map((interest) => mapInterest(interest)),
+    interests: interests.map((interest) => mapInterest(interest, reputations)),
     events: ((eventRows ?? []) as TradeEventRow[]).map((event) =>
       mapEvent(event, users),
     ),
@@ -326,10 +474,11 @@ export async function listPublicLedger() {
       .filter((actorId): actorId is string => Boolean(actorId)),
   ].filter((userId): userId is string => Boolean(userId));
   const users = await getUserMap(userIds);
+  const reputations = await getUserReputations(userIds);
 
   return {
     trades: rows.map((trade) => ({
-      ...mapTrade(trade, users, interestCounts.get(trade.id) ?? 0),
+      ...mapTrade(trade, users, interestCounts.get(trade.id) ?? 0, reputations),
       targetBuyerPiUsernames: [],
       deliveryProofUrl: undefined,
       buyerReceiptProofUrl: undefined,
@@ -421,6 +570,29 @@ export function assertTradeHasSelectedBuyer(trade: TradeRow) {
   }
 }
 
+export function assertSelectedBuyerCanFund(trade: TradeRow, user: AppUser) {
+  assertBuyer(trade, user);
+
+  if (!trade.selected_interest_id) {
+    throw new Error("The seller must select your buyer response before funding.");
+  }
+
+  if (!trade.selection_expires_at) {
+    throw new Error("The selected-buyer funding window is missing. Ask the seller to select you again.");
+  }
+
+  if (new Date(trade.selection_expires_at).getTime() <= Date.now()) {
+    throw new Error("Your 20-minute funding window expired. Ask the seller to select you again.");
+  }
+}
+
+export function selectionWindowExpired(trade: TradeRow) {
+  return Boolean(
+    trade.selection_expires_at &&
+      new Date(trade.selection_expires_at).getTime() <= Date.now(),
+  );
+}
+
 export async function getTradeInterestForAction(interestId: string) {
   const supabase = getServiceClientOrThrow();
   const { data, error } = await supabase
@@ -441,7 +613,7 @@ export function interestSubmittedEvent(username: string) {
 }
 
 export function sellerSelectedBuyerEvent(username: string) {
-  return `Seller selected @${username} and moved the trade to funding.`;
+  return `Seller selected @${username}. The buyer has 20 minutes to start funding.`;
 }
 
 export function assertTradeStatus(trade: TradeRow, allowed: TradeStatus[]) {

@@ -3,7 +3,7 @@ import { rateLimit, rateLimitProfiles, secureJson } from "@/server/security";
 
 export async function POST(request: Request) {
   try {
-    rateLimit(request, { key: "auth:pi", ...rateLimitProfiles.auth });
+    await rateLimit(request, { key: "auth:pi", ...rateLimitProfiles.auth });
     const user = await requireAppUser(request);
 
     return secureJson({ user });

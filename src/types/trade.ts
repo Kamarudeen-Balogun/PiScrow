@@ -1,3 +1,5 @@
+import type { UserReputation } from "@/types/profile";
+
 export const tradeStatuses = [
   "Draft",
   "PendingFunding",
@@ -36,7 +38,11 @@ export type Trade = {
   visibility: TradeVisibility;
   targetBuyerPiUsernames: string[];
   selectedInterestId?: string;
+  selectedAt?: string;
+  selectionExpiresAt?: string;
   interestCount?: number;
+  sellerProfile?: UserReputation;
+  buyerProfile?: UserReputation;
   locationLabel?: string;
   locationArea?: string;
   deliveryTerms: string;
@@ -53,6 +59,7 @@ export type TradeInterest = {
   tradeId: string;
   buyerUserId: string;
   buyerPiUsername: string;
+  buyerProfile?: UserReputation;
   responseNote: string;
   status: TradeInterestStatus;
   createdAt: string;

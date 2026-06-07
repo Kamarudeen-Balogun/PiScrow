@@ -54,6 +54,7 @@ def main() -> None:
 
         expect(desktop.get_by_label("Switch workspace")).to_be_visible()
         expect(desktop.get_by_text("Buyer").first).to_be_visible()
+        expect(desktop.get_by_text("Profile").first).to_be_visible()
         expect(desktop.get_by_text("Private spare parts offer").first).to_be_visible()
         desktop.get_by_text("Private spare parts offer").first.click()
         desktop.get_by_role("button", name="Show interest").click()
@@ -99,7 +100,18 @@ def main() -> None:
             full_page=True,
         )
 
+        desktop.get_by_role("button", name=re.compile("^Profile$")).click()
+        expect(desktop.get_by_text("Trust score", exact=True)).to_be_visible()
+        expect(desktop.get_by_text("Your Recent Trade History")).to_be_visible()
+        expect(desktop.get_by_role("button", name="Verified")).to_be_visible()
+        desktop.screenshot(
+            path=str(ARTIFACT_DIR / "piscrow-profile.png"),
+            full_page=True,
+        )
+
         desktop.get_by_role("button", name=re.compile("^Admin$")).click()
+        expect(desktop.get_by_text("Verified Badge Requests")).to_be_visible()
+        expect(desktop.get_by_role("button", name="Approve badge")).to_be_visible()
         expect(desktop.get_by_text("Laptop repair deposit")).to_be_visible()
         expect(desktop.get_by_role("button", name="Approve seller release")).to_be_visible()
         expect(desktop.get_by_role("button", name="Approve buyer refund")).to_be_visible()

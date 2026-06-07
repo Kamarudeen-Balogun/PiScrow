@@ -24,7 +24,7 @@ export async function POST(
   context: { params: Promise<{ tradeId: string }> },
 ) {
   try {
-    rateLimit(request, { key: "delivery:post", ...rateLimitProfiles.upload });
+    await rateLimit(request, { key: "delivery:post", ...rateLimitProfiles.upload });
     const user = await requireAppUser(request);
     const { tradeId } = await context.params;
     const contentType = request.headers.get("content-type") ?? "";

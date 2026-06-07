@@ -22,7 +22,7 @@ export async function POST(
   context: { params: Promise<{ tradeId: string }> },
 ) {
   try {
-    rateLimit(request, { key: "trade-interest:post", ...rateLimitProfiles.write });
+    await rateLimit(request, { key: "trade-interest:post", ...rateLimitProfiles.write });
     const user = await requireAppUser(request);
     const { tradeId } = await context.params;
     const parsed = createTradeInterestSchema.safeParse({
