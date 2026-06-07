@@ -3,6 +3,7 @@
 import {
   AlertTriangle,
   ArrowRight,
+  X,
   CheckCircle2,
   ChevronDown,
   ClipboardCheck,
@@ -22,7 +23,7 @@ import {
   UserRoundCheck,
   Users,
 } from "lucide-react";
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 
 import { StatusBadge } from "@/components/status-badge";
 import {
@@ -269,6 +270,28 @@ export function PiScrowApp({ allowDemo = false }: { allowDemo?: boolean }) {
       ...current,
     ].slice(0, 6));
   }
+
+  function dismissNotice(id: string) {
+    setNotices((current) => current.filter((notice) => notice.id !== id));
+  }
+
+  useEffect(() => {
+    if (notices.length === 0) {
+      return;
+    }
+
+    const timers = notices.map((notice) =>
+      window.setTimeout(() => {
+        setNotices((current) =>
+          current.filter((item) => item.id !== notice.id),
+        );
+      }, 6500),
+    );
+
+    return () => {
+      timers.forEach(window.clearTimeout);
+    };
+  }, [notices]);
 
   function friendlyPiError(error: unknown) {
     const message =
@@ -1090,7 +1113,9 @@ export function PiScrowApp({ allowDemo = false }: { allowDemo?: boolean }) {
               connecting={connectingPi}
               onConnect={connectPi}
             />
-            {activeMode !== "ledger" && <NotificationStack notices={notices} />}
+            {activeMode !== "ledger" && (
+              <NotificationStack notices={notices} onDismiss={dismissNotice} />
+            )}
             <PublicLedger
               trades={ledgerTrades}
               events={ledgerEvents}
@@ -1128,7 +1153,9 @@ export function PiScrowApp({ allowDemo = false }: { allowDemo?: boolean }) {
               </section>
             )}
 
-            {activeMode !== "ledger" && <NotificationStack notices={notices} />}
+            {activeMode !== "ledger" && (
+              <NotificationStack notices={notices} onDismiss={dismissNotice} />
+            )}
 
             {formError && (
               <div className="border border-rose-300 bg-rose-50 p-4 text-sm font-semibold text-rose-950">
@@ -1394,7 +1421,13 @@ function Metric({
   );
 }
 
-function NotificationStack({ notices }: { notices: AppNotice[] }) {
+function NotificationStack({
+  notices,
+  onDismiss,
+}: {
+  notices: AppNotice[];
+  onDismiss: (id: string) => void;
+}) {
   if (notices.length === 0) {
     return null;
   }
@@ -1408,13 +1441,21 @@ function NotificationStack({ notices }: { notices: AppNotice[] }) {
   return (
     <section
       aria-label="PiScrow notifications"
-      className="grid gap-2 md:grid-cols-2 xl:grid-cols-3"
+      className="fixed right-4 top-4 z-50 grid w-[calc(100vw-2rem)] max-w-sm gap-2 sm:right-6 sm:top-6"
     >
       {notices.map((notice) => (
         <article
           key={notice.id}
-          className={`border p-3 text-sm leading-6 ${tones[notice.tone]}`}
+          className={`relative border p-3 pr-10 text-sm leading-6 shadow-[6px_6px_0_#111827] ${tones[notice.tone]}`}
         >
+          <button
+            aria-label={`Dismiss ${notice.title}`}
+            className="absolute right-3 top-3 inline-flex h-7 w-7 items-center justify-center border border-black/10 bg-white/75 text-zinc-700 transition hover:bg-white hover:text-zinc-950"
+            type="button"
+            onClick={() => onDismiss(notice.id)}
+          >
+            <X className="h-4 w-4" />
+          </button>
           <p className="font-black">{notice.title}</p>
           <p>{notice.body}</p>
         </article>
