@@ -3,11 +3,15 @@ import type { PiPaymentDTO, PiUser } from "@/types/pi";
 const piApiBase =
   process.env.PI_PLATFORM_API_BASE?.replace(/\/$/, "") ?? "https://api.minepi.com";
 
+export function hasPiNetworkApiKey() {
+  return Boolean(process.env.PI_NETWORK_API_KEY);
+}
+
 function getPiApiKey() {
-  const apiKey = process.env.PI_API_KEY;
+  const apiKey = process.env.PI_NETWORK_API_KEY;
 
   if (!apiKey) {
-    throw new Error("PI_API_KEY is not configured.");
+    throw new Error("PI_NETWORK_API_KEY is not configured.");
   }
 
   return apiKey;
@@ -37,6 +41,12 @@ async function piPlatformRequest<T>(
 export async function approvePiPayment(paymentId: string) {
   return piPlatformRequest<PiPaymentDTO>(`/v2/payments/${paymentId}/approve`, {
     method: "POST",
+  });
+}
+
+export async function getPiPayment(paymentId: string) {
+  return piPlatformRequest<PiPaymentDTO>(`/v2/payments/${paymentId}`, {
+    method: "GET",
   });
 }
 

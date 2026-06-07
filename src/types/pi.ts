@@ -44,7 +44,7 @@ type PiPaymentCallbacks = {
 };
 
 export type PiBrowserSDK = {
-  init: (config: { version: "2.0"; sandbox?: boolean }) => void;
+  init: (config: { version: "2.0"; sandbox?: boolean }) => void | Promise<void>;
   authenticate: (
     scopes: string[],
     onIncompletePaymentFound: PiAuthenticateCallbacks["onIncompletePaymentFound"],

@@ -134,7 +134,7 @@ export function applySecurityHeaders(response: NextResponse) {
   response.headers.set("X-Frame-Options", "DENY");
   response.headers.set(
     "Permissions-Policy",
-    "camera=(), microphone=(), geolocation=(), payment=()",
+    "camera=(), microphone=(), geolocation=()",
   );
   response.headers.set("X-Permitted-Cross-Domain-Policies", "none");
 

@@ -18,6 +18,8 @@ def assert_security_headers(response) -> None:
 def assert_source_guardrails() -> None:
     approve_route = PROJECT_ROOT / "src" / "app" / "api" / "pi" / "approve" / "route.ts"
     complete_route = PROJECT_ROOT / "src" / "app" / "api" / "pi" / "complete" / "route.ts"
+    incomplete_route = PROJECT_ROOT / "src" / "app" / "api" / "pi" / "incomplete" / "route.ts"
+    payment_guard = PROJECT_ROOT / "src" / "server" / "pi-payments.ts"
     migration = (
         PROJECT_ROOT
         / "supabase"
@@ -27,10 +29,18 @@ def assert_source_guardrails() -> None:
 
     approve_source = approve_route.read_text(encoding="utf-8")
     complete_source = complete_route.read_text(encoding="utf-8")
+    incomplete_source = incomplete_route.read_text(encoding="utf-8")
+    payment_guard_source = payment_guard.read_text(encoding="utf-8")
     migration_source = migration.read_text(encoding="utf-8")
 
-    assert "This trade already has a completed payment." in approve_source
+    assert "assertNoCompletedPayment" in approve_source
     assert "This trade already has a completed payment." in complete_source
+    assert "This trade already has a completed payment." in payment_guard_source
+    assert "getPiPayment" in incomplete_source
+    assert "completePiPayment" in incomplete_source
+    assert "PiScrow escrow funding" in payment_guard_source
+    assert "payment.user_uid" in payment_guard_source
+    assert "metadataString(metadata, \"tradeId\")" in payment_guard_source
     assert "prevent_funded_trade_identity_changes" in migration_source
     assert "payments_one_completed_per_trade_idx" in migration_source
 
@@ -70,7 +80,7 @@ def main() -> None:
 
     client_bundle_dir = PROJECT_ROOT / ".next" / "static"
     forbidden_values = [
-        os.environ.get("PI_API_KEY", ""),
+        os.environ.get("PI_NETWORK_API_KEY", ""),
         os.environ.get("SUPABASE_SERVICE_ROLE_KEY", ""),
         os.environ.get("UPSTASH_REDIS_REST_TOKEN", ""),
     ]
