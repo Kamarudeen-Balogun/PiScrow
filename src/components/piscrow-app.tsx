@@ -23,6 +23,7 @@ import {
   UserRoundCheck,
   Users,
 } from "lucide-react";
+import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 
 import { StatusBadge } from "@/components/status-badge";
@@ -68,6 +69,8 @@ type AppNotice = {
   tone: "info" | "success" | "warning";
 };
 
+type ConsentState = "checking" | "pending" | "accepted" | "rejected";
+
 type SavedNotification = {
   id: string;
   type: string;
@@ -81,6 +84,9 @@ const nextPublicSandbox =
   process.env.NEXT_PUBLIC_PI_SANDBOX === undefined
     ? true
     : process.env.NEXT_PUBLIC_PI_SANDBOX === "true";
+
+const consentStorageKey = "piscrow-consent-v1";
+const consentVersion = "2026-06-07";
 
 const viewMeta: Record<
   ViewMode,
@@ -174,8 +180,12 @@ export function PiScrowApp({ allowDemo = false }: { allowDemo?: boolean }) {
   const [notices, setNotices] = useState<AppNotice[]>([]);
   const [sellerFormResetKey, setSellerFormResetKey] = useState(0);
   const [connectingPi, setConnectingPi] = useState(false);
+  const [consentState, setConsentState] = useState<ConsentState>(
+    allowDemo ? "accepted" : "checking",
+  );
 
   const signedIn = Boolean(user);
+  const canConnectPi = consentState === "accepted";
   const normalizedUsername = normalizeUsername(user?.username ?? "");
   const navItems: ViewMode[] = user?.isAdmin
     ? ["market", "sell", "ledger", "admin"]
@@ -271,9 +281,94 @@ export function PiScrowApp({ allowDemo = false }: { allowDemo?: boolean }) {
     ].slice(0, 6));
   }
 
+  function acceptConsent() {
+    setConsentState("accepted");
+    setAuthState("Consent accepted. Connect with Pi Browser to continue.");
+
+    try {
+      window.localStorage.setItem(
+        consentStorageKey,
+        JSON.stringify({
+          status: "accepted",
+          version: consentVersion,
+          acceptedAt: new Date().toISOString(),
+        }),
+      );
+    } catch {
+      // Local storage can fail in strict privacy modes. Keep the in-session gate open.
+    }
+
+    pushNotice(
+      "Consent accepted",
+      "PiScrow login is now enabled for this browser.",
+      "success",
+    );
+  }
+
+  function rejectConsent() {
+    setConsentState("rejected");
+    setUser(null);
+    setPiConnected(false);
+    setPiAccessToken("");
+    setAuthState("Consent rejected. Pi login is disabled until you agree.");
+
+    try {
+      window.localStorage.setItem(
+        consentStorageKey,
+        JSON.stringify({
+          status: "rejected",
+          version: consentVersion,
+          rejectedAt: new Date().toISOString(),
+        }),
+      );
+    } catch {
+      // The visible rejected state is enough to block this session.
+    }
+
+    pushNotice(
+      "Login blocked",
+      "You need to accept PiScrow rules and privacy consent before connecting a Pi account.",
+      "warning",
+    );
+  }
+
   function dismissNotice(id: string) {
     setNotices((current) => current.filter((notice) => notice.id !== id));
   }
+
+  useEffect(() => {
+    if (allowDemo) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      try {
+        const stored = window.localStorage.getItem(consentStorageKey);
+        const parsed = stored
+          ? (JSON.parse(stored) as { status?: ConsentState; version?: string })
+          : null;
+        const savedState =
+          parsed?.version === consentVersion ? parsed.status : undefined;
+
+        if (savedState === "accepted") {
+          setConsentState("accepted");
+          return;
+        }
+
+        if (savedState === "rejected") {
+          setConsentState("rejected");
+          setAuthState("Consent rejected. Pi login is disabled until you agree.");
+          return;
+        }
+
+        setConsentState("pending");
+      } catch {
+        setConsentState("pending");
+      }
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, [allowDemo]);
 
   useEffect(() => {
     if (notices.length === 0) {
@@ -371,6 +466,17 @@ export function PiScrowApp({ allowDemo = false }: { allowDemo?: boolean }) {
 
   async function connectPi() {
     setFormError("");
+
+    if (consentState !== "accepted") {
+      const message =
+        consentState === "checking"
+          ? "PiScrow is still checking your consent status."
+          : "Accept PiScrow rules and privacy consent before connecting a Pi account.";
+      setAuthState(message);
+      pushNotice("Consent required", message, "warning");
+      return;
+    }
+
     setConnectingPi(true);
     setAuthState("Connecting to Pi Browser...");
 
@@ -1100,6 +1206,7 @@ export function PiScrowApp({ allowDemo = false }: { allowDemo?: boolean }) {
 
           <SessionCard
             authState={authState}
+            canConnect={canConnectPi}
             connecting={connectingPi}
             user={user}
             onConnect={connectPi}
@@ -1108,11 +1215,20 @@ export function PiScrowApp({ allowDemo = false }: { allowDemo?: boolean }) {
 
         {!signedIn && (
           <>
-            <SignInPanel
-              authState={authState}
-              connecting={connectingPi}
-              onConnect={connectPi}
-            />
+            {consentState !== "accepted" ? (
+              <ConsentGate
+                consentState={consentState}
+                onAccept={acceptConsent}
+                onReject={rejectConsent}
+              />
+            ) : (
+              <SignInPanel
+                authState={authState}
+                canConnect={canConnectPi}
+                connecting={connectingPi}
+                onConnect={connectPi}
+              />
+            )}
             {activeMode !== "ledger" && (
               <NotificationStack notices={notices} onDismiss={dismissNotice} />
             )}
@@ -1228,6 +1344,15 @@ export function PiScrowApp({ allowDemo = false }: { allowDemo?: boolean }) {
             )}
           </>
         )}
+        <footer className="flex flex-col gap-2 border-t border-black/10 py-5 text-xs font-semibold text-zinc-500 sm:flex-row sm:items-center sm:justify-between">
+          <p>PiScrow is a Pi Testnet/Sandbox app and does not custody Mainnet Pi.</p>
+          <Link
+            className="w-fit underline underline-offset-4 hover:text-zinc-950"
+            href="/rules"
+          >
+            Rules, privacy, and consent
+          </Link>
+        </footer>
       </section>
     </main>
   );
@@ -1260,11 +1385,13 @@ async function apiRequest<T>(
 
 function SessionCard({
   authState,
+  canConnect,
   connecting,
   user,
   onConnect,
 }: {
   authState: string;
+  canConnect: boolean;
   connecting: boolean;
   user: SessionUser | null;
   onConnect: () => void;
@@ -1282,7 +1409,7 @@ function SessionCard({
           className="inline-flex h-10 items-center gap-2 border border-zinc-950 bg-zinc-950 px-3 text-sm font-bold text-white transition hover:bg-emerald-700 disabled:border-emerald-700 disabled:bg-emerald-700"
           type="button"
           onClick={onConnect}
-          disabled={Boolean(user) || connecting}
+          disabled={Boolean(user) || connecting || !canConnect}
         >
           {user ? (
             <CheckCircle2 className="h-4 w-4" />
@@ -1303,10 +1430,12 @@ function SessionCard({
 
 function SignInPanel({
   authState,
+  canConnect,
   connecting,
   onConnect,
 }: {
   authState: string;
+  canConnect: boolean;
   connecting: boolean;
   onConnect: () => void;
 }) {
@@ -1332,7 +1461,7 @@ function SignInPanel({
           className="inline-flex h-12 w-full items-center justify-center gap-2 bg-zinc-950 px-4 text-sm font-black text-white transition hover:bg-emerald-700 md:w-auto"
           type="button"
           onClick={onConnect}
-          disabled={connecting}
+          disabled={connecting || !canConnect}
         >
           {connecting ? (
             <LoaderCircle className="h-4 w-4 animate-spin" />
@@ -1341,6 +1470,92 @@ function SignInPanel({
           )}
           {connecting ? "Connecting..." : "Connect Pi account"}
         </button>
+      </div>
+    </section>
+  );
+}
+
+function ConsentGate({
+  consentState,
+  onAccept,
+  onReject,
+}: {
+  consentState: ConsentState;
+  onAccept: () => void;
+  onReject: () => void;
+}) {
+  const rejected = consentState === "rejected";
+  const checking = consentState === "checking";
+
+  return (
+    <section className="grid gap-5 border border-black/10 bg-white p-5 shadow-[8px_8px_0_#111827] lg:grid-cols-[1fr_340px]">
+      <div>
+        <p className="text-xs font-bold uppercase text-zinc-500">
+          Consent required
+        </p>
+        <h2 className="mt-3 text-2xl font-black text-zinc-950">
+          Review PiScrow rules before connecting your Pi account.
+        </h2>
+        <p className="mt-3 max-w-3xl text-sm leading-6 text-zinc-600">
+          PiScrow uses your Pi username, Pi UID, trade details, location labels,
+          proof uploads, notifications, and dispute activity to run a transparent
+          Pi Testnet escrow-style workflow.
+        </p>
+        <div className="mt-4 grid gap-2 text-sm font-semibold leading-6 text-zinc-700 sm:grid-cols-2">
+          <div className="border border-black/10 bg-zinc-50 p-3">
+            Testnet only. PiScrow does not custody Mainnet Pi.
+          </div>
+          <div className="border border-black/10 bg-zinc-50 p-3">
+            Proof images may be reviewed by the seller, buyer, and admin.
+          </div>
+          <div className="border border-black/10 bg-zinc-50 p-3">
+            Public ledger activity is shown for marketplace transparency.
+          </div>
+          <div className="border border-black/10 bg-zinc-50 p-3">
+            Admins can review disputed trades before release or cancellation.
+          </div>
+        </div>
+        <Link
+          className="mt-4 inline-flex text-sm font-black text-emerald-800 underline underline-offset-4 hover:text-zinc-950"
+          href="/rules"
+        >
+          Read full rules, privacy, and agreements
+        </Link>
+      </div>
+      <div className="flex flex-col justify-between gap-4 border border-black/10 bg-emerald-50 p-4">
+        <div>
+          <p className="text-sm font-black text-zinc-950">
+            {checking
+              ? "Checking saved consent..."
+              : rejected
+                ? "Pi login is disabled."
+                : "Agree before Pi login."}
+          </p>
+          <p className="mt-2 text-sm leading-6 text-zinc-700">
+            {rejected
+              ? "You rejected the agreement on this browser. You can read the rules again and agree when you are ready."
+              : "Rejecting keeps the public ledger visible, but blocks Pi account login, seller posting, buyer interest, funding, and proof uploads."}
+          </p>
+        </div>
+        <div className="grid gap-2">
+          <button
+            className="inline-flex h-12 items-center justify-center gap-2 bg-zinc-950 px-4 text-sm font-black text-white transition hover:bg-emerald-700"
+            disabled={checking}
+            type="button"
+            onClick={onAccept}
+          >
+            <ShieldCheck className="h-4 w-4" />
+            Agree and continue
+          </button>
+          <button
+            className="inline-flex h-11 items-center justify-center border border-zinc-950 bg-white px-4 text-sm font-black text-zinc-950 transition hover:bg-amber-50"
+            disabled={checking}
+            type="button"
+            onClick={onReject}
+          >
+            Reject
+          </button>
+        </div>
       </div>
     </section>
   );

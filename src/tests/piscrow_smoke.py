@@ -19,14 +19,23 @@ def main() -> None:
         desktop = browser.new_page(viewport={"width": 1440, "height": 1100})
         desktop.goto(BASE_URL, wait_until="domcontentloaded")
         desktop.wait_for_load_state("networkidle")
-        expect(desktop.get_by_role("heading", name="PiScrow")).to_be_visible()
+        expect(desktop.get_by_role("heading", name="PiScrow", exact=True)).to_be_visible()
         expect(desktop.get_by_text("Pi Testnet / Sandbox")).to_be_visible()
+        expect(desktop.get_by_text("Consent required")).to_be_visible()
+        expect(desktop.get_by_role("button", name="Agree and continue")).to_be_visible()
+        expect(desktop.get_by_role("button", name="Connect Pi account")).not_to_be_visible()
+        desktop.get_by_role("button", name="Agree and continue").click()
         expect(desktop.get_by_role("button", name="Connect Pi account")).to_be_visible()
         expect(desktop.get_by_label("Switch workspace")).not_to_be_visible()
         desktop.screenshot(
             path=str(ARTIFACT_DIR / "piscrow-signin.png"),
             full_page=True,
         )
+
+        desktop.goto(f"{BASE_URL}/rules", wait_until="domcontentloaded")
+        desktop.wait_for_load_state("networkidle")
+        expect(desktop.get_by_role("heading", name="Rules, Privacy, And User Agreement")).to_be_visible()
+        expect(desktop.get_by_text("Testnet Disclaimer")).to_be_visible()
 
         desktop.goto(DEMO_URL, wait_until="domcontentloaded")
         desktop.wait_for_load_state("networkidle")
@@ -88,7 +97,7 @@ def main() -> None:
         mobile = browser.new_page(viewport={"width": 390, "height": 900})
         mobile.goto(DEMO_URL, wait_until="domcontentloaded")
         mobile.wait_for_load_state("networkidle")
-        expect(mobile.get_by_role("heading", name="PiScrow")).to_be_visible()
+        expect(mobile.get_by_role("heading", name="PiScrow", exact=True)).to_be_visible()
         expect(mobile.get_by_label("Switch workspace")).to_be_visible()
         mobile.screenshot(
             path=str(ARTIFACT_DIR / "piscrow-mobile.png"),

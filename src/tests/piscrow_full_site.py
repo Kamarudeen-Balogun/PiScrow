@@ -33,13 +33,26 @@ def main() -> None:
 
         page.goto(BASE_URL, wait_until="domcontentloaded")
         page.wait_for_load_state("networkidle")
-        expect(page.get_by_role("heading", name="PiScrow")).to_be_visible()
+        expect(page.get_by_role("heading", name="PiScrow", exact=True)).to_be_visible()
+        expect(page.get_by_text("Consent required")).to_be_visible()
+        page.get_by_role("button", name="Reject").click()
+        expect(page.get_by_text("Pi login is disabled.")).to_be_visible()
+        expect(page.get_by_role("button", name="Connect Pi account")).not_to_be_visible()
+        page.get_by_role("button", name="Agree and continue").click()
         expect(page.get_by_role("button", name="Connect Pi account")).to_be_visible()
         expect(page.get_by_label("Switch workspace")).not_to_be_visible()
         page.get_by_role("button", name="Connect Pi account").click()
         expect(page.get_by_text("Pi Browser did not finish preparing the Pi SDK").first).to_be_visible()
         expect(page.get_by_text("Connection failed").first).to_be_visible()
         page.screenshot(path=str(ARTIFACT_DIR / "full-signout-error.png"), full_page=True)
+
+        rules_page = browser.new_page(viewport={"width": 1200, "height": 900})
+        rules_page.goto(f"{BASE_URL}/rules", wait_until="domcontentloaded")
+        rules_page.wait_for_load_state("networkidle")
+        expect(rules_page.get_by_role("heading", name="Rules, Privacy, And User Agreement")).to_be_visible()
+        expect(rules_page.get_by_text("Proof Upload Consent")).to_be_visible()
+        expect(rules_page.get_by_text("Admin Review And Disputes")).to_be_visible()
+        rules_page.close()
 
         auth_page = browser.new_page(viewport={"width": 1440, "height": 1000})
         auth_errors: list[str] = []
@@ -98,6 +111,8 @@ def main() -> None:
             };
             """
         )
+        if auth_page.get_by_role("button", name="Agree and continue").count() > 0:
+            auth_page.get_by_role("button", name="Agree and continue").click()
         auth_page.get_by_role("button", name="Connect Pi account").click()
         expect(auth_page.get_by_role("button", name="Connecting...")).to_be_visible()
         expect(auth_page.get_by_text("Pi account connected")).to_be_visible()
@@ -194,7 +209,7 @@ def main() -> None:
         )
         mobile.goto(DEMO_URL, wait_until="domcontentloaded")
         mobile.wait_for_load_state("networkidle")
-        expect(mobile.get_by_role("heading", name="PiScrow")).to_be_visible()
+        expect(mobile.get_by_role("heading", name="PiScrow", exact=True)).to_be_visible()
         expect(mobile.get_by_label("Switch workspace")).to_be_visible()
         mobile.get_by_role("button", name=re.compile("^Ledger$")).click()
         expect(mobile.get_by_text("Transparent Activity")).to_be_visible()
