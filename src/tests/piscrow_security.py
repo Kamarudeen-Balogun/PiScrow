@@ -12,7 +12,6 @@ def assert_security_headers(response) -> None:
     headers = response.headers
     assert headers.get("x-content-type-options") == "nosniff"
     assert headers.get("referrer-policy") == "strict-origin-when-cross-origin"
-    assert headers.get("x-frame-options") == "DENY"
     assert "camera=()" in headers.get("permissions-policy", "")
 
 
@@ -49,6 +48,7 @@ def main() -> None:
         rules = api.get("/rules")
         assert rules.ok
         assert_security_headers(rules)
+        assert rules.headers.get("x-frame-options") is None
 
         oversized = api.post(
             "/api/pi/approve",
