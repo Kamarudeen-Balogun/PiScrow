@@ -3,9 +3,14 @@ import { PiScrowApp } from "@/components/piscrow-app";
 export default async function Home({
   searchParams,
 }: {
-  searchParams?: Promise<{ demo?: string }>;
+  searchParams?: Promise<{ demo?: string; maintenance?: string }>;
 }) {
   const params = await searchParams;
 
-  return <PiScrowApp allowDemo={params?.demo === "1"} />;
+  return (
+    <PiScrowApp
+      allowDemo={params?.demo === "1"}
+      forceMaintenance={params?.maintenance === "1"}
+    />
+  );
 }

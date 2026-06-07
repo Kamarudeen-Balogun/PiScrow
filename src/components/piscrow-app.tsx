@@ -3,6 +3,7 @@
 import {
   AlertTriangle,
   ArrowRight,
+  CirclePlay,
   X,
   CheckCircle2,
   ChevronDown,
@@ -22,6 +23,7 @@ import {
   Trash2,
   UserRoundCheck,
   Users,
+  Wrench,
 } from "lucide-react";
 import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useState } from "react";
@@ -47,7 +49,7 @@ import {
   deliveryProofSchema,
   disputeSchema,
 } from "@/lib/validation";
-import type { PiUser } from "@/types/pi";
+import type { PiAuthResult, PiBrowserSDK, PiUser } from "@/types/pi";
 import type { Trade, TradeEvent, TradeInterest, TradeStatus } from "@/types/trade";
 
 type ViewMode = "market" | "sell" | "ledger" | "admin";
@@ -87,6 +89,13 @@ const nextPublicSandbox =
 
 const consentStorageKey = "piscrow-consent-v1";
 const consentVersion = "2026-06-07";
+const piSdkWaitMs = 5000;
+const piAuthTimeoutMs = 18000;
+const nextPublicMaintenanceEnabled =
+  process.env.NEXT_PUBLIC_PISCROW_MAINTENANCE_ENABLED === "true";
+const nextPublicMaintenanceMessage =
+  process.env.NEXT_PUBLIC_PISCROW_MAINTENANCE_MESSAGE?.trim() ||
+  "PiScrow is receiving updates. The app remains online, but some actions may be slower than usual.";
 
 const viewMeta: Record<
   ViewMode,
@@ -145,7 +154,13 @@ function dateLabel(value: string) {
   }).format(new Date(value));
 }
 
-export function PiScrowApp({ allowDemo = false }: { allowDemo?: boolean }) {
+export function PiScrowApp({
+  allowDemo = false,
+  forceMaintenance = false,
+}: {
+  allowDemo?: boolean;
+  forceMaintenance?: boolean;
+}) {
   const [user, setUser] = useState<SessionUser | null>(
     allowDemo ? { ...demoUser, isAdmin: true } : null,
   );
@@ -186,6 +201,7 @@ export function PiScrowApp({ allowDemo = false }: { allowDemo?: boolean }) {
 
   const signedIn = Boolean(user);
   const canConnectPi = consentState === "accepted";
+  const maintenanceEnabled = forceMaintenance || nextPublicMaintenanceEnabled;
   const normalizedUsername = normalizeUsername(user?.username ?? "");
   const navItems: ViewMode[] = user?.isAdmin
     ? ["market", "sell", "ledger", "admin"]
@@ -402,9 +418,17 @@ export function PiScrowApp({ allowDemo = false }: { allowDemo?: boolean }) {
 
     if (
       lowerMessage.includes("not in pi browser") ||
-      lowerMessage.includes("open this app inside pi browser")
+      lowerMessage.includes("open this app inside pi browser") ||
+      lowerMessage.includes("pi browser required")
     ) {
-      return "Open PiScrow inside Pi Browser to connect your Pi account.";
+      return "Pi login only works inside Pi Browser. Open PiScrow in Pi Browser, or use demo data to preview the app without a Pi account.";
+    }
+
+    if (
+      lowerMessage.includes("timed out") ||
+      lowerMessage.includes("did not complete")
+    ) {
+      return "Pi login did not finish. Open PiScrow inside Pi Browser and try again, or use demo data to preview the app.";
     }
 
     if (lowerMessage.includes("access token")) {
@@ -412,6 +436,91 @@ export function PiScrowApp({ allowDemo = false }: { allowDemo?: boolean }) {
     }
 
     return message;
+  }
+
+  function isLikelyPiBrowser() {
+    const userAgent = window.navigator.userAgent.toLowerCase();
+
+    return (
+      userAgent.includes("pibrowser") ||
+      userAgent.includes("pi browser") ||
+      userAgent.includes("minepi")
+    );
+  }
+
+  function wait(milliseconds: number) {
+    return new Promise((resolve) => {
+      window.setTimeout(resolve, milliseconds);
+    });
+  }
+
+  async function waitForPiSdk() {
+    const startedAt = Date.now();
+
+    while (Date.now() - startedAt < piSdkWaitMs) {
+      if (window.Pi) {
+        return window.Pi;
+      }
+
+      await wait(120);
+    }
+
+    throw new Error(
+      "Pi Browser required. The Pi SDK was not available on this page.",
+    );
+  }
+
+  function withTimeout<T>(
+    promise: Promise<T>,
+    timeoutMs: number,
+    timeoutMessage: string,
+  ) {
+    return new Promise<T>((resolve, reject) => {
+      const timer = window.setTimeout(() => {
+        reject(new Error(timeoutMessage));
+      }, timeoutMs);
+
+      promise.then(resolve, reject).finally(() => window.clearTimeout(timer));
+    });
+  }
+
+  async function authenticateWithPi(pi: PiBrowserSDK) {
+    let lastError: unknown;
+
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        pi.init({ version: "2.0", sandbox: nextPublicSandbox });
+        await wait(attempt === 0 ? 350 : 800);
+
+        return await withTimeout<PiAuthResult | PiUser>(
+          pi.authenticate(["username", "payments"], () => {
+            setPaymentState(
+              "An unfinished Pi payment was found. Finish or cancel it in Pi Browser, then refresh PiScrow.",
+            );
+          }),
+          piAuthTimeoutMs,
+          "Pi Browser authentication timed out before it completed.",
+        );
+      } catch (error) {
+        lastError = error;
+        const message =
+          error instanceof Error ? error.message.toLowerCase() : "";
+
+        if (
+          attempt === 0 &&
+          (message.includes("not initialized") || message.includes("call init"))
+        ) {
+          await wait(350);
+          continue;
+        }
+
+        throw error;
+      }
+    }
+
+    throw lastError instanceof Error
+      ? lastError
+      : new Error("Pi authentication did not complete.");
   }
 
   function mergeSavedNotifications(saved: SavedNotification[]) {
@@ -478,23 +587,31 @@ export function PiScrowApp({ allowDemo = false }: { allowDemo?: boolean }) {
     }
 
     setConnectingPi(true);
-    setAuthState("Connecting to Pi Browser...");
+    setAuthState("Preparing Pi Browser login...");
 
-    if (!window.Pi) {
-      const message = "Open this app inside Pi Browser to connect a Pi account.";
+    if (!isLikelyPiBrowser()) {
+      const message =
+        "Pi login only works inside Pi Browser. Open PiScrow in Pi Browser, or use demo data to preview the app without a Pi account.";
       setAuthState(message);
       pushNotice("Pi Browser required", message, "warning");
       setConnectingPi(false);
       return;
     }
 
+    const pi = await waitForPiSdk().catch((error) => {
+      const message = friendlyPiError(error);
+      setAuthState(message);
+      pushNotice("Pi Browser required", message, "warning");
+      setConnectingPi(false);
+      return null;
+    });
+
+    if (!pi) {
+      return;
+    }
+
     try {
-      window.Pi.init({ version: "2.0", sandbox: nextPublicSandbox });
-      const authResult = await window.Pi.authenticate(["username", "payments"], () => {
-        setPaymentState(
-          "An unfinished Pi payment was found. Finish or cancel it in Pi Browser, then refresh PiScrow.",
-        );
-      });
+      const authResult = await authenticateWithPi(pi);
       const piUser = "user" in authResult ? authResult.user : authResult;
       const accessToken = "accessToken" in authResult ? authResult.accessToken : "";
 
@@ -1213,6 +1330,12 @@ export function PiScrowApp({ allowDemo = false }: { allowDemo?: boolean }) {
           />
         </header>
 
+        {maintenanceEnabled && (
+          <MaintenanceBanner message={nextPublicMaintenanceMessage} />
+        )}
+
+        {allowDemo && <DemoModeBanner />}
+
         {!signedIn && (
           <>
             {consentState !== "accepted" ? (
@@ -1455,6 +1578,13 @@ function SignInPanel({
         <p className="mt-4 border-l-4 border-emerald-700 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-950">
           {authState}
         </p>
+        <Link
+          className="mt-4 inline-flex h-11 w-full items-center justify-center gap-2 border border-zinc-950 bg-white px-4 text-sm font-black text-zinc-950 transition hover:bg-zinc-50 sm:w-auto"
+          href="/?demo=1"
+        >
+          <CirclePlay className="h-4 w-4" />
+          Login with demo data
+        </Link>
       </div>
       <div className="flex items-center md:justify-end">
         <button
@@ -1471,6 +1601,50 @@ function SignInPanel({
           {connecting ? "Connecting..." : "Connect Pi account"}
         </button>
       </div>
+    </section>
+  );
+}
+
+function MaintenanceBanner({ message }: { message: string }) {
+  return (
+    <section className="flex flex-col gap-3 border border-amber-300 bg-amber-50 p-4 text-amber-950 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex items-start gap-3">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center bg-amber-200">
+          <Wrench className="h-5 w-5" />
+        </div>
+        <div>
+          <p className="text-sm font-black">Maintenance notice</p>
+          <p className="mt-1 text-sm leading-6">{message}</p>
+        </div>
+      </div>
+      <p className="text-xs font-bold uppercase tracking-normal">
+        App stays online
+      </p>
+    </section>
+  );
+}
+
+function DemoModeBanner() {
+  return (
+    <section className="flex flex-col gap-3 border border-sky-200 bg-sky-50 p-4 text-sky-950 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex items-start gap-3">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center bg-sky-200">
+          <CirclePlay className="h-5 w-5" />
+        </div>
+        <div>
+          <p className="text-sm font-black">Demo workspace</p>
+          <p className="mt-1 text-sm leading-6">
+            Demo data runs locally in this browser. It does not connect to Pi
+            Browser, Supabase writes, or real testnet payments.
+          </p>
+        </div>
+      </div>
+      <Link
+        className="inline-flex h-10 items-center justify-center border border-sky-950 bg-white px-3 text-sm font-black transition hover:bg-sky-100"
+        href="/"
+      >
+        Exit demo
+      </Link>
     </section>
   );
 }
@@ -1555,6 +1729,13 @@ function ConsentGate({
           >
             Reject
           </button>
+          <Link
+            className="inline-flex h-11 items-center justify-center gap-2 border border-zinc-950 bg-white px-4 text-sm font-black text-zinc-950 transition hover:bg-zinc-50"
+            href="/?demo=1"
+          >
+            <CirclePlay className="h-4 w-4" />
+            Login with demo data
+          </Link>
         </div>
       </div>
     </section>

@@ -23,9 +23,11 @@ def main() -> None:
         expect(desktop.get_by_text("Pi Testnet / Sandbox")).to_be_visible()
         expect(desktop.get_by_text("Consent required")).to_be_visible()
         expect(desktop.get_by_role("button", name="Agree and continue")).to_be_visible()
+        expect(desktop.get_by_role("link", name="Login with demo data")).to_be_visible()
         expect(desktop.get_by_role("button", name="Connect Pi account")).not_to_be_visible()
         desktop.get_by_role("button", name="Agree and continue").click()
         expect(desktop.get_by_role("button", name="Connect Pi account")).to_be_visible()
+        expect(desktop.get_by_role("link", name="Login with demo data")).to_be_visible()
         expect(desktop.get_by_label("Switch workspace")).not_to_be_visible()
         desktop.screenshot(
             path=str(ARTIFACT_DIR / "piscrow-signin.png"),
@@ -39,6 +41,7 @@ def main() -> None:
 
         desktop.goto(DEMO_URL, wait_until="domcontentloaded")
         desktop.wait_for_load_state("networkidle")
+        expect(desktop.get_by_text("Demo workspace")).to_be_visible()
         desktop.screenshot(
             path=str(ARTIFACT_DIR / "piscrow-desktop.png"),
             full_page=True,

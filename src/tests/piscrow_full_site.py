@@ -40,11 +40,17 @@ def main() -> None:
         expect(page.get_by_role("button", name="Connect Pi account")).not_to_be_visible()
         page.get_by_role("button", name="Agree and continue").click()
         expect(page.get_by_role("button", name="Connect Pi account")).to_be_visible()
+        expect(page.get_by_role("link", name="Login with demo data")).to_be_visible()
         expect(page.get_by_label("Switch workspace")).not_to_be_visible()
         page.get_by_role("button", name="Connect Pi account").click()
-        expect(page.get_by_text("Pi Browser did not finish preparing the Pi SDK").first).to_be_visible()
-        expect(page.get_by_text("Connection failed").first).to_be_visible()
+        expect(page.get_by_text("Pi Browser required").first).to_be_visible()
+        expect(page.get_by_text("Pi login only works inside Pi Browser").first).to_be_visible()
         page.screenshot(path=str(ARTIFACT_DIR / "full-signout-error.png"), full_page=True)
+
+        page.goto(f"{BASE_URL}/?maintenance=1", wait_until="domcontentloaded")
+        page.wait_for_load_state("networkidle")
+        expect(page.get_by_text("Maintenance notice")).to_be_visible()
+        expect(page.get_by_text("App stays online")).to_be_visible()
 
         rules_page = browser.new_page(viewport={"width": 1200, "height": 900})
         rules_page.goto(f"{BASE_URL}/rules", wait_until="domcontentloaded")
@@ -54,7 +60,10 @@ def main() -> None:
         expect(rules_page.get_by_text("Admin Review And Disputes")).to_be_visible()
         rules_page.close()
 
-        auth_page = browser.new_page(viewport={"width": 1440, "height": 1000})
+        auth_page = browser.new_page(
+            viewport={"width": 1440, "height": 1000},
+            user_agent="Mozilla/5.0 PiBrowser/1.0",
+        )
         auth_errors: list[str] = []
         auth_page.on(
             "console",
@@ -121,6 +130,7 @@ def main() -> None:
 
         page.goto(DEMO_URL, wait_until="domcontentloaded")
         page.wait_for_load_state("networkidle")
+        expect(page.get_by_text("Demo workspace")).to_be_visible()
         expect(page.get_by_label("Switch workspace")).to_be_visible()
         expect(page.get_by_role("button", name=re.compile("^Buyer$"))).to_be_visible()
         expect(page.get_by_role("button", name=re.compile("^Seller$"))).to_be_visible()
