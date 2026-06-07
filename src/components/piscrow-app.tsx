@@ -855,6 +855,7 @@ export function PiScrowApp({ allowDemo = false }: { allowDemo?: boolean }) {
       tradeId: selectedTrade.id,
       deliveryProofNote: formData.get("deliveryProofNote"),
       deliveryProofUrl: formData.get("deliveryProofUrl"),
+      deliveryProofImagePath: "",
     });
 
     if (!parsed.success) {
@@ -868,7 +869,7 @@ export function PiScrowApp({ allowDemo = false }: { allowDemo?: boolean }) {
         piAccessToken,
         {
           method: "POST",
-          body: JSON.stringify(parsed.data),
+          body: formData,
         },
       )
         .then(applyTradePayload)
@@ -911,6 +912,7 @@ export function PiScrowApp({ allowDemo = false }: { allowDemo?: boolean }) {
       tradeId: trade.id,
       buyerReceiptNote: formData.get("buyerReceiptNote"),
       buyerReceiptProofUrl: formData.get("buyerReceiptProofUrl"),
+      buyerReceiptImagePath: "",
     });
 
     if (!parsed.success) {
@@ -921,7 +923,7 @@ export function PiScrowApp({ allowDemo = false }: { allowDemo?: boolean }) {
     if (piConnected && piAccessToken) {
       void apiRequest<TradePayload>(`/api/trades/${trade.id}/confirm`, piAccessToken, {
         method: "POST",
-        body: JSON.stringify(parsed.data),
+        body: formData,
       })
         .then(applyTradePayload)
         .then(() => {
@@ -1209,11 +1211,12 @@ async function apiRequest<T>(
   accessToken: string,
   init: RequestInit = {},
 ) {
+  const isFormData = init.body instanceof FormData;
   const response = await fetch(path, {
     ...init,
     headers: {
       Authorization: `Bearer ${accessToken}`,
-      "Content-Type": "application/json",
+      ...(isFormData ? {} : { "Content-Type": "application/json" }),
       ...init.headers,
     },
   });
@@ -1661,6 +1664,10 @@ function OfferFeed({
                       placeholder="Optional receipt proof URL"
                       type="url"
                     />
+                    <ProofFileInput
+                      label="Receipt image"
+                      name="buyerReceiptImage"
+                    />
                     <button
                       className="inline-flex h-11 items-center justify-center gap-2 bg-zinc-950 px-4 text-sm font-black text-white"
                       type="submit"
@@ -1925,7 +1932,7 @@ function SideRail({
                 />
               )}
               {trade.deliveryProofUrl && (
-                <ProofLink label="Seller proof URL" url={trade.deliveryProofUrl} />
+                <ProofLink label="Seller proof image / link" url={trade.deliveryProofUrl} />
               )}
               {trade.buyerReceiptNote && (
                 <TextBlock
@@ -1935,7 +1942,7 @@ function SideRail({
               )}
               {trade.buyerReceiptProofUrl && (
                 <ProofLink
-                  label="Buyer receipt URL"
+                  label="Buyer receipt image / link"
                   url={trade.buyerReceiptProofUrl}
                 />
               )}
@@ -1962,6 +1969,7 @@ function SideRail({
               placeholder="Optional proof URL"
               type="url"
             />
+            <ProofFileInput label="Package proof image" name="deliveryProofImage" />
             <button
               className="inline-flex h-11 items-center justify-center gap-2 bg-emerald-700 px-4 text-sm font-black text-white"
               type="submit"
@@ -2079,7 +2087,7 @@ function AdminDesk({
                 />
               )}
               {trade.deliveryProofUrl && (
-                <ProofLink label="Seller proof URL" url={trade.deliveryProofUrl} />
+                <ProofLink label="Seller proof image / link" url={trade.deliveryProofUrl} />
               )}
               {trade.buyerReceiptNote && (
                 <TextBlock
@@ -2089,7 +2097,7 @@ function AdminDesk({
               )}
               {trade.buyerReceiptProofUrl && (
                 <ProofLink
-                  label="Buyer receipt URL"
+                  label="Buyer receipt image / link"
                   url={trade.buyerReceiptProofUrl}
                 />
               )}
@@ -2176,10 +2184,37 @@ function TextBlock({ label, value }: { label: string; value: string }) {
   );
 }
 
+function ProofFileInput({ label, name }: { label: string; name: string }) {
+  return (
+    <label className="grid gap-2 border border-dashed border-black/20 bg-white p-3">
+      <span className="text-xs font-bold uppercase text-zinc-500">{label}</span>
+      <input
+        accept="image/jpeg,image/png,image/webp"
+        className="text-sm font-semibold text-zinc-700 file:mr-3 file:h-10 file:border-0 file:bg-zinc-950 file:px-3 file:text-sm file:font-black file:text-white"
+        name={name}
+        type="file"
+      />
+      <span className="text-xs leading-5 text-zinc-500">
+        JPEG, PNG, or WebP. Max 5 MB. Stored privately for trade review.
+      </span>
+    </label>
+  );
+}
+
 function ProofLink({ label, url }: { label: string; url: string }) {
   return (
-    <div>
+    <div className="grid gap-2">
       <p className="text-xs font-bold uppercase text-zinc-500">{label}</p>
+      {isImageUrl(url) && (
+        <a href={url} rel="noreferrer" target="_blank">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            alt={label}
+            className="aspect-[4/3] w-full border border-black/10 object-cover"
+            src={url}
+          />
+        </a>
+      )}
       <a
         className="mt-1 block break-all text-sm font-semibold leading-6 text-emerald-800 underline-offset-4 hover:underline"
         href={url}
@@ -2189,6 +2224,13 @@ function ProofLink({ label, url }: { label: string; url: string }) {
         {url}
       </a>
     </div>
+  );
+}
+
+function isImageUrl(url: string) {
+  return (
+    url.includes("token=") ||
+    /\.(jpe?g|png|webp)(\?|$)/i.test(url)
   );
 }
 

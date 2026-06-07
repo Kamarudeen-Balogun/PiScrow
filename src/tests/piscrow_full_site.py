@@ -133,6 +133,9 @@ def main() -> None:
         expect(page.get_by_text("Post Seller Offer")).to_be_visible()
         expect(page.get_by_text("Used Android phone barter").first).to_be_visible()
         expect(page.get_by_text("Computer Village").first).to_be_visible()
+        page.get_by_text("Funded camera lens handoff").first.click()
+        expect(page.get_by_text("Package Sent Proof")).to_be_visible()
+        expect(page.get_by_label("Package proof image")).to_be_visible()
         page.get_by_role("button", name="Select buyer").first.click()
         expect(page.get_by_text("Seller @lagos_phone_hub selected @abuja_tradehub").first).to_be_visible()
 
@@ -178,6 +181,7 @@ def main() -> None:
         page.get_by_role("button", name=re.compile("^Admin$")).click()
         expect(page.get_by_text("Laptop repair deposit")).to_be_visible()
         expect(page.get_by_text("Seller package proof")).to_be_visible()
+        expect(page.get_by_text("Seller proof image / link")).to_be_visible()
         page.get_by_role("button", name="Release after review").click()
         expect(page.get_by_text("Dispute resolved").first).to_be_visible()
         page.screenshot(path=str(ARTIFACT_DIR / "full-admin-resolved.png"), full_page=True)

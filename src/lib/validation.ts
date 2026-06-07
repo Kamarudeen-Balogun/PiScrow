@@ -82,6 +82,7 @@ export const deliveryProofSchema = z.object({
     .url("Use a valid proof URL.")
     .optional()
     .or(z.literal("")),
+  deliveryProofImagePath: z.string().trim().optional().or(z.literal("")),
 });
 
 export const disputeSchema = z.object({
@@ -111,6 +112,7 @@ export const confirmReceiptSchema = z.object({
     .url("Use a valid proof URL.")
     .optional()
     .or(z.literal("")),
+  buyerReceiptImagePath: z.string().trim().optional().or(z.literal("")),
 });
 
 export type CreateTradeInput = z.infer<typeof createTradeSchema>;

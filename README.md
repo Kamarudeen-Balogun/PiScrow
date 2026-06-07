@@ -62,6 +62,8 @@ After this marketplace update, push the new migration before testing real users:
 npm run supabase:push
 ```
 
+PiScrow uses Supabase Storage for proof images. The `trade-proofs` bucket is private, accepts JPEG/PNG/WebP files up to 5 MB, and serves evidence through short-lived signed URLs to the seller, selected buyer, and admin only.
+
 ## Checks
 
 ```bash

@@ -48,6 +48,28 @@ export const demoTrades: Trade[] = [
     updatedAt: "2026-06-06T16:20:00.000Z",
   },
   {
+    id: "trade-005",
+    sellerPiUsername: "lagos_phone_hub",
+    sellerUserId: "sandbox-user-001",
+    visibility: "public",
+    targetBuyerPiUsernames: [],
+    buyerPiUsername: "abuja_tradehub",
+    buyerUserId: "buyer-user-003",
+    selectedInterestId: "interest-005",
+    title: "Funded camera lens handoff",
+    description:
+      "A funded demo trade waiting for the seller to upload package proof.",
+    amountTestPi: 26,
+    status: "Funded",
+    interestCount: 1,
+    locationLabel: "Maitama, Abuja",
+    locationArea: "Courier pickup counter",
+    deliveryTerms:
+      "Seller uploads package image proof before dispatching through local courier.",
+    createdAt: "2026-06-06T18:30:00.000Z",
+    updatedAt: "2026-06-06T19:00:00.000Z",
+  },
+  {
     id: "trade-003",
     sellerPiUsername: "pi_buyer_demo",
     sellerUserId: "buyer-user-001",
@@ -133,6 +155,16 @@ export const demoInterests: TradeInterest[] = [
     createdAt: "2026-06-05T11:20:00.000Z",
     updatedAt: "2026-06-05T11:25:00.000Z",
   },
+  {
+    id: "interest-005",
+    tradeId: "trade-005",
+    buyerUserId: "buyer-user-003",
+    buyerPiUsername: "abuja_tradehub",
+    responseNote: "I can receive through local courier and confirm quickly.",
+    status: "Selected",
+    createdAt: "2026-06-06T18:40:00.000Z",
+    updatedAt: "2026-06-06T18:45:00.000Z",
+  },
 ];
 
 export const demoEvents: TradeEvent[] = [
@@ -191,5 +223,13 @@ export const demoEvents: TradeEvent[] = [
     eventType: "Dispute opened",
     notes: "Buyer requested admin review before completion.",
     createdAt: "2026-06-06T13:00:00.000Z",
+  },
+  {
+    id: "event-008",
+    tradeId: "trade-005",
+    actor: "abuja_tradehub",
+    eventType: "Payment completed",
+    notes: "Buyer funding is held while seller prepares delivery proof.",
+    createdAt: "2026-06-06T19:00:00.000Z",
   },
 ];

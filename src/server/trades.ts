@@ -2,6 +2,7 @@ import { createServiceSupabaseClient } from "@/lib/supabase";
 import { formatTestPi } from "@/lib/trade-state";
 import { calculatePlatformFee } from "@/lib/fees";
 import { normalizePiUsername, type AppUser } from "@/server/auth";
+import { signProofUrl } from "@/server/proof-storage";
 import type {
   Trade,
   TradeEvent,
@@ -99,6 +100,29 @@ export function mapTrade(
     buyerReceiptProofUrl: row.buyer_receipt_proof_url ?? undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+  };
+}
+
+export async function mapTradeWithSignedProofs(
+  row: TradeRow,
+  users: Map<string, string>,
+  interestCount = 0,
+  canViewProofs = false,
+) {
+  const trade = mapTrade(row, users, interestCount);
+
+  if (!canViewProofs) {
+    return {
+      ...trade,
+      deliveryProofUrl: undefined,
+      buyerReceiptProofUrl: undefined,
+    };
+  }
+
+  return {
+    ...trade,
+    deliveryProofUrl: await signProofUrl(trade.deliveryProofUrl),
+    buyerReceiptProofUrl: await signProofUrl(trade.buyerReceiptProofUrl),
   };
 }
 
@@ -233,8 +257,20 @@ export async function listTradesForUser(user: AppUser) {
   );
 
   return {
-    trades: visibleRows.map((trade) =>
-      mapTrade(trade, users, interestCounts.get(trade.id) ?? 0),
+    trades: await Promise.all(
+      visibleRows.map((trade) => {
+        const canViewProofs =
+          user.isAdmin ||
+          trade.seller_user_id === user.id ||
+          trade.buyer_user_id === user.id;
+
+        return mapTradeWithSignedProofs(
+          trade,
+          users,
+          interestCounts.get(trade.id) ?? 0,
+          canViewProofs,
+        );
+      }),
     ),
     interests: interests.map((interest) => mapInterest(interest)),
     events: ((eventRows ?? []) as TradeEventRow[]).map((event) =>
@@ -295,6 +331,8 @@ export async function listPublicLedger() {
     trades: rows.map((trade) => ({
       ...mapTrade(trade, users, interestCounts.get(trade.id) ?? 0),
       targetBuyerPiUsernames: [],
+      deliveryProofUrl: undefined,
+      buyerReceiptProofUrl: undefined,
     })),
     events: ((eventRows ?? []) as TradeEventRow[]).map((event) =>
       mapEvent(event, users),

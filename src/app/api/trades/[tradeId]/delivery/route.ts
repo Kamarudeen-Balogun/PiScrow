@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { deliveryProofSchema } from "@/lib/validation";
 import { jsonError, requireAppUser } from "@/server/auth";
 import { createNotification } from "@/server/notifications";
+import { uploadTradeProofImage } from "@/server/proof-storage";
 import {
   assertSeller,
   assertTradeStatus,
@@ -19,8 +20,13 @@ export async function POST(
   try {
     const user = await requireAppUser(request);
     const { tradeId } = await context.params;
+    const contentType = request.headers.get("content-type") ?? "";
+    const body =
+      contentType.includes("multipart/form-data")
+        ? await request.formData()
+        : await request.json();
     const parsed = deliveryProofSchema.safeParse({
-      ...(await request.json()),
+      ...(body instanceof FormData ? Object.fromEntries(body) : body),
       tradeId,
     });
 
@@ -32,13 +38,23 @@ export async function POST(
     assertSeller(trade, user);
     assertTradeStatus(trade, ["Funded"]);
 
+    const proofImagePath =
+      body instanceof FormData
+        ? await uploadTradeProofImage({
+            tradeId,
+            userId: user.id,
+            purpose: "seller-delivery",
+            file: body.get("deliveryProofImage") as File | null,
+          })
+        : parsed.data.deliveryProofImagePath || "";
+
     const supabase = getServiceClientOrThrow();
     const { error } = await supabase
       .from("trades")
       .update({
         status: "DeliverySubmitted",
         delivery_proof_note: parsed.data.deliveryProofNote,
-        delivery_proof_url: parsed.data.deliveryProofUrl || null,
+        delivery_proof_url: proofImagePath || parsed.data.deliveryProofUrl || null,
         updated_at: new Date().toISOString(),
       })
       .eq("id", tradeId);
