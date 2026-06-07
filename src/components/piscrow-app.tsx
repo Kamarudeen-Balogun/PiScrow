@@ -26,7 +26,7 @@ import {
   Wrench,
 } from "lucide-react";
 import Link from "next/link";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 import { StatusBadge } from "@/components/status-badge";
 import {
@@ -198,6 +198,7 @@ export function PiScrowApp({
   const [consentState, setConsentState] = useState<ConsentState>(
     allowDemo ? "accepted" : "checking",
   );
+  const demoSessionRef = useRef(allowDemo);
 
   const signedIn = Boolean(user);
   const canConnectPi = consentState === "accepted";
@@ -351,6 +352,55 @@ export function PiScrowApp({
   function dismissNotice(id: string) {
     setNotices((current) => current.filter((notice) => notice.id !== id));
   }
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      if (!allowDemo) {
+        if (!demoSessionRef.current) {
+          return;
+        }
+
+        demoSessionRef.current = false;
+        setUser(null);
+        setPiConnected(false);
+        setPiAccessToken("");
+        setAuthState("Connect with Pi Browser to start using PiScrow.");
+        setMode("market");
+        setTrades([]);
+        setInterests([]);
+        setEvents([]);
+        setLedgerTrades([]);
+        setLedgerEvents([]);
+        setSelectedTradeId("");
+        setExpandedTradeId("");
+        setPaymentState("No payment started.");
+        setFormError("");
+        setNotices([]);
+        setConsentState("checking");
+        return;
+      }
+
+      demoSessionRef.current = true;
+      setUser({ ...demoUser, isAdmin: true });
+      setPiConnected(false);
+      setPiAccessToken("");
+      setAuthState("Local demo mode is active. Use Pi Browser for real-user testing.");
+      setConsentState("accepted");
+      setMode("market");
+      setTrades(demoTrades);
+      setInterests(demoInterests);
+      setEvents(demoEvents);
+      setLedgerTrades(demoTrades);
+      setLedgerEvents(demoEvents);
+      setSelectedTradeId(demoTrades[0]?.id ?? "");
+      setExpandedTradeId(demoTrades[0]?.id ?? "");
+      setPaymentState("Demo mode is active. Test Pi payments are simulated.");
+      setFormError("");
+      setSellerFormResetKey((current) => current + 1);
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, [allowDemo]);
 
   useEffect(() => {
     if (allowDemo) {

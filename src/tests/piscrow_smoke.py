@@ -33,6 +33,11 @@ def main() -> None:
             path=str(ARTIFACT_DIR / "piscrow-signin.png"),
             full_page=True,
         )
+        desktop.get_by_role("link", name="Login with demo data").click()
+        expect(desktop).to_have_url(re.compile(r".*\?demo=1"))
+        expect(desktop.get_by_text("Demo workspace")).to_be_visible()
+        expect(desktop.get_by_label("Switch workspace")).to_be_visible()
+        expect(desktop.get_by_text("Used Android phone barter").first).to_be_visible()
 
         desktop.goto(f"{BASE_URL}/rules", wait_until="domcontentloaded")
         desktop.wait_for_load_state("networkidle")
