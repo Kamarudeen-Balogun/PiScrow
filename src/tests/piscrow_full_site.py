@@ -204,6 +204,8 @@ def main() -> None:
         expect(page.get_by_text("Full QA delete test").first).to_be_visible()
         page.get_by_text("Full QA delete test").first.click()
         page.get_by_role("button", name="Delete offer").first.click()
+        expect(page.get_by_text("Delete this offer?")).to_be_visible()
+        page.get_by_role("alertdialog").get_by_role("button", name="Delete offer").click()
         expect(page.get_by_text("Offer deleted").first).to_be_visible()
 
         page.get_by_role("button", name=re.compile("^Ledger$")).click()
@@ -224,6 +226,8 @@ def main() -> None:
         expect(page.get_by_text("Verified Badge Requests")).to_be_visible()
         expect(page.get_by_text("@market_runner")).to_be_visible()
         page.get_by_role("button", name="Approve badge").click()
+        expect(page.get_by_text("Approve verified badge?")).to_be_visible()
+        page.get_by_role("alertdialog").get_by_role("button", name="Approve badge").click()
         expect(page.get_by_text("Verified badge approved").first).to_be_visible()
         expect(page.get_by_text("Laptop repair deposit")).to_be_visible()
         expect(page.get_by_text("Seller package proof")).to_be_visible()
@@ -236,6 +240,8 @@ def main() -> None:
         page.get_by_role("button", name="Send request").first.click()
         expect(page.get_by_text("Admin requested buyer follow-up").first).to_be_visible()
         page.get_by_role("button", name="Approve seller release").click()
+        expect(page.get_by_text("Approve seller release?")).to_be_visible()
+        page.get_by_role("button", name="Approve release").click()
         expect(page.get_by_text("Dispute resolved").first).to_be_visible()
         page.screenshot(path=str(ARTIFACT_DIR / "full-admin-resolved.png"), full_page=True)
 

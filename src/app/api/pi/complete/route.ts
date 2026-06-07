@@ -53,6 +53,22 @@ export async function POST(request: Request) {
     assertTradeStatus(trade, ["PendingFunding"]);
     assertSelectedBuyerCanFund(trade, user);
 
+    const supabase = getServiceClientOrThrow();
+    const { data: existingPayment, error: existingPaymentError } = await supabase
+      .from("payments")
+      .select("id, pi_payment_id, status")
+      .eq("trade_id", parsed.data.tradeId)
+      .in("status", ["Completed"])
+      .maybeSingle();
+
+    if (existingPaymentError) {
+      throw new Error(existingPaymentError.message);
+    }
+
+    if (existingPayment) {
+      throw new Error("This trade already has a completed payment.");
+    }
+
     const payment = await completePiPayment(
       parsed.data.paymentId,
       parsed.data.txid,
@@ -66,7 +82,6 @@ export async function POST(request: Request) {
       throw new Error("Pi payment amount does not match the trade total.");
     }
 
-    const supabase = getServiceClientOrThrow();
     const { error: paymentError } = await supabase.from("payments").upsert(
       {
         trade_id: parsed.data.tradeId,

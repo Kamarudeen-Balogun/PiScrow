@@ -10,6 +10,20 @@ Rules, privacy, and user agreement: https://pi-scrow.vercel.app/rules
 
 PiScrow is testnet-only. It does not custody Mainnet Pi and should not be described as a legal escrow service.
 
+## Screenshots
+
+| Consent and sign-in | Marketplace |
+| --- | --- |
+| ![PiScrow consent and sign-in](docs/screenshots/01-signin-consent.png) | ![PiScrow marketplace](docs/screenshots/02-marketplace.png) |
+
+| Seller desk | Public ledger |
+| --- | --- |
+| ![PiScrow seller desk](docs/screenshots/03-seller-desk.png) | ![PiScrow public ledger](docs/screenshots/04-public-ledger.png) |
+
+| Profile trust | Admin review |
+| --- | --- |
+| ![PiScrow profile trust](docs/screenshots/05-profile.png) | ![PiScrow admin review](docs/screenshots/06-admin-review.png) |
+
 ## Core Features
 
 - Pi Browser authentication with approved-admin username gating
@@ -121,6 +135,11 @@ The demo workspace also includes profile trust scores and an admin verified
 badge approval queue, so reviewers can see reputation features without Pi
 Browser or Supabase writes.
 
+## Showcase Assets
+
+Curated screenshots live in `docs/screenshots/` for GitHub and demo write-ups.
+Raw Playwright output stays in `test-artifacts/` and is intentionally gitignored.
+
 ## Validation
 
 Run these before pushing a preview build:
@@ -175,3 +194,14 @@ git push origin preview
 ```
 
 Merge `preview` into `main` only after the deployed preview passes Pi Browser, Supabase, and Playwright validation.
+
+## Remaining Owner Checks
+
+These need your Pi/Supabase/Vercel accounts or real testers:
+
+- Run `npm run supabase:push` after pulling this branch so the latest migrations are applied remotely.
+- Confirm Pi Developer Portal legal/privacy URL fields point to `https://pi-scrow.vercel.app/rules`.
+- Confirm Vercel has Supabase, Pi, and Upstash env vars configured.
+- Run a deployed-preview smoke test with `PISCROW_BASE_URL=https://pi-scrow.vercel.app`.
+- Verify Pi Browser auth and Test Pi payment flow with at least two real Pi testnet users.
+- Collect 20 successful testnet trade simulations before claiming the MVP success metric.

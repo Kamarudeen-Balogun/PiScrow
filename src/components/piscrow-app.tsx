@@ -85,6 +85,14 @@ type AppNotice = {
   tone: "info" | "success" | "warning";
 };
 
+type ConfirmAction = {
+  title: string;
+  body: string;
+  confirmLabel: string;
+  tone?: "warning" | "danger";
+  onConfirm: () => void;
+};
+
 type ConsentState = "checking" | "pending" | "accepted" | "rejected";
 
 type SavedNotification = {
@@ -321,6 +329,7 @@ export function PiScrowApp({
   const [paymentState, setPaymentState] = useState("No payment started.");
   const [ledgerLoading, setLedgerLoading] = useState(false);
   const [notices, setNotices] = useState<AppNotice[]>([]);
+  const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null);
   const [sellerFormResetKey, setSellerFormResetKey] = useState(0);
   const [connectingPi, setConnectingPi] = useState(false);
   const [profile, setProfile] = useState<UserReputation | null>(
@@ -500,6 +509,16 @@ export function PiScrowApp({
 
   function dismissNotice(id: string) {
     setNotices((current) => current.filter((notice) => notice.id !== id));
+  }
+
+  function askConfirmation(action: ConfirmAction) {
+    setConfirmAction(action);
+  }
+
+  function runConfirmedAction() {
+    const action = confirmAction;
+    setConfirmAction(null);
+    action?.onConfirm();
   }
 
   useEffect(() => {
@@ -986,6 +1005,17 @@ export function PiScrowApp({
   }
 
   async function approveVerifiedBadge(request: UserReputation) {
+    askConfirmation({
+      title: "Approve verified badge?",
+      body: `This will show a public verified badge on @${request.piUsername}'s PiScrow profile.`,
+      confirmLabel: "Approve badge",
+      onConfirm: () => {
+        void approveVerifiedBadgeConfirmed(request);
+      },
+    });
+  }
+
+  async function approveVerifiedBadgeConfirmed(request: UserReputation) {
     setFormError("");
 
     if (allowDemo) {
@@ -1162,7 +1192,7 @@ export function PiScrowApp({
         piAccessToken,
         {
           method: "POST",
-          body: JSON.stringify(parsed.data),
+          body: JSON.stringify(parsed),
         },
       )
         .then(applyTradePayload)
@@ -1208,6 +1238,15 @@ export function PiScrowApp({
   }
 
   function declinePrivateOffer(trade: Trade) {
+    askConfirmation({
+      title: "Decline private request?",
+      body: `This tells @${trade.sellerPiUsername} you do not want this private offer.`,
+      confirmLabel: "Decline request",
+      onConfirm: () => declinePrivateOfferConfirmed(trade),
+    });
+  }
+
+  function declinePrivateOfferConfirmed(trade: Trade) {
     setFormError("");
 
     if (!user) {
@@ -1339,6 +1378,16 @@ export function PiScrowApp({
   }
 
   function deleteOffer(trade: Trade) {
+    askConfirmation({
+      title: "Delete this offer?",
+      body: "This removes the open seller offer before a buyer is selected.",
+      confirmLabel: "Delete offer",
+      tone: "danger",
+      onConfirm: () => deleteOfferConfirmed(trade),
+    });
+  }
+
+  function deleteOfferConfirmed(trade: Trade) {
     setFormError("");
 
     if (piConnected && piAccessToken) {
@@ -1369,6 +1418,15 @@ export function PiScrowApp({
   }
 
   function fundTrade(trade: Trade) {
+    askConfirmation({
+      title: "Start Test Pi funding?",
+      body: `You will fund ${formatTestPi(calculateBuyerTotal(trade.amountTestPi))}. PiScrow holds this testnet payment while delivery proof is reviewed.`,
+      confirmLabel: "Start funding",
+      onConfirm: () => fundTradeConfirmed(trade),
+    });
+  }
+
+  function fundTradeConfirmed(trade: Trade) {
     setPaymentState("Preparing Test Pi payment...");
     const buyerTotal = calculateBuyerTotal(trade.amountTestPi);
 
@@ -1523,6 +1581,26 @@ export function PiScrowApp({
       return;
     }
 
+    askConfirmation({
+      title: "Confirm receipt?",
+      body: "This marks the trade as completed and records buyer receipt proof on the activity timeline.",
+      confirmLabel: "Confirm receipt",
+      onConfirm: () => confirmReceiptConfirmed(trade, formData, parsed.data, form),
+    });
+  }
+
+  function confirmReceiptConfirmed(
+    trade: Trade,
+    formData: FormData,
+    parsed: {
+      tradeId: string;
+      buyerReceiptNote: string;
+      buyerReceiptProofUrl?: string;
+      buyerReceiptImagePath?: string;
+    },
+    form: HTMLFormElement,
+  ) {
+
     if (piConnected && piAccessToken) {
       void apiRequest<TradePayload>(`/api/trades/${trade.id}/confirm`, piAccessToken, {
         method: "POST",
@@ -1542,10 +1620,10 @@ export function PiScrowApp({
     }
 
     updateTrade(trade.id, "Completed", {
-      buyerReceiptNote: parsed.data.buyerReceiptNote,
-      buyerReceiptProofUrl: parsed.data.buyerReceiptProofUrl || undefined,
+      buyerReceiptNote: parsed.buyerReceiptNote,
+      buyerReceiptProofUrl: parsed.buyerReceiptProofUrl || undefined,
     });
-    appendEvent(trade.id, "Receipt confirmed", parsed.data.buyerReceiptNote);
+    appendEvent(trade.id, "Receipt confirmed", parsed.buyerReceiptNote);
     pushNotice("Receipt confirmed", "The trade is marked completed.", "success");
     form.reset();
   }
@@ -1571,13 +1649,32 @@ export function PiScrowApp({
       return;
     }
 
+    askConfirmation({
+      title: "Open dispute?",
+      body: "This freezes normal trade progress and sends the case to admin review.",
+      confirmLabel: "Freeze trade",
+      tone: "danger",
+      onConfirm: () => openDisputeConfirmed(selectedTrade, parsed.data, form),
+    });
+  }
+
+  function openDisputeConfirmed(
+    trade: Trade,
+    parsed: {
+      tradeId: string;
+      reason: string;
+      evidenceNote?: string;
+    },
+    form: HTMLFormElement,
+  ) {
+
     if (piConnected && piAccessToken) {
       void apiRequest<TradePayload>(
-        `/api/trades/${selectedTrade.id}/dispute`,
+        `/api/trades/${trade.id}/dispute`,
         piAccessToken,
         {
           method: "POST",
-          body: JSON.stringify(parsed.data),
+          body: JSON.stringify(parsed),
         },
       )
         .then(applyTradePayload)
@@ -1597,8 +1694,8 @@ export function PiScrowApp({
       return;
     }
 
-    updateTrade(selectedTrade.id, "Disputed");
-    appendEvent(selectedTrade.id, "Dispute opened", parsed.data.reason);
+    updateTrade(trade.id, "Disputed");
+    appendEvent(trade.id, "Dispute opened", parsed.reason);
     pushNotice("Dispute opened", "The trade is frozen for admin review.", "warning");
     form.reset();
   }
@@ -1726,6 +1823,23 @@ export function PiScrowApp({
   }
 
   function adminResolve(trade: Trade, status: "Completed" | "Cancelled") {
+    askConfirmation({
+      title:
+        status === "Completed"
+          ? "Approve seller release?"
+          : "Approve buyer refund?",
+      body:
+        status === "Completed"
+          ? "This records that admin reviewed the dispute and approved the seller release path."
+          : "This records that admin reviewed the dispute and approved the buyer refund path.",
+      confirmLabel:
+        status === "Completed" ? "Approve release" : "Approve refund",
+      tone: status === "Cancelled" ? "danger" : "warning",
+      onConfirm: () => adminResolveConfirmed(trade, status),
+    });
+  }
+
+  function adminResolveConfirmed(trade: Trade, status: "Completed" | "Cancelled") {
     setFormError("");
 
     const notes =
@@ -1822,6 +1936,14 @@ export function PiScrowApp({
           <ActionFeedbackDialog
             message={formError}
             onDismiss={() => setFormError("")}
+          />
+        )}
+
+        {confirmAction && (
+          <ConfirmActionDialog
+            action={confirmAction}
+            onCancel={() => setConfirmAction(null)}
+            onConfirm={runConfirmedAction}
           />
         )}
 
@@ -2411,6 +2533,68 @@ function ActionFeedbackDialog({
         >
           Got it
         </button>
+      </div>
+    </section>
+  );
+}
+
+function ConfirmActionDialog({
+  action,
+  onCancel,
+  onConfirm,
+}: {
+  action: ConfirmAction;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const danger = action.tone === "danger";
+
+  return (
+    <section
+      aria-labelledby="confirm-action-title"
+      aria-modal="true"
+      className="fixed inset-0 z-[65] grid place-items-center bg-zinc-950/45 px-4 py-6"
+      role="alertdialog"
+    >
+      <div className="w-full max-w-md border border-black/15 bg-white p-5 shadow-[10px_10px_0_#111827]">
+        <div className="flex items-start gap-3">
+          <div
+            className={`flex h-10 w-10 shrink-0 items-center justify-center ${
+              danger ? "bg-rose-100 text-rose-800" : "bg-amber-100 text-amber-800"
+            }`}
+          >
+            <AlertTriangle className="h-5 w-5" />
+          </div>
+          <div>
+            <h2
+              className="text-lg font-black text-zinc-950"
+              id="confirm-action-title"
+            >
+              {action.title}
+            </h2>
+            <p className="mt-2 text-sm font-semibold leading-6 text-zinc-700">
+              {action.body}
+            </p>
+          </div>
+        </div>
+        <div className="mt-5 grid gap-2 sm:grid-cols-2">
+          <button
+            className="inline-flex h-11 items-center justify-center border border-zinc-950 bg-white px-4 text-sm font-black text-zinc-950 transition hover:bg-zinc-50"
+            type="button"
+            onClick={onCancel}
+          >
+            Cancel
+          </button>
+          <button
+            className={`inline-flex h-11 items-center justify-center px-4 text-sm font-black text-white transition ${
+              danger ? "bg-rose-700 hover:bg-rose-800" : "bg-zinc-950 hover:bg-emerald-700"
+            }`}
+            type="button"
+            onClick={onConfirm}
+          >
+            {action.confirmLabel}
+          </button>
+        </div>
       </div>
     </section>
   );

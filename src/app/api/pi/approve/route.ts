@@ -52,6 +52,21 @@ export async function POST(request: Request) {
     const platformFee = calculatePlatformFee(sellerAmount);
     const expectedAmount = calculateBuyerTotal(sellerAmount);
 
+    const { data: existingCompleted, error: existingCompletedError } = await supabase
+      .from("payments")
+      .select("id")
+      .eq("trade_id", parsed.data.tradeId)
+      .eq("status", "Completed")
+      .maybeSingle();
+
+    if (existingCompletedError) {
+      throw new Error(existingCompletedError.message);
+    }
+
+    if (existingCompleted) {
+      throw new Error("This trade already has a completed payment.");
+    }
+
     if (amount !== expectedAmount) {
       throw new Error("Pi payment amount does not match the trade total.");
     }
