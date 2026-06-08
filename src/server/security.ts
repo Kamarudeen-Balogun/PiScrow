@@ -114,7 +114,6 @@ async function upstashRateLimit(
       throw error;
     }
 
-    console.warn("PiScrow Upstash rate limit fallback:", error);
     return false;
   }
 }

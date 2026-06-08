@@ -81,6 +81,6 @@ export async function createNotification({
   });
 
   if (error) {
-    console.error("PiScrow notification insert failed:", error.message);
+    return;
   }
 }

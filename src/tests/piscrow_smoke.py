@@ -66,7 +66,7 @@ def main() -> None:
         desktop.get_by_role("button", name="Show interest").click()
         expect(desktop.get_by_role("alertdialog")).to_be_visible()
         expect(desktop.get_by_text("Action needed")).to_be_visible()
-        expect(desktop.get_by_text("Add a short response so the seller can compare buyers.")).to_be_visible()
+        expect(desktop.get_by_text("Your buyer response is too short.")).to_be_visible()
         desktop.get_by_role("button", name="Got it").click()
         desktop.get_by_placeholder("Tell the seller why you are the right buyer").fill(
             "I can confirm the model today and fund immediately after selection."
@@ -122,6 +122,9 @@ def main() -> None:
         expect(desktop.get_by_text("Approve verified badge?")).to_be_visible()
         desktop.get_by_role("button", name="Cancel").click()
         expect(desktop.get_by_text("Laptop repair deposit")).to_be_visible()
+        expect(desktop.get_by_text("Review Copilot")).to_be_visible()
+        expect(desktop.get_by_text("Recommend-only")).to_be_visible()
+        expect(desktop.get_by_role("button", name="Rerun review")).to_be_visible()
         expect(desktop.get_by_role("button", name="Approve seller release")).to_be_visible()
         expect(desktop.get_by_role("button", name="Approve buyer refund")).to_be_visible()
         desktop.screenshot(

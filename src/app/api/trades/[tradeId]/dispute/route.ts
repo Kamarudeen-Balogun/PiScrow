@@ -40,8 +40,8 @@ export async function POST(
       throw new Error("Only the buyer or seller can dispute this trade.");
     }
 
-    if (["Completed", "Cancelled", "Disputed"].includes(trade.status)) {
-      throw new Error(`Cannot dispute a ${trade.status} trade.`);
+    if (!["Funded", "DeliverySubmitted"].includes(trade.status)) {
+      throw new Error("Trades can only be reported after buyer funding has been verified.");
     }
 
     const supabase = getServiceClientOrThrow();

@@ -84,7 +84,6 @@ export async function signProofUrl(value?: string) {
     });
 
   if (error) {
-    console.error("PiScrow proof signing failed:", error.message);
     return undefined;
   }
 
