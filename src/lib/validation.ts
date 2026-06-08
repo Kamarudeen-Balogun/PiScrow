@@ -3,7 +3,10 @@ import { z } from "zod";
 import { sanitizeText } from "@/lib/sanitize";
 
 const sanitizedString = (schema = z.string()) =>
-  z.string().transform((value) => sanitizeText(value)).pipe(schema);
+  z
+    .preprocess((value) => (value == null ? "" : value), z.string())
+    .transform((value) => sanitizeText(value))
+    .pipe(schema);
 
 const piUsernameListSchema = z.preprocess((value) => {
   if (Array.isArray(value)) {
@@ -67,7 +70,7 @@ export const createTradeInterestSchema = z.object({
   responseNote: sanitizedString(
     z
       .string()
-      .min(12, "Add a short response so the seller can compare buyers.")
+      .min(12, "Your buyer response is too short. Add enough detail so the seller can compare buyers.")
       .max(600, "Keep the response under 600 characters."),
   ),
 });

@@ -37,6 +37,7 @@ PiScrow is testnet-only. It does not custody Mainnet Pi and should not be descri
 - Private proof image uploads through Supabase Storage signed URLs
 - Public transparency ledger for listings, funding, delivery, disputes, admin follow-up, and outcomes
 - Admin dispute desk with buyer/seller follow-up requests
+- Recommend-only Review Copilot for admin dispute evidence triage
 - Buyer refund path and seller release path language for disputed trade outcomes
 - Consent gate, rules page, demo mode, maintenance banner, and in-app notifications
 - Playwright smoke, full-site, and security checks
@@ -145,8 +146,8 @@ https://pi-scrow.vercel.app/?demo=1
 Demo mode includes public offers, private requests, selected buyers, funded trades, proof states, disputes, admin follow-up, and local simulated actions. It does not affect real Testnet data.
 
 The demo workspace also includes profile trust scores and an admin verified
-badge approval queue, so reviewers can see reputation features without Pi
-Browser or Supabase writes.
+badge approval queue plus Review Copilot recommendations, so reviewers can see
+reputation and admin triage features without Pi Browser or Supabase writes.
 
 ## Showcase Assets
 
@@ -161,6 +162,7 @@ Run these before pushing a preview build:
 npx tsc --noEmit
 npm run lint
 npm run build
+npm run test:regressions
 npm run test:security
 npm run test:smoke
 npm run test:full
@@ -185,8 +187,10 @@ Screenshots are written to `test-artifacts/`, which is intentionally gitignored.
   `UPSTASH_REDIS_REST_TOKEN` are configured, then falls back to in-memory limits
   if Upstash is unavailable.
 - Normal trade transitions are blocked while disputed.
+- Trades can only be reported after buyer funding is verified, and only by the buyer or seller on that trade.
 - Sellers cannot show interest in their own offers.
 - Only the currently selected buyer can fund a trade, and expired selections are rejected server-side.
+- Review Copilot recommendations are admin-only and recommend-only; they do not release funds, refund buyers, or resolve trades automatically.
 - Reputation scores are computed from trade history and admin verification state.
 - Public ledger hides private buyer targets and proof URLs.
 

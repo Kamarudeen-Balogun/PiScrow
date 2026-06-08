@@ -158,6 +158,20 @@ create table public.feedback_messages (
   created_at timestamptz not null default now()
 );
 
+create table public.trade_review_recommendations (
+  id uuid primary key default gen_random_uuid(),
+  trade_id uuid not null references public.trades(id) on delete cascade,
+  reviewed_by_pi_username text not null,
+  recommended_action text not null
+    check (recommended_action in ('release', 'refund', 'request_more_info', 'admin_review')),
+  confidence integer not null check (confidence between 0 and 100),
+  summary text not null,
+  missing_evidence text[] not null default '{}'::text[],
+  risk_flags text[] not null default '{}'::text[],
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+
 create index trades_buyer_user_id_idx on public.trades (buyer_user_id);
 create index trades_seller_pi_username_idx on public.trades (seller_pi_username);
 create index trades_seller_user_id_idx on public.trades (seller_user_id);
@@ -194,6 +208,10 @@ create index feedback_messages_created_at_idx
 create index feedback_messages_user_id_idx
   on public.feedback_messages (user_id, created_at desc)
   where user_id is not null;
+create index trade_review_recommendations_trade_created_idx
+  on public.trade_review_recommendations (trade_id, created_at desc);
+create index trade_review_recommendations_action_idx
+  on public.trade_review_recommendations (recommended_action, created_at desc);
 create index users_verification_requested_idx
   on public.users (verification_requested_at desc)
   where verification_requested_at is not null
@@ -209,6 +227,7 @@ alter table public.disputes enable row level security;
 alter table public.admin_actions enable row level security;
 alter table public.notifications enable row level security;
 alter table public.feedback_messages enable row level security;
+alter table public.trade_review_recommendations enable row level security;
 
 -- MVP policies are intentionally conservative. Server routes should use the
 -- service role key after validating Pi identity and trade permissions.

@@ -16,6 +16,7 @@ import {
   HandCoins,
   Heart,
   History,
+  Lightbulb,
   LockKeyhole,
   Megaphone,
   Mail,
@@ -67,6 +68,7 @@ import {
 } from "@/lib/validation";
 import type { PiAuthResult, PiBrowserSDK, PiPaymentDTO, PiUser } from "@/types/pi";
 import type { UserReputation } from "@/types/profile";
+import type { TradeReviewRecommendation } from "@/types/review";
 import type { Trade, TradeEvent, TradeInterest, TradeStatus } from "@/types/trade";
 
 type ViewMode = "market" | "sell" | "ledger" | "profile" | "admin";
@@ -87,6 +89,10 @@ type ProfilePayload = {
 
 type VerificationQueuePayload = {
   requests: UserReputation[];
+};
+
+type ReviewRecommendationsPayload = {
+  recommendations: TradeReviewRecommendation[];
 };
 
 type AppNotice = {
@@ -986,6 +992,21 @@ function fundingWindowLabel(trade: Trade) {
   return `${minutes} min funding window`;
 }
 
+function interestErrorMessage(message?: string) {
+  if (!message) {
+    return "Add a buyer response before showing interest.";
+  }
+
+  if (
+    message.includes("expected string") ||
+    message.includes("received undefined")
+  ) {
+    return "Your buyer response is too short. Add enough detail so the seller can compare buyers.";
+  }
+
+  return message;
+}
+
 function trustScoreFromProfile(profile: Pick<
   UserReputation,
   | "successfulTrades"
@@ -1071,6 +1092,63 @@ function buildDemoVerificationRequests(tradeRows: Trade[]) {
   ];
 }
 
+function buildDemoReviewRecommendations(): TradeReviewRecommendation[] {
+  return [
+    {
+      id: "review-demo-001",
+      tradeId: "trade-003",
+      reviewedByPiUsername: "admin",
+      recommendedAction: "request_more_info",
+      confidence: 64,
+      summary:
+        "More evidence is needed before release or refund. The buyer raised a serial-number mismatch and the seller proof needs clearer part photos.",
+      missingEvidence: ["clear seller delivery proof", "buyer receipt confirmation proof"],
+      riskFlags: ["active_dispute_review", "party_claim_conflict"],
+      createdAt: "2026-06-06T13:55:00.000Z",
+    },
+  ];
+}
+
+function buildDemoReviewForTrade(
+  trade: Trade,
+  reviewer = "admin",
+): TradeReviewRecommendation {
+  const hasSellerProof = Boolean(trade.deliveryProofNote || trade.deliveryProofUrl);
+  const hasBuyerReceipt = Boolean(trade.buyerReceiptNote || trade.buyerReceiptProofUrl);
+  const riskFlags = [
+    "active_dispute_review",
+    ...(hasSellerProof ? [] : ["seller_proof_missing"]),
+    ...(trade.description.toLowerCase().includes("serial")
+      ? ["party_claim_conflict"]
+      : []),
+  ];
+  const missingEvidence = [
+    ...(hasSellerProof ? [] : ["seller delivery proof"]),
+    ...(hasBuyerReceipt ? [] : ["buyer receipt confirmation proof"]),
+  ];
+  const recommendedAction =
+    missingEvidence.length > 0 || riskFlags.includes("party_claim_conflict")
+      ? "request_more_info"
+      : "release";
+
+  return {
+    id: `review-demo-${trade.id}-${Date.now()}`,
+    tradeId: trade.id,
+    reviewedByPiUsername: reviewer,
+    recommendedAction,
+    confidence: recommendedAction === "release" ? 82 : 63,
+    summary:
+      recommendedAction === "release"
+        ? "Payment, seller proof, and buyer receipt are present. Admin can consider the seller release path after final review."
+        : `More evidence is needed before release or refund. Missing: ${
+            missingEvidence.length ? missingEvidence.join(", ") : "clear party agreement"
+          }.`,
+    missingEvidence,
+    riskFlags,
+    createdAt: new Date().toISOString(),
+  };
+}
+
 function dateLabel(value: string) {
   return new Intl.DateTimeFormat("en-US", {
     dateStyle: "medium",
@@ -1137,6 +1215,10 @@ export function PiScrowApp({
   const [verificationRequests, setVerificationRequests] = useState<UserReputation[]>(
     allowDemo ? buildDemoVerificationRequests(demoTrades) : [],
   );
+  const [reviewRecommendations, setReviewRecommendations] = useState<
+    TradeReviewRecommendation[]
+  >(allowDemo ? buildDemoReviewRecommendations() : []);
+  const [reviewLoadingTradeId, setReviewLoadingTradeId] = useState("");
   const [profileLoading, setProfileLoading] = useState(false);
   const [verificationLoading, setVerificationLoading] = useState(false);
   const [feedbackSending, setFeedbackSending] = useState(false);
@@ -1237,6 +1319,7 @@ export function PiScrowApp({
 
     if (nextMode === "admin") {
       void refreshVerificationRequests();
+      void refreshReviewRecommendations();
     }
   }
 
@@ -1377,7 +1460,8 @@ export function PiScrowApp({
         setLedgerTrades([]);
         setLedgerEvents([]);
         setProfile(null);
-        setVerificationRequests([]);
+      setVerificationRequests([]);
+      setReviewRecommendations([]);
         setSelectedTradeId("");
         setExpandedTradeId("");
         setPaymentState("No payment started.");
@@ -1401,6 +1485,7 @@ export function PiScrowApp({
       setLedgerEvents(demoEvents);
       setProfile(buildDemoProfile(demoUser.username, demoTrades));
       setVerificationRequests(buildDemoVerificationRequests(demoTrades));
+      setReviewRecommendations(buildDemoReviewRecommendations());
       setSelectedTradeId(demoTrades[0]?.id ?? "");
       setExpandedTradeId(demoTrades[0]?.id ?? "");
       setPaymentState("Demo mode is active. Test Pi payments are simulated.");
@@ -1869,6 +1954,35 @@ export function PiScrowApp({
     }
   }
 
+  async function refreshReviewRecommendations(accessToken = piAccessToken) {
+    if (!user?.isAdmin) {
+      return;
+    }
+
+    if (allowDemo) {
+      setReviewRecommendations(buildDemoReviewRecommendations());
+      return;
+    }
+
+    if (!accessToken) {
+      return;
+    }
+
+    try {
+      const payload = await apiRequest<ReviewRecommendationsPayload>(
+        "/api/admin/review-recommendations",
+        accessToken,
+      );
+      setReviewRecommendations(payload.recommendations);
+    } catch (error) {
+      setFormError(
+        error instanceof Error
+          ? error.message
+          : "Could not load review recommendations.",
+      );
+    }
+  }
+
   async function approveVerifiedBadge(request: UserReputation) {
     askConfirmation({
       title: "Approve verified badge?",
@@ -1923,6 +2037,70 @@ export function PiScrowApp({
       );
     } finally {
       setVerificationLoading(false);
+    }
+  }
+
+  async function runReviewRecommendation(trade: Trade) {
+    setFormError("");
+
+    if (allowDemo) {
+      const recommendation = buildDemoReviewForTrade(
+        trade,
+        user?.username ?? "admin",
+      );
+      setReviewRecommendations((current) => [
+        recommendation,
+        ...current.filter((item) => item.tradeId !== trade.id),
+      ]);
+      appendEvent(
+        trade.id,
+        "Review copilot recommendation",
+        `${reviewActionLabel(recommendation.recommendedAction)} with ${recommendation.confidence}% confidence. ${recommendation.summary}`,
+        user?.username ?? "admin",
+      );
+      pushNotice(
+        "Review recommendation ready",
+        "The copilot added a recommend-only review to the demo admin desk.",
+        "info",
+      );
+      return;
+    }
+
+    if (!piAccessToken) {
+      setFormError("Connect your admin Pi account before running the review copilot.");
+      return;
+    }
+
+    setReviewLoadingTradeId(trade.id);
+
+    try {
+      const payload = await apiRequest<
+        TradePayload & {
+          recommendation: TradeReviewRecommendation;
+          reviewRecommendations?: TradeReviewRecommendation[];
+        }
+      >(`/api/trades/${trade.id}/review-copilot`, piAccessToken, {
+        method: "POST",
+      });
+
+      applyTradePayload(payload);
+      setReviewRecommendations((current) => [
+        payload.recommendation,
+        ...current.filter((item) => item.tradeId !== trade.id),
+      ]);
+      pushNotice(
+        "Review recommendation ready",
+        "The copilot saved an admin-only recommendation. No funds were released.",
+        "info",
+      );
+    } catch (error) {
+      setFormError(
+        error instanceof Error
+          ? error.message
+          : "Could not run review recommendation.",
+      );
+    } finally {
+      setReviewLoadingTradeId("");
     }
   }
 
@@ -2047,7 +2225,7 @@ export function PiScrowApp({
     });
 
     if (!parsed.success) {
-      setFormError(parsed.error.issues[0]?.message ?? "Interest form is invalid.");
+      setFormError(interestErrorMessage(parsed.error.issues[0]?.message));
       return;
     }
 
@@ -2057,7 +2235,7 @@ export function PiScrowApp({
         piAccessToken,
         {
           method: "POST",
-          body: JSON.stringify(parsed),
+          body: JSON.stringify(parsed.data),
         },
       )
         .then(applyTradePayload)
@@ -2067,7 +2245,9 @@ export function PiScrowApp({
         })
         .catch((error) => {
           setFormError(
-            error instanceof Error ? error.message : "Could not submit interest.",
+            error instanceof Error
+              ? interestErrorMessage(error.message)
+              : "Could not submit interest.",
           );
         });
       return;
@@ -2606,14 +2786,17 @@ export function PiScrowApp({
     event.preventDefault();
     setFormError("");
 
-    if (!selectedTrade) {
+    const form = event.currentTarget;
+    const formData = new FormData(form);
+    const tradeId = String(formData.get("tradeId") ?? selectedTrade?.id ?? "");
+    const trade = trades.find((item) => item.id === tradeId) ?? selectedTrade;
+
+    if (!trade) {
       return;
     }
 
-    const form = event.currentTarget;
-    const formData = new FormData(form);
     const parsed = disputeSchema.safeParse({
-      tradeId: selectedTrade.id,
+      tradeId: trade.id,
       reason: formData.get("reason"),
       evidenceNote: formData.get("evidenceNote"),
     });
@@ -2624,11 +2807,11 @@ export function PiScrowApp({
     }
 
     askConfirmation({
-      title: "Open dispute?",
-      body: "This freezes normal trade progress and sends the case to admin review.",
-      confirmLabel: "Freeze trade",
+      title: "Report this trade?",
+      body: `This freezes only "${trade.title}" and sends its payment state, proof, and activity timeline to admin review.`,
+      confirmLabel: "Freeze and report",
       tone: "danger",
-      onConfirm: () => openDisputeConfirmed(selectedTrade, parsed.data, form),
+      onConfirm: () => openDisputeConfirmed(trade, parsed.data, form),
     });
   }
 
@@ -3077,11 +3260,14 @@ export function PiScrowApp({
               <AdminDesk
                 trades={adminTrades}
                 events={events}
+                reviewLoadingTradeId={reviewLoadingTradeId}
+                reviewRecommendations={reviewRecommendations}
                 verificationLoading={verificationLoading}
                 verificationRequests={verificationRequests}
                 onApproveVerification={(request) => void approveVerifiedBadge(request)}
                 onRefreshVerifications={() => void refreshVerificationRequests()}
                 onRequestFollowUp={adminRequestFollowUp}
+                onRunReview={runReviewRecommendation}
                 onResolve={adminResolve}
               />
             )}
@@ -4597,10 +4783,18 @@ function SideRail({
   onSubmitDisputeUpdate?: (trade: Trade, event: FormEvent<HTMLFormElement>) => void;
 }) {
   const tradeEvents = events.filter((event) => event.tradeId === trade?.id);
+  const isTradeParty = Boolean(
+    trade &&
+      (normalizeUsername(trade.sellerPiUsername) === currentUsername ||
+        normalizeUsername(trade.buyerPiUsername ?? "") === currentUsername),
+  );
+  const canOpenDispute =
+    isTradeParty &&
+    trade?.status !== undefined &&
+    ["Funded", "DeliverySubmitted"].includes(trade.status);
   const canRespondToDispute =
     trade?.status === "Disputed" &&
-    (normalizeUsername(trade.sellerPiUsername) === currentUsername ||
-      normalizeUsername(trade.buyerPiUsername ?? "") === currentUsername);
+    isTradeParty;
 
   return (
     <aside className="grid content-start gap-4">
@@ -4684,13 +4878,18 @@ function SideRail({
         </ActionPanel>
       )}
 
-      {trade && !isTerminal(trade.status) && trade.status !== "Disputed" && (
-        <ActionPanel title="Open Dispute" icon={<AlertTriangle className="h-4 w-4" />}>
+      {trade && canOpenDispute && (
+        <ActionPanel title="Report This Trade" icon={<AlertTriangle className="h-4 w-4" />}>
+          <div className="mb-3 border border-rose-200 bg-rose-50 p-3 text-sm leading-6 text-rose-950">
+            Reporting freezes only this selected trade and sends its proof,
+            payment state, and timeline to admin review.
+          </div>
           <form className="grid gap-3" onSubmit={onOpenDispute}>
+            <input name="tradeId" type="hidden" value={trade.id} />
             <textarea
               className="min-h-24 border border-black/15 bg-white p-3 text-sm outline-none focus:border-rose-700"
               name="reason"
-              placeholder="Why should this trade be reviewed?"
+              placeholder={`Why should ${trade.title} be reviewed?`}
             />
             <input
               className="h-11 border border-black/15 bg-white px-3 text-sm outline-none focus:border-rose-700"
@@ -4701,7 +4900,7 @@ function SideRail({
               className="inline-flex h-11 items-center justify-center gap-2 bg-rose-700 px-4 text-sm font-black text-white"
               type="submit"
             >
-              Freeze trade
+              Freeze and report trade
             </button>
           </form>
         </ActionPanel>
@@ -4784,15 +4983,20 @@ function PublicLedger({
 function AdminDesk({
   trades,
   events,
+  reviewLoadingTradeId,
+  reviewRecommendations,
   verificationLoading,
   verificationRequests,
   onApproveVerification,
   onRefreshVerifications,
   onRequestFollowUp,
+  onRunReview,
   onResolve,
 }: {
   trades: Trade[];
   events: TradeEvent[];
+  reviewLoadingTradeId: string;
+  reviewRecommendations: TradeReviewRecommendation[];
   verificationLoading: boolean;
   verificationRequests: UserReputation[];
   onApproveVerification: (request: UserReputation) => void;
@@ -4802,6 +5006,7 @@ function AdminDesk({
     action: AdminFollowUpAction,
     event: FormEvent<HTMLFormElement>,
   ) => void;
+  onRunReview: (trade: Trade) => void;
   onResolve: (trade: Trade, status: "Completed" | "Cancelled") => void;
 }) {
   return (
@@ -4816,73 +5021,85 @@ function AdminDesk({
         {trades.length === 0 ? (
           <EmptyState label="No disputed trades waiting for admin review." />
         ) : (
-          trades.map((trade) => (
-            <article key={trade.id} className="border border-rose-200 bg-white p-4">
-              <OfferSummary trade={trade} />
-              <div className="mt-4">
-                <TradeEconomics trade={trade} />
-              </div>
-              <div className="mt-4 grid gap-3 border-t border-black/10 pt-3">
-                <LocationBlock trade={trade} />
-                {trade.buyerPiUsername && (
-                  <TextBlock label="Buyer under review" value={`@${trade.buyerPiUsername}`} />
-                )}
-                {trade.deliveryProofNote && (
-                  <TextBlock
-                    label="Seller package proof"
-                    value={trade.deliveryProofNote}
-                  />
-                )}
-                {trade.deliveryProofUrl && (
-                  <ProofLink label="Seller proof image / link" url={trade.deliveryProofUrl} />
-                )}
-                {trade.buyerReceiptNote && (
-                  <TextBlock
-                    label="Buyer receipt proof"
-                    value={trade.buyerReceiptNote}
-                  />
-                )}
-                {trade.buyerReceiptProofUrl && (
-                  <ProofLink
-                    label="Buyer receipt image / link"
-                    url={trade.buyerReceiptProofUrl}
-                  />
-                )}
-              </div>
-              <div className="mt-4 grid gap-3 border-t border-black/10 pt-3 lg:grid-cols-2">
-                <AdminFollowUpForm
-                  action="request_buyer_followup"
-                  label="Request buyer update"
-                  placeholder="Ask the buyer what they received, what is missing, or what proof they can add."
+          trades.map((trade) => {
+            const recommendation = reviewRecommendations.find(
+              (item) => item.tradeId === trade.id,
+            );
+
+            return (
+              <article key={trade.id} className="border border-rose-200 bg-white p-4">
+                <OfferSummary trade={trade} />
+                <div className="mt-4">
+                  <TradeEconomics trade={trade} />
+                </div>
+                <ReviewRecommendationPanel
+                  loading={reviewLoadingTradeId === trade.id}
+                  recommendation={recommendation}
                   trade={trade}
-                  onSubmit={onRequestFollowUp}
+                  onRunReview={onRunReview}
                 />
-                <AdminFollowUpForm
-                  action="request_seller_followup"
-                  label="Request seller update"
-                  placeholder="Ask the seller for delivery proof, tracking details, or a response to the buyer claim."
-                  trade={trade}
-                  onSubmit={onRequestFollowUp}
-                />
-              </div>
-              <div className="mt-4 grid gap-3 border-t border-black/10 pt-3 sm:grid-cols-2">
-                <button
-                  className="inline-flex min-h-11 items-center justify-center gap-2 bg-emerald-700 px-3 py-2 text-sm font-black text-white"
-                  type="button"
-                  onClick={() => onResolve(trade, "Completed")}
-                >
-                  Approve seller release
-                </button>
-                <button
-                  className="inline-flex min-h-11 items-center justify-center gap-2 bg-zinc-800 px-3 py-2 text-sm font-black text-white"
-                  type="button"
-                  onClick={() => onResolve(trade, "Cancelled")}
-                >
-                  Approve buyer refund
-                </button>
-              </div>
-            </article>
-          ))
+                <div className="mt-4 grid gap-3 border-t border-black/10 pt-3">
+                  <LocationBlock trade={trade} />
+                  {trade.buyerPiUsername && (
+                    <TextBlock label="Buyer under review" value={`@${trade.buyerPiUsername}`} />
+                  )}
+                  {trade.deliveryProofNote && (
+                    <TextBlock
+                      label="Seller package proof"
+                      value={trade.deliveryProofNote}
+                    />
+                  )}
+                  {trade.deliveryProofUrl && (
+                    <ProofLink label="Seller proof image / link" url={trade.deliveryProofUrl} />
+                  )}
+                  {trade.buyerReceiptNote && (
+                    <TextBlock
+                      label="Buyer receipt proof"
+                      value={trade.buyerReceiptNote}
+                    />
+                  )}
+                  {trade.buyerReceiptProofUrl && (
+                    <ProofLink
+                      label="Buyer receipt image / link"
+                      url={trade.buyerReceiptProofUrl}
+                    />
+                  )}
+                </div>
+                <div className="mt-4 grid gap-3 border-t border-black/10 pt-3 lg:grid-cols-2">
+                  <AdminFollowUpForm
+                    action="request_buyer_followup"
+                    label="Request buyer update"
+                    placeholder="Ask the buyer what they received, what is missing, or what proof they can add."
+                    trade={trade}
+                    onSubmit={onRequestFollowUp}
+                  />
+                  <AdminFollowUpForm
+                    action="request_seller_followup"
+                    label="Request seller update"
+                    placeholder="Ask the seller for delivery proof, tracking details, or a response to the buyer claim."
+                    trade={trade}
+                    onSubmit={onRequestFollowUp}
+                  />
+                </div>
+                <div className="mt-4 grid gap-3 border-t border-black/10 pt-3 sm:grid-cols-2">
+                  <button
+                    className="inline-flex min-h-11 items-center justify-center gap-2 bg-emerald-700 px-3 py-2 text-sm font-black text-white"
+                    type="button"
+                    onClick={() => onResolve(trade, "Completed")}
+                  >
+                    Approve seller release
+                  </button>
+                  <button
+                    className="inline-flex min-h-11 items-center justify-center gap-2 bg-zinc-800 px-3 py-2 text-sm font-black text-white"
+                    type="button"
+                    onClick={() => onResolve(trade, "Cancelled")}
+                  >
+                    Approve buyer refund
+                  </button>
+                </div>
+              </article>
+            );
+          })
         )}
       </div>
       <Timeline events={events.filter((event) => trades.some((trade) => trade.id === event.tradeId))} />
@@ -4958,6 +5175,125 @@ function VerificationQueue({
       </div>
     </section>
   );
+}
+
+function ReviewRecommendationPanel({
+  loading,
+  recommendation,
+  trade,
+  onRunReview,
+}: {
+  loading: boolean;
+  recommendation?: TradeReviewRecommendation;
+  trade: Trade;
+  onRunReview: (trade: Trade) => void;
+}) {
+  return (
+    <section className="mt-4 border border-amber-200 bg-amber-50 p-3">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 text-amber-900">
+            <Lightbulb className="h-4 w-4" />
+            <h3 className="text-sm font-black text-zinc-950">
+              Review Copilot
+            </h3>
+            <Chip>Recommend-only</Chip>
+          </div>
+          <p className="mt-2 text-sm leading-6 text-zinc-700">
+            Admin-only evidence review. It never releases funds or resolves a
+            trade by itself.
+          </p>
+        </div>
+        <button
+          className="inline-flex min-h-10 items-center justify-center gap-2 bg-zinc-950 px-3 py-2 text-sm font-black text-white disabled:cursor-not-allowed disabled:bg-zinc-400"
+          type="button"
+          disabled={loading}
+          onClick={() => onRunReview(trade)}
+        >
+          {loading && <LoaderCircle className="h-4 w-4 animate-spin" />}
+          {recommendation ? "Rerun review" : "Run review"}
+        </button>
+      </div>
+
+      {recommendation ? (
+        <div className="mt-3 grid gap-3 border-t border-amber-200 pt-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="inline-flex h-8 items-center border border-amber-300 bg-white px-3 text-xs font-black uppercase text-amber-950">
+              {reviewActionLabel(recommendation.recommendedAction)}
+            </span>
+            <span className="inline-flex h-8 items-center border border-black/10 bg-white px-3 text-xs font-black text-zinc-800">
+              {recommendation.confidence}% confidence
+            </span>
+            <span className="text-xs font-bold uppercase text-zinc-500">
+              {dateLabel(recommendation.createdAt)}
+            </span>
+          </div>
+          <p className="text-sm leading-6 text-zinc-700">
+            {recommendation.summary}
+          </p>
+          <EvidenceList
+            label="Missing evidence"
+            items={recommendation.missingEvidence}
+            emptyLabel="No missing evidence flagged."
+          />
+          <EvidenceList
+            label="Risk flags"
+            items={recommendation.riskFlags}
+            emptyLabel="No risk flags detected."
+          />
+        </div>
+      ) : (
+        <p className="mt-3 border-t border-amber-200 pt-3 text-sm font-semibold text-zinc-600">
+          No recommendation has been generated for this dispute yet.
+        </p>
+      )}
+    </section>
+  );
+}
+
+function EvidenceList({
+  label,
+  items,
+  emptyLabel,
+}: {
+  label: string;
+  items: string[];
+  emptyLabel: string;
+}) {
+  return (
+    <div>
+      <p className="text-[11px] font-bold uppercase text-zinc-500">{label}</p>
+      <div className="mt-2 flex flex-wrap gap-2">
+        {items.length === 0 ? (
+          <span className="text-xs font-semibold text-zinc-500">{emptyLabel}</span>
+        ) : (
+          items.map((item) => (
+            <span
+              key={item}
+              className="inline-flex min-h-7 items-center border border-black/10 bg-white px-2.5 py-1 text-xs font-bold text-zinc-700"
+            >
+              {humanizeUnderscore(item)}
+            </span>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+function reviewActionLabel(action: TradeReviewRecommendation["recommendedAction"]) {
+  const labels: Record<TradeReviewRecommendation["recommendedAction"], string> = {
+    release: "Seller release",
+    refund: "Buyer refund",
+    request_more_info: "More info needed",
+    admin_review: "Admin review",
+  };
+
+  return labels[action];
+}
+
+function humanizeUnderscore(value: string) {
+  return value.replace(/_/g, " ");
 }
 
 function AdminFollowUpForm({

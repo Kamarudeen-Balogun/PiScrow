@@ -157,7 +157,7 @@ def main() -> None:
         page.get_by_role("button", name="Show interest").click()
         expect(page.get_by_role("alertdialog")).to_be_visible()
         expect(page.get_by_text("Action needed")).to_be_visible()
-        expect(page.get_by_text("Add a short response so the seller can compare buyers.")).to_be_visible()
+        expect(page.get_by_text("Your buyer response is too short.")).to_be_visible()
         page.get_by_role("button", name="Got it").click()
         page.get_by_placeholder("Tell the seller why you are the right buyer").fill(
             "I know the exact model and can fund once the seller chooses me."
@@ -257,6 +257,9 @@ def main() -> None:
         expect(page.get_by_text("Laptop repair deposit")).to_be_visible()
         expect(page.get_by_text("Seller package proof")).to_be_visible()
         expect(page.get_by_text("Seller proof image / link")).to_be_visible()
+        expect(page.get_by_text("Review Copilot")).to_be_visible()
+        expect(page.get_by_text("Recommend-only")).to_be_visible()
+        expect(page.get_by_role("button", name="Rerun review")).to_be_visible()
         expect(page.get_by_text("Request buyer update")).to_be_visible()
         expect(page.get_by_text("Request seller update")).to_be_visible()
         page.get_by_placeholder("Ask the buyer what they received").fill(
