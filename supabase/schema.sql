@@ -255,9 +255,38 @@ create policy "disputes are readable to authenticated app users"
 on public.disputes for select
 using (true);
 
+create policy "admin actions direct access denied"
+on public.admin_actions
+for all
+to anon, authenticated
+using (false)
+with check (false);
+
+create policy "notifications direct access denied"
+on public.notifications
+for all
+to anon, authenticated
+using (false)
+with check (false);
+
+create policy "feedback messages direct access denied"
+on public.feedback_messages
+for all
+to anon, authenticated
+using (false)
+with check (false);
+
+create policy "trade review recommendations direct access denied"
+on public.trade_review_recommendations
+for all
+to anon, authenticated
+using (false)
+with check (false);
+
 create or replace function public.prevent_funded_trade_identity_changes()
 returns trigger
 language plpgsql
+set search_path = public
 as $$
 begin
   if old.status in ('Funded', 'DeliverySubmitted', 'Completed', 'Disputed')
@@ -282,3 +311,21 @@ create trigger prevent_funded_trade_identity_changes_trigger
 before update on public.trades
 for each row
 execute function public.prevent_funded_trade_identity_changes();
+
+do $$
+begin
+  if exists (
+    select 1
+    from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public'
+      and p.proname = 'rls_auto_enable'
+      and pg_get_function_identity_arguments(p.oid) = ''
+  ) then
+    execute 'revoke execute on function public.rls_auto_enable() from public';
+    execute 'revoke execute on function public.rls_auto_enable() from anon';
+    execute 'revoke execute on function public.rls_auto_enable() from authenticated';
+    execute 'alter function public.rls_auto_enable() set search_path = public';
+  end if;
+end;
+$$;
