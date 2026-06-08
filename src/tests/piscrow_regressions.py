@@ -27,12 +27,36 @@ def assert_state_transition_guards() -> None:
 def assert_validation_guards() -> None:
     validation = read("src/lib/validation.ts")
     app = read("src/components/piscrow-app.tsx")
+    helpers = read("src/lib/piscrow-ui-helpers.ts")
 
     assert 'value == null ? "" : value' in validation
     assert "Your buyer response is too short." in validation
-    assert "Your buyer response is too short." in app
+    assert "Your buyer response is too short." in helpers
     assert "`/api/trades/${trade.id}/interests`" in app
     assert "JSON.stringify(parsed.data)" in app
+
+
+def assert_authenticated_workspace_sync() -> None:
+    app = read("src/components/piscrow-app.tsx")
+    supabase = read("src/lib/supabase.ts")
+
+    assert "const workspaceFallbackSyncIntervalMs = 60_000" in app
+    assert 'const realtimeSyncChannelName = "piscrow-app-sync"' in app
+    assert "createBrowserSupabaseClient()" in app
+    assert 'apiRequest<TradePayload>("/api/trades", accessToken)' in app
+    assert 'apiRequest<{ notifications: SavedNotification[] }>(' in app
+    assert '.channel(realtimeSyncChannelName, {' in app
+    assert '.on("broadcast", { event: "workspace-refresh" }' in app
+    assert '.on("broadcast", { event: "ledger-refresh" }' in app
+    assert '.on("broadcast", { event: "profile-refresh" }' in app
+    assert '.on("broadcast", { event: "admin-refresh" }' in app
+    assert 'window.addEventListener(\n      "piscrow:mutation-success",' in app
+    assert 'new CustomEvent("piscrow:mutation-success"' in app
+    assert 'window.setInterval(' in app
+    assert "workspaceFallbackSyncIntervalMs" in app
+    assert 'document.addEventListener("visibilitychange", handleWorkspaceVisibilityRefresh)' in app
+    assert "persistSession: false" in supabase
+    assert "detectSessionInUrl: false" in supabase
 
 
 def assert_authorization_guards() -> None:
@@ -68,14 +92,14 @@ def assert_payment_amount_and_window_guards() -> None:
 def assert_review_copilot_is_recommend_only() -> None:
     review_server = read("src/server/review-copilot.ts")
     migration = read("supabase/migrations/20260608093000_review_recommendations.sql")
-    app = read("src/components/piscrow-app.tsx")
+    workspaces = read("src/components/piscrow-workspaces.tsx")
 
     assert "trade_review_recommendations" in migration
     assert "recommended_action in ('release', 'refund', 'request_more_info', 'admin_review')" in migration
     assert "recommendOnly: true" in review_server
     assert "Review copilot only runs on disputed trades." in review_server
-    assert "It never releases funds or resolves a" in app
-    assert "runReviewRecommendation" in app
+    assert "It never releases funds or resolves a" in workspaces
+    assert "onRunReview" in workspaces
 
 
 def assert_no_sensitive_console_logging() -> None:
@@ -92,6 +116,7 @@ def assert_no_sensitive_console_logging() -> None:
 def main() -> None:
     assert_state_transition_guards()
     assert_validation_guards()
+    assert_authenticated_workspace_sync()
     assert_authorization_guards()
     assert_payment_amount_and_window_guards()
     assert_review_copilot_is_recommend_only()

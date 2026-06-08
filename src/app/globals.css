@@ -26,11 +26,45 @@ textarea {
 
 button {
   cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  transform: translateZ(0);
+  transition:
+    transform 140ms ease,
+    opacity 140ms ease,
+    background-color 140ms ease,
+    border-color 140ms ease,
+    color 140ms ease;
+}
+
+button:enabled:hover {
+  transform: translateY(-1px);
+}
+
+button:enabled:active {
+  transform: translateY(1px) scale(0.985);
+  transition-duration: 70ms;
+}
+
+button:focus-visible {
+  outline: 2px solid #14532d;
+  outline-offset: 2px;
 }
 
 button:disabled {
   cursor: not-allowed;
   opacity: 0.55;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  button {
+    transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease;
+  }
+
+  button:enabled:hover,
+  button:enabled:active {
+    transform: none;
+  }
 }
 
 ::selection {
