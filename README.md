@@ -80,7 +80,10 @@ NEXT_PUBLIC_PISCROW_MAINTENANCE_ENABLED=false
 NEXT_PUBLIC_PISCROW_MAINTENANCE_MESSAGE=PiScrow is receiving updates. The app remains online, but some actions may be slower than usual.
 
 SUPABASE_SERVICE_ROLE_KEY=your-server-only-service-role-key
-PI_NETWORK_API_KEY=your-server-only-pi-network-api-key
+PI_NETWORK_API_KEY=your-pi-app-platform-api-key-from-app-studio-or-developer-portal
+# App wallet private seed used for automatic seller release and buyer refund.
+# Format expected by pi-backend: starts with S and is 56 characters long.
+PI_WALLET_PRIVATE_SEED=S_YOUR_56_CHARACTER_APP_WALLET_PRIVATE_SEED
 PI_PLATFORM_API_BASE=https://api.minepi.com
 PISCROW_ADMIN_PI_USERNAMES=@villari002
 PISCROW_FEEDBACK_WEBHOOK_URL=https://hook.us1.make.com/your-feedback-webhook
@@ -88,7 +91,7 @@ UPSTASH_REDIS_REST_URL=https://your-upstash-redis-rest-url
 UPSTASH_REDIS_REST_TOKEN=your-upstash-redis-rest-token
 ```
 
-Never expose `PI_NETWORK_API_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `PISCROW_ADMIN_PI_USERNAMES`, or `PISCROW_FEEDBACK_WEBHOOK_URL` with a `NEXT_PUBLIC_` prefix.
+Never expose `PI_NETWORK_API_KEY`, `PI_WALLET_PRIVATE_SEED`, `SUPABASE_SERVICE_ROLE_KEY`, `PISCROW_ADMIN_PI_USERNAMES`, or `PISCROW_FEEDBACK_WEBHOOK_URL` with a `NEXT_PUBLIC_` prefix.
 
 ## Supabase Workflow
 
@@ -131,6 +134,15 @@ creates payments with `Pi.createPayment(...)`, then the backend approves and
 completes them through the Pi Platform API with `PI_NETWORK_API_KEY`. Payment
 metadata includes the trade ID, selected buyer username, seller username, offer
 title, seller amount, fee amount, and buyer total.
+
+Automatic refund and seller release use the same Pi app on the server side. Set
+`PI_WALLET_PRIVATE_SEED` to the private seed of the PiScrow app wallet linked to
+that same app. PiScrow uses that app wallet to hold the release/refund authority
+and sends the final A2U payout to the authenticated Pi UID after admin review.
+
+Important: the API key and wallet private seed must belong to the same Pi app.
+If you created separate keys or wallets in different Pi app entries, they stay
+separate and do not share balances or release authority.
 
 When a seller selects a buyer, PiScrow gives that buyer a 1-hour Test Pi
 funding window. Funding routes reject any non-selected buyer and reject expired
