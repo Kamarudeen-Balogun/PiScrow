@@ -4,6 +4,7 @@ import {
   completePiPayment,
   getPiPayment,
   hasPiNetworkApiKey,
+  piTransactionLink,
 } from "@/lib/pi-platform";
 import { jsonError, requireAppUser } from "@/server/auth";
 import { createNotification } from "@/server/notifications";
@@ -17,6 +18,7 @@ import {
   readJsonBody,
   secureJson,
 } from "@/server/security";
+import { addTradeChatSystemMessage, ensureTradeChatRoom } from "@/server/trade-chat";
 import {
   getServiceClientOrThrow,
   getTradeForAction,
@@ -97,6 +99,13 @@ export async function POST(request: Request) {
         platform_fee_test_pi: amounts.platformFee,
         buyer_total_test_pi: amounts.buyerTotal,
         status: "Completed",
+        buyer_payment_txid:
+          payment.transaction?.txid ?? parsed.data.txid,
+        buyer_payment_link:
+          payment.transaction?._link ??
+          piTransactionLink(payment.transaction?.txid ?? parsed.data.txid),
+        escrow_status: "held_in_app",
+        release_status: "NotStarted",
         raw_provider_status: payment,
         updated_at: new Date().toISOString(),
       },
@@ -118,6 +127,12 @@ export async function POST(request: Request) {
     if (tradeError) {
       throw new Error(tradeError.message);
     }
+
+    await ensureTradeChatRoom({ ...trade, status: "Funded" });
+    await addTradeChatSystemMessage(
+      { ...trade, status: "Funded" },
+      `Buyer @${user.username} funded the trade. Seller can now submit delivery proof here.`,
+    );
 
     await insertTradeEvent(
       parsed.data.tradeId,

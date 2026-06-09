@@ -8,6 +8,7 @@ import {
   secureJson,
 } from "@/server/security";
 import {
+  assertUserPayoutReady,
   assertBuyerIsEligibleForListing,
   assertTradeIsOpenForInterest,
   getServiceClientOrThrow,
@@ -37,6 +38,7 @@ export async function POST(
     const trade = await getTradeForAction(tradeId);
     assertTradeIsOpenForInterest(trade);
     assertBuyerIsEligibleForListing(trade, user);
+    await assertUserPayoutReady(user.id, "buy");
 
     const supabase = getServiceClientOrThrow();
     const { data: existingInterest } = await supabase
@@ -50,11 +52,12 @@ export async function POST(
       throw new Error("You already submitted interest for this listing.");
     }
 
+    const responseNote = parsed.data.responseNote ?? "";
     const { error } = await supabase.from("trade_interests").insert({
       trade_id: tradeId,
       buyer_user_id: user.id,
       buyer_pi_username: user.username,
-      response_note: parsed.data.responseNote,
+      response_note: responseNote,
       status: "Open",
     });
 
@@ -67,9 +70,7 @@ export async function POST(
       user.id,
       "Interest submitted",
       interestSubmittedEvent(user.username),
-      {
-        responseNote: parsed.data.responseNote,
-      },
+      responseNote ? { responseNote } : {},
     );
 
     await createNotification({

@@ -70,7 +70,7 @@ export function validatePiEscrowPayment({
     !allowExpiredSelection &&
     new Date(trade.selection_expires_at).getTime() <= Date.now()
   ) {
-    throw new Error("Your 20-minute funding window expired. Ask the seller to select you again.");
+    throw new Error("Your 1-hour funding window expired. Ask the seller to select you again.");
   }
 
   if (payment.user_uid !== user.uid) {

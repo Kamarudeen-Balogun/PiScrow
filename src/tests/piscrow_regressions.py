@@ -13,15 +13,19 @@ def assert_state_transition_guards() -> None:
     dispute_route = read("src/app/api/trades/[tradeId]/dispute/route.ts")
     delivery_route = read("src/app/api/trades/[tradeId]/delivery/route.ts")
     confirm_route = read("src/app/api/trades/[tradeId]/confirm/route.ts")
+    select_route = read("src/app/api/trades/[tradeId]/select-interest/route.ts")
 
     assert 'Draft: ["PendingFunding", "Cancelled"]' in trade_state
     assert 'PendingFunding: ["Funded", "Cancelled", "Disputed"]' in trade_state
     assert 'Funded: ["DeliverySubmitted", "Disputed", "Cancelled"]' in trade_state
-    assert 'DeliverySubmitted: ["Completed", "Disputed"]' in trade_state
+    assert 'DeliverySubmitted: ["AwaitingRelease", "Disputed"]' in trade_state
+    assert 'AwaitingRelease: ["Completed", "Disputed", "Cancelled"]' in trade_state
     assert 'Disputed: ["Completed", "Cancelled"]' in trade_state
-    assert '["Funded", "DeliverySubmitted"].includes(trade.status)' in dispute_route
+    assert '["Funded", "DeliverySubmitted", "AwaitingRelease"].includes(trade.status)' in dispute_route
     assert 'assertTradeStatus(trade, ["Funded"])' in delivery_route
     assert 'assertTradeStatus(trade, ["DeliverySubmitted"])' in confirm_route
+    assert 'trade.status === "AwaitingRelease"' in select_route
+    assert "cannot be reassigned" in select_route
 
 
 def assert_validation_guards() -> None:
@@ -30,8 +34,8 @@ def assert_validation_guards() -> None:
     helpers = read("src/lib/piscrow-ui-helpers.ts")
 
     assert 'value == null ? "" : value' in validation
-    assert "Your buyer response is too short." in validation
-    assert "Your buyer response is too short." in helpers
+    assert "Keep the response under 600 characters." in validation
+    assert "Could not read the optional buyer note." in helpers
     assert "`/api/trades/${trade.id}/interests`" in app
     assert "JSON.stringify(parsed.data)" in app
 
@@ -57,6 +61,7 @@ def assert_authenticated_workspace_sync() -> None:
     assert 'document.addEventListener("visibilitychange", handleWorkspaceVisibilityRefresh)' in app
     assert "persistSession: false" in supabase
     assert "detectSessionInUrl: false" in supabase
+    assert 'normalizeUsername(trade.buyerPiUsername ?? "") === normalizedUsername' in app
 
 
 def assert_authorization_guards() -> None:
@@ -79,14 +84,47 @@ def assert_payment_amount_and_window_guards() -> None:
     payments = read("src/server/pi-payments.ts")
     approve_route = read("src/app/api/pi/approve/route.ts")
     complete_route = read("src/app/api/pi/complete/route.ts")
+    incomplete_route = read("src/app/api/pi/incomplete/route.ts")
+    confirm_route = read("src/app/api/trades/[tradeId]/confirm/route.ts")
+    escrow_release = read("src/server/escrow-release.ts")
 
     assert "Pi payment amount does not match the trade total." in payments
     assert "calculateBuyerTotal(sellerAmount)" in payments
-    assert "Your 20-minute funding window expired." in payments
+    assert "Your 1-hour funding window expired." in payments
     assert "Pi payment user does not match the selected buyer." in payments
     assert "assertNoCompletedPayment" in approve_route
     assert "getCompletedPaymentForTrade" in complete_route
     assert "This trade already has a completed payment." in complete_route
+    assert 'escrow_status: "buyer_pending"' in approve_route
+    assert 'escrow_status: "held_in_app"' in complete_route
+    assert "buyer_payment_txid" in complete_route
+    assert "buyer_payment_link" in complete_route
+    assert 'release_status: "NotStarted"' in complete_route
+    assert 'escrow_status: "held_in_app"' in incomplete_route
+    assert 'status: "AwaitingRelease"' in confirm_route
+    assert "PI_WALLET_PRIVATE_SEED" in escrow_release
+    assert "released_to_seller" in escrow_release
+    assert "refunded_to_buyer" in escrow_release
+
+
+def assert_trade_chat_guards() -> None:
+    migration = read("supabase/migrations/20260609190000_trade_chat_rooms.sql")
+    chat_server = read("src/server/trade-chat.ts")
+    chat_route = read("src/app/api/trades/[tradeId]/chat/route.ts")
+    claim_route = read("src/app/api/trades/[tradeId]/chat/claim/route.ts")
+    complete_route = read("src/app/api/pi/complete/route.ts")
+    dispute_route = read("src/app/api/trades/[tradeId]/dispute/route.ts")
+
+    assert "trade_chat_rooms" in migration
+    assert "trade_chat_messages" in migration
+    assert "trade chat rooms direct access denied" in migration
+    assert "trade chat messages direct access denied" in migration
+    assert "Join this dispute room before sending admin messages." in chat_server
+    assert "This dispute room is already claimed by another admin." in chat_server
+    assert "uploadTradeProofImage" in chat_route
+    assert "claimTradeChatRoom" in claim_route
+    assert "ensureTradeChatRoom" in complete_route
+    assert "markTradeChatRoomDisputed" in dispute_route
 
 
 def assert_review_copilot_is_recommend_only() -> None:
@@ -97,9 +135,21 @@ def assert_review_copilot_is_recommend_only() -> None:
     assert "trade_review_recommendations" in migration
     assert "recommended_action in ('release', 'refund', 'request_more_info', 'admin_review')" in migration
     assert "recommendOnly: true" in review_server
-    assert "Review copilot only runs on disputed trades." in review_server
+    assert "Review copilot only runs on disputed or release-ready trades." in review_server
     assert "It never releases funds or resolves a" in workspaces
     assert "onRunReview" in workspaces
+
+
+def assert_demo_payment_visibility() -> None:
+    demo_data = read("src/lib/demo-data.ts")
+    workspaces = read("src/components/piscrow-workspaces.tsx")
+
+    assert "trade-006" in demo_data
+    assert "buyerPaymentTxid" in demo_data
+    assert "held_in_app" in demo_data
+    assert "Transaction Tracking" in workspaces
+    assert "Seller payout" in workspaces
+    assert "Buyer refund" in workspaces
 
 
 def assert_no_sensitive_console_logging() -> None:
@@ -119,7 +169,9 @@ def main() -> None:
     assert_authenticated_workspace_sync()
     assert_authorization_guards()
     assert_payment_amount_and_window_guards()
+    assert_trade_chat_guards()
     assert_review_copilot_is_recommend_only()
+    assert_demo_payment_visibility()
     assert_no_sensitive_console_logging()
 
 

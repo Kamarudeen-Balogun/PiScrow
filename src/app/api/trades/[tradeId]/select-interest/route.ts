@@ -53,10 +53,16 @@ export async function POST(
 
     const supabase = getServiceClientOrThrow();
     const now = new Date().toISOString();
-    const expiresAt = new Date(Date.now() + 20 * 60 * 1000).toISOString();
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
 
-    if (trade.status === "Funded" || trade.status === "DeliverySubmitted") {
-      throw new Error("This trade is already funded and cannot be reassigned.");
+    if (
+      trade.status === "Funded" ||
+      trade.status === "DeliverySubmitted" ||
+      trade.status === "AwaitingRelease"
+    ) {
+      throw new Error(
+        "This trade already has buyer escrow activity and cannot be reassigned.",
+      );
     }
 
     if (trade.status === "Completed" || trade.status === "Cancelled") {
@@ -127,7 +133,7 @@ export async function POST(
       tradeId,
       type: "buyer_selected",
       title: "Seller selected you",
-      body: `@${user.username} selected your response. Start funding within 20 minutes to keep this offer.`,
+      body: `@${user.username} selected your response. Start funding within 1 hour to keep this offer.`,
     });
 
     return secureJson(await listTradesForUser(user));

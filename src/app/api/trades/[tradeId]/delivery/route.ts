@@ -10,6 +10,7 @@ import {
   sanitizeFormFields,
   secureJson,
 } from "@/server/security";
+import { addTradeChatSystemMessage } from "@/server/trade-chat";
 import {
   assertSeller,
   assertTradeStatus,
@@ -75,6 +76,12 @@ export async function POST(
       user.id,
       "Delivery submitted",
       parsed.data.deliveryProofNote,
+    );
+    await addTradeChatSystemMessage(
+      { ...trade, status: "DeliverySubmitted" },
+      proofImagePath
+        ? `Seller @${user.username} submitted delivery proof and uploaded a package image.`
+        : `Seller @${user.username} submitted delivery proof: ${parsed.data.deliveryProofNote}`,
     );
 
     await createNotification({

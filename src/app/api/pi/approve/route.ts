@@ -17,6 +17,7 @@ import {
   secureJson,
 } from "@/server/security";
 import {
+  assertUserPayoutReady,
   getServiceClientOrThrow,
   getTradeForAction,
 } from "@/server/trades";
@@ -40,6 +41,7 @@ export async function POST(request: Request) {
     }
 
     const user = await requireAppUser(request);
+    await assertUserPayoutReady(user.id, "fund");
     const trade = await getTradeForAction(parsed.data.tradeId);
     await assertNoCompletedPayment(parsed.data.tradeId);
 
@@ -61,6 +63,8 @@ export async function POST(request: Request) {
         platform_fee_test_pi: platformFee,
         buyer_total_test_pi: buyerTotal,
         status: "Approved",
+        escrow_status: "buyer_pending",
+        release_status: "NotStarted",
         raw_provider_status: payment,
         updated_at: new Date().toISOString(),
       },

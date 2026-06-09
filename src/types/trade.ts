@@ -5,6 +5,7 @@ export const tradeStatuses = [
   "PendingFunding",
   "Funded",
   "DeliverySubmitted",
+  "AwaitingRelease",
   "Completed",
   "Disputed",
   "Cancelled",
@@ -50,6 +51,51 @@ export type Trade = {
   deliveryProofUrl?: string;
   buyerReceiptNote?: string;
   buyerReceiptProofUrl?: string;
+  payment?: TradePaymentSummary;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type EscrowStatus =
+  | "buyer_pending"
+  | "held_in_app"
+  | "release_pending"
+  | "released_to_seller"
+  | "refund_pending"
+  | "refunded_to_buyer"
+  | "release_failed"
+  | "refund_failed";
+
+export type EscrowReleaseType = "seller_release" | "buyer_refund";
+
+export type EscrowReleaseStatus =
+  | "NotStarted"
+  | "Created"
+  | "Submitted"
+  | "Completed"
+  | "Failed"
+  | "Cancelled";
+
+export type TradePaymentSummary = {
+  id: string;
+  tradeId: string;
+  piPaymentId: string;
+  amountTestPi: number;
+  sellerAmountTestPi?: number;
+  platformFeeTestPi?: number;
+  buyerTotalTestPi?: number;
+  buyerPaymentTxid?: string;
+  buyerPaymentLink?: string;
+  escrowStatus?: EscrowStatus;
+  releaseType?: EscrowReleaseType;
+  releaseStatus?: EscrowReleaseStatus;
+  releasePiPaymentId?: string;
+  releaseTxid?: string;
+  releaseTransactionLink?: string;
+  releaseAmountTestPi?: number;
+  releaseTargetPiUsername?: string;
+  releaseRequestedAt?: string;
+  releaseCompletedAt?: string;
   createdAt: string;
   updatedAt: string;
 };
@@ -94,5 +140,29 @@ export type Dispute = {
   evidenceNote?: string;
   status: "Open" | "Resolved" | "Cancelled";
   resolution?: string;
+  createdAt: string;
+};
+
+export type TradeChatRoom = {
+  id: string;
+  tradeId: string;
+  status: "active" | "disputed" | "closed";
+  claimedAdminUserId?: string;
+  claimedAdminPiUsername?: string;
+  claimedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type TradeChatMessage = {
+  id: string;
+  roomId: string;
+  tradeId: string;
+  senderUserId?: string;
+  senderPiUsername: string;
+  senderRole: "buyer" | "seller" | "admin" | "system";
+  messageType: "text" | "proof" | "system";
+  body: string;
+  attachmentUrl?: string;
   createdAt: string;
 };

@@ -5,6 +5,7 @@ create type trade_status as enum (
   'PendingFunding',
   'Funded',
   'DeliverySubmitted',
+  'AwaitingRelease',
   'Completed',
   'Disputed',
   'Cancelled'
@@ -33,6 +34,8 @@ create table public.users (
   verification_requested_at timestamptz,
   verification_reviewed_at timestamptz,
   verification_reviewed_by text,
+  payout_ready boolean not null default false,
+  payout_readiness_confirmed_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -91,6 +94,44 @@ create table public.payments (
   seller_amount_test_pi numeric(18, 8),
   platform_fee_test_pi numeric(18, 8),
   buyer_total_test_pi numeric(18, 8),
+  buyer_payment_txid text,
+  buyer_payment_link text,
+  escrow_status text not null default 'buyer_pending'
+    check (
+      escrow_status in (
+        'buyer_pending',
+        'held_in_app',
+        'release_pending',
+        'released_to_seller',
+        'refund_pending',
+        'refunded_to_buyer',
+        'release_failed',
+        'refund_failed'
+      )
+    ),
+  release_type text
+    check (release_type is null or release_type in ('seller_release', 'buyer_refund')),
+  release_status text not null default 'NotStarted'
+    check (
+      release_status in (
+        'NotStarted',
+        'Created',
+        'Submitted',
+        'Completed',
+        'Failed',
+        'Cancelled'
+      )
+    ),
+  release_pi_payment_id text,
+  release_txid text,
+  release_transaction_link text,
+  release_amount_test_pi numeric(18, 8),
+  release_target_user_id uuid references public.users(id) on delete set null,
+  release_target_pi_username text,
+  release_requested_by_user_id uuid references public.users(id) on delete set null,
+  release_requested_at timestamptz,
+  release_completed_at timestamptz,
+  release_failure text,
   status payment_status not null default 'Pending',
   raw_provider_status jsonb,
   created_at timestamptz not null default now(),
@@ -172,6 +213,33 @@ create table public.trade_review_recommendations (
   created_at timestamptz not null default now()
 );
 
+create table public.trade_chat_rooms (
+  id uuid primary key default gen_random_uuid(),
+  trade_id uuid not null unique references public.trades(id) on delete cascade,
+  status text not null default 'active'
+    check (status in ('active', 'disputed', 'closed')),
+  claimed_admin_user_id uuid references public.users(id) on delete set null,
+  claimed_admin_pi_username text,
+  claimed_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table public.trade_chat_messages (
+  id uuid primary key default gen_random_uuid(),
+  room_id uuid not null references public.trade_chat_rooms(id) on delete cascade,
+  trade_id uuid not null references public.trades(id) on delete cascade,
+  sender_user_id uuid references public.users(id) on delete set null,
+  sender_pi_username text not null,
+  sender_role text not null
+    check (sender_role in ('buyer', 'seller', 'admin', 'system')),
+  message_type text not null default 'text'
+    check (message_type in ('text', 'proof', 'system')),
+  body text not null default '',
+  attachment_url text,
+  created_at timestamptz not null default now()
+);
+
 create index trades_buyer_user_id_idx on public.trades (buyer_user_id);
 create index trades_seller_pi_username_idx on public.trades (seller_pi_username);
 create index trades_seller_user_id_idx on public.trades (seller_user_id);
@@ -197,9 +265,27 @@ create index payments_trade_id_idx on public.payments (trade_id);
 create unique index payments_one_completed_per_trade_idx
   on public.payments (trade_id)
   where status = 'Completed';
+create unique index payments_release_pi_payment_id_idx
+  on public.payments (release_pi_payment_id)
+  where release_pi_payment_id is not null;
+create index payments_escrow_status_idx
+  on public.payments (escrow_status, updated_at desc);
+create index payments_release_status_idx
+  on public.payments (release_status, updated_at desc);
+create index payments_buyer_payment_txid_idx
+  on public.payments (buyer_payment_txid)
+  where buyer_payment_txid is not null;
+create index payments_release_txid_idx
+  on public.payments (release_txid)
+  where release_txid is not null;
 create index trade_events_trade_id_idx on public.trade_events (trade_id, created_at desc);
+create index trade_events_actor_user_id_idx
+  on public.trade_events (actor_user_id);
 create index disputes_trade_id_idx on public.disputes (trade_id);
+create index disputes_opened_by_user_id_idx
+  on public.disputes (opened_by_user_id);
 create index disputes_status_idx on public.disputes (status);
+create index admin_actions_trade_id_idx on public.admin_actions (trade_id);
 create index notifications_user_created_at_idx
   on public.notifications (user_id, created_at desc);
 create index notifications_trade_id_idx on public.notifications (trade_id);
@@ -212,11 +298,21 @@ create index trade_review_recommendations_trade_created_idx
   on public.trade_review_recommendations (trade_id, created_at desc);
 create index trade_review_recommendations_action_idx
   on public.trade_review_recommendations (recommended_action, created_at desc);
+create index trade_chat_rooms_trade_id_idx
+  on public.trade_chat_rooms (trade_id);
+create index trade_chat_rooms_dispute_claim_idx
+  on public.trade_chat_rooms (status, claimed_admin_user_id)
+  where status = 'disputed';
+create index trade_chat_messages_room_created_idx
+  on public.trade_chat_messages (room_id, created_at asc);
+create index trade_chat_messages_trade_created_idx
+  on public.trade_chat_messages (trade_id, created_at desc);
 create index users_verification_requested_idx
   on public.users (verification_requested_at desc)
   where verification_requested_at is not null
     and verified_badge = false;
 create index users_verified_badge_idx on public.users (verified_badge, pi_username);
+create index users_payout_ready_idx on public.users (payout_ready, pi_username);
 
 alter table public.users enable row level security;
 alter table public.trades enable row level security;
@@ -228,6 +324,8 @@ alter table public.admin_actions enable row level security;
 alter table public.notifications enable row level security;
 alter table public.feedback_messages enable row level security;
 alter table public.trade_review_recommendations enable row level security;
+alter table public.trade_chat_rooms enable row level security;
+alter table public.trade_chat_messages enable row level security;
 
 -- MVP policies are intentionally conservative. Server routes should use the
 -- service role key after validating Pi identity and trade permissions.
@@ -278,6 +376,20 @@ with check (false);
 
 create policy "trade review recommendations direct access denied"
 on public.trade_review_recommendations
+for all
+to anon, authenticated
+using (false)
+with check (false);
+
+create policy "trade chat rooms direct access denied"
+on public.trade_chat_rooms
+for all
+to anon, authenticated
+using (false)
+with check (false);
+
+create policy "trade chat messages direct access denied"
+on public.trade_chat_messages
 for all
 to anon, authenticated
 using (false)

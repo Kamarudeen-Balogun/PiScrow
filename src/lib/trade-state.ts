@@ -5,26 +5,29 @@ export const tradeStatusLabels: Record<TradeStatus, string> = {
   PendingFunding: "Pending funding",
   Funded: "Funded",
   DeliverySubmitted: "Delivery submitted",
+  AwaitingRelease: "Awaiting release",
   Completed: "Completed",
   Disputed: "Disputed",
   Cancelled: "Cancelled",
 };
 
 export const tradeStatusTone: Record<TradeStatus, string> = {
-  Draft: "border-cyan-300 bg-cyan-100 text-cyan-900",
-  PendingFunding: "border-amber-300 bg-amber-100 text-amber-900",
-  Funded: "border-cyan-300 bg-cyan-100 text-cyan-900",
-  DeliverySubmitted: "border-violet-300 bg-violet-100 text-violet-900",
-  Completed: "border-emerald-300 bg-emerald-100 text-emerald-900",
-  Disputed: "border-rose-300 bg-rose-100 text-rose-900",
-  Cancelled: "border-stone-300 bg-stone-100 text-stone-700",
+  Draft: "border-emerald-400/25 bg-emerald-500/12 text-emerald-200",
+  PendingFunding: "border-amber-400/25 bg-amber-400/12 text-amber-200",
+  Funded: "border-[rgba(245,166,35,0.28)] bg-[rgba(245,166,35,0.12)] text-[var(--gold)]",
+  DeliverySubmitted: "border-violet-400/30 bg-violet-500/12 text-violet-200",
+  AwaitingRelease: "border-sky-400/25 bg-sky-500/12 text-sky-200",
+  Completed: "border-emerald-400/25 bg-emerald-400/12 text-emerald-200",
+  Disputed: "border-rose-400/28 bg-rose-500/12 text-rose-200",
+  Cancelled: "border-white/12 bg-white/6 text-slate-300",
 };
 
 const transitions: Record<TradeStatus, TradeStatus[]> = {
   Draft: ["PendingFunding", "Cancelled"],
   PendingFunding: ["Funded", "Cancelled", "Disputed"],
   Funded: ["DeliverySubmitted", "Disputed", "Cancelled"],
-  DeliverySubmitted: ["Completed", "Disputed"],
+  DeliverySubmitted: ["AwaitingRelease", "Disputed"],
+  AwaitingRelease: ["Completed", "Disputed", "Cancelled"],
   Completed: [],
   Disputed: ["Completed", "Cancelled"],
   Cancelled: [],

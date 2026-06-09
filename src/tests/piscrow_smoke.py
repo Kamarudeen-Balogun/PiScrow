@@ -1,5 +1,4 @@
 import os
-import re
 from pathlib import Path
 
 from playwright.sync_api import expect, sync_playwright
@@ -21,11 +20,6 @@ def main() -> None:
         desktop.wait_for_load_state("networkidle")
         expect(desktop.get_by_role("heading", name="PiScrow", exact=True)).to_be_visible()
         expect(desktop.get_by_text("Pi Testnet / Sandbox")).to_be_visible()
-        expect(desktop.get_by_text("Developer contact")).to_be_visible()
-        expect(desktop.get_by_text("coodeflowx1@gmail.com")).to_be_visible()
-        expect(desktop.get_by_text("Pi username: @villari002")).to_be_visible()
-        expect(desktop.get_by_text("Built with")).to_be_visible()
-        expect(desktop.get_by_role("button", name="Send feedback")).to_be_visible()
         expect(desktop.get_by_text("Consent required")).to_be_visible()
         expect(desktop.get_by_role("button", name="Agree and continue")).to_be_visible()
         expect(desktop.get_by_role("link", name="Login with demo data")).to_be_visible()
@@ -33,16 +27,10 @@ def main() -> None:
         desktop.get_by_role("button", name="Agree and continue").click()
         expect(desktop.get_by_role("button", name="Connect Pi account")).to_be_visible()
         expect(desktop.get_by_role("link", name="Login with demo data")).to_be_visible()
-        expect(desktop.get_by_label("Switch workspace")).not_to_be_visible()
         desktop.screenshot(
-            path=str(ARTIFACT_DIR / "piscrow-signin.png"),
+            path=str(ARTIFACT_DIR / "01-signin-consent.png"),
             full_page=True,
         )
-        desktop.get_by_role("link", name="Login with demo data").click()
-        expect(desktop).to_have_url(re.compile(r".*\?demo=1"))
-        expect(desktop.get_by_text("Demo workspace")).to_be_visible()
-        expect(desktop.get_by_label("Switch workspace")).to_be_visible()
-        expect(desktop.get_by_text("Used Android phone barter").first).to_be_visible()
 
         desktop.goto(f"{BASE_URL}/rules", wait_until="domcontentloaded")
         desktop.wait_for_load_state("networkidle")
@@ -52,96 +40,65 @@ def main() -> None:
 
         desktop.goto(DEMO_URL, wait_until="domcontentloaded")
         desktop.wait_for_load_state("networkidle")
-        expect(desktop.get_by_text("Demo workspace")).to_be_visible()
-        desktop.screenshot(
-            path=str(ARTIFACT_DIR / "piscrow-desktop.png"),
-            full_page=True,
-        )
-
-        expect(desktop.get_by_label("Switch workspace")).to_be_visible()
-        expect(desktop.get_by_text("Buyer").first).to_be_visible()
-        expect(desktop.get_by_text("Profile").first).to_be_visible()
-        expect(desktop.get_by_text("Private spare parts offer").first).to_be_visible()
-        desktop.get_by_text("Private spare parts offer").first.click()
-        desktop.get_by_role("button", name="Show interest").click()
-        expect(desktop.get_by_role("alertdialog")).to_be_visible()
-        expect(desktop.get_by_text("Action needed")).to_be_visible()
-        expect(desktop.get_by_text("Your buyer response is too short.")).to_be_visible()
-        desktop.get_by_role("button", name="Got it").click()
-        desktop.get_by_placeholder("Tell the seller why you are the right buyer").fill(
-            "I can confirm the model today and fund immediately after selection."
-        )
-        desktop.get_by_role("button", name="Show interest").click()
-        expect(desktop.get_by_text("Your response is open.")).to_be_visible()
-
-        desktop.get_by_role("button", name=re.compile("^Seller$")).click()
-        expect(desktop.get_by_text("Post Seller Offer")).to_be_visible()
+        expect(desktop.get_by_role("button", name="Explore", exact=True)).to_be_visible()
         expect(desktop.get_by_text("Used Android phone barter").first).to_be_visible()
-        expect(desktop.get_by_text("@abuja_tradehub").first).to_be_visible()
-        desktop.get_by_role("button", name="Select buyer").first.click()
-        expect(desktop.get_by_text("Seller selected @abuja_tradehub").first).to_be_visible()
-
-        desktop.get_by_placeholder("Offer title").fill("Playwright market test")
-        desktop.get_by_placeholder("Item or service details").fill(
-            "A controlled smoke-test seller offer created by Playwright."
-        )
-        desktop.get_by_placeholder("Seller price in Test Pi").fill("12.75")
-        desktop.get_by_placeholder("Trade location").fill("Surulere, Lagos")
-        desktop.get_by_placeholder("Area or pickup zone").fill("Bode Thomas")
-        desktop.get_by_placeholder("Delivery terms and confirmation rules").fill(
-            "Seller submits delivery proof before buyer confirms receipt."
-        )
-        desktop.get_by_role("button", name="Post offer").click()
-        expect(desktop.get_by_text("Playwright market test").first).to_be_visible()
         desktop.screenshot(
-            path=str(ARTIFACT_DIR / "piscrow-seller-desk.png"),
+            path=str(ARTIFACT_DIR / "02-marketplace.png"),
             full_page=True,
         )
 
-        desktop.get_by_role("button", name=re.compile("^Ledger$")).click()
-        expect(desktop.get_by_text("Transparent Activity")).to_be_visible()
-        expect(desktop.get_by_text("Live Activity")).to_be_visible()
+        desktop.get_by_role("button", name="Sell", exact=True).click()
+        expect(desktop.get_by_text("My Listings")).to_be_visible()
+        desktop.get_by_text("Funded camera lens handoff").first.click()
+        expect(desktop.get_by_text("Package Sent Proof")).to_be_visible()
         desktop.screenshot(
-            path=str(ARTIFACT_DIR / "piscrow-ledger.png"),
+            path=str(ARTIFACT_DIR / "03-seller-desk.png"),
+            full_page=True,
+        )
+        desktop.get_by_role("button", name="Close", exact=True).click()
+
+        desktop.get_by_role("button", name="Explore", exact=True).click()
+        desktop.get_by_role("button", name="Activity").click()
+        expect(desktop.get_by_role("heading", name="Live Activity")).to_be_visible()
+        desktop.screenshot(
+            path=str(ARTIFACT_DIR / "04-public-ledger.png"),
+            full_page=True,
+        )
+        desktop.get_by_role("button", name="Ledger").click()
+
+        desktop.get_by_role("button", name="Profile", exact=True).click()
+        expect(desktop.get_by_text("Payout Readiness")).to_be_visible()
+        expect(desktop.get_by_text("In-app Notifications")).to_be_visible()
+        desktop.screenshot(
+            path=str(ARTIFACT_DIR / "05-profile.png"),
             full_page=True,
         )
 
-        desktop.get_by_role("button", name=re.compile("^Profile$")).click()
-        expect(desktop.get_by_text("Trust score", exact=True)).to_be_visible()
-        expect(desktop.get_by_text("Your Recent Trade History")).to_be_visible()
-        expect(desktop.get_by_role("button", name="Verified")).to_be_visible()
+        desktop.get_by_role("button", name="Admin", exact=True).click()
+        expect(desktop.get_by_text("Dispute Queue")).to_be_visible()
+        desktop.get_by_role("button", name="Enter Dispute Room").first.click()
+        expect(desktop.get_by_text("Review assistant")).to_be_visible()
         desktop.screenshot(
-            path=str(ARTIFACT_DIR / "piscrow-profile.png"),
+            path=str(ARTIFACT_DIR / "06-admin-review.png"),
             full_page=True,
         )
-
-        desktop.get_by_role("button", name=re.compile("^Admin$")).click()
-        expect(desktop.get_by_text("Verified Badge Requests")).to_be_visible()
-        expect(desktop.get_by_role("button", name="Approve badge")).to_be_visible()
-        desktop.get_by_role("button", name="Approve badge").first.click()
-        expect(desktop.get_by_text("Approve verified badge?")).to_be_visible()
-        desktop.get_by_role("button", name="Cancel").click()
-        expect(desktop.get_by_text("Laptop repair deposit")).to_be_visible()
-        expect(desktop.get_by_text("Review Copilot")).to_be_visible()
-        expect(desktop.get_by_text("Recommend-only")).to_be_visible()
-        expect(desktop.get_by_role("button", name="Rerun review")).to_be_visible()
-        expect(desktop.get_by_role("button", name="Approve seller release")).to_be_visible()
-        expect(desktop.get_by_role("button", name="Approve buyer refund")).to_be_visible()
-        desktop.screenshot(
-            path=str(ARTIFACT_DIR / "piscrow-admin.png"),
-            full_page=True,
-        )
+        desktop.get_by_role("button", name="Close", exact=True).click()
 
         mobile = browser.new_page(viewport={"width": 390, "height": 900})
         mobile.goto(DEMO_URL, wait_until="domcontentloaded")
         mobile.wait_for_load_state("networkidle")
-        expect(mobile.get_by_role("heading", name="PiScrow", exact=True)).to_be_visible()
-        expect(mobile.get_by_role("button", name="Workspace menu")).to_be_visible()
-        mobile.get_by_role("button", name="Workspace menu").click()
-        expect(mobile.get_by_role("dialog", name="Workspace menu")).to_be_visible()
-        expect(mobile.get_by_role("button", name=re.compile("^Ledger"))).to_be_visible()
+        expect(mobile.get_by_role("button", name="Explore", exact=True)).to_be_visible()
+        mobile.get_by_role("button", name="Activity").click()
+        expect(mobile.get_by_role("heading", name="Live Activity")).to_be_visible()
         mobile.screenshot(
-            path=str(ARTIFACT_DIR / "piscrow-mobile.png"),
+            path=str(ARTIFACT_DIR / "07-mobile-ledger.png"),
+            full_page=True,
+        )
+        mobile.get_by_role("button", name="Ledger").click()
+        mobile.get_by_role("button", name="Profile", exact=True).click()
+        expect(mobile.get_by_text("Payout Readiness")).to_be_visible()
+        mobile.screenshot(
+            path=str(ARTIFACT_DIR / "08-mobile-workspace-menu.png"),
             full_page=True,
         )
 

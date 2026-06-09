@@ -1,6 +1,11 @@
 import { z } from "zod";
 
 import { jsonError, requireAppUser } from "@/server/auth";
+import {
+  executeEscrowRelease,
+  hasAutomaticPiReleaseConfig,
+  markEscrowReleaseFailed,
+} from "@/server/escrow-release";
 import { createNotification } from "@/server/notifications";
 import {
   rateLimit,
@@ -8,6 +13,7 @@ import {
   readJsonBody,
   secureJson,
 } from "@/server/security";
+import { addTradeChatSystemMessage, closeTradeChatRoom } from "@/server/trade-chat";
 import {
   assertTradeStatus,
   getServiceClientOrThrow,
@@ -15,6 +21,7 @@ import {
   insertTradeEvent,
   listTradesForUser,
 } from "@/server/trades";
+import type { EscrowReleaseType } from "@/types/trade";
 
 const adminActionSchema = z.discriminatedUnion("action", [
   z.object({
@@ -48,7 +55,7 @@ export async function POST(
     }
 
     const trade = await getTradeForAction(tradeId);
-    assertTradeStatus(trade, ["Disputed"]);
+    assertTradeStatus(trade, ["Disputed", "AwaitingRelease"]);
 
     const supabase = getServiceClientOrThrow();
     const now = new Date().toISOString();
@@ -72,6 +79,10 @@ export async function POST(
       await insertTradeEvent(tradeId, user.id, eventType, parsed.data.notes, {
         targetRole,
       });
+      await addTradeChatSystemMessage(
+        trade,
+        `Admin @${user.username} requested a ${targetRole} update: ${parsed.data.notes}`,
+      );
 
       await createNotification({
         userId: targetUserId,
@@ -87,8 +98,38 @@ export async function POST(
     const resolutionNotes =
       parsed.data.notes ??
       (parsed.data.status === "Completed"
-        ? "Admin approved the seller release path after reviewing buyer receipt and party evidence."
-        : "Admin approved the buyer refund path after reviewing the dispute and party evidence.");
+        ? "Admin released the seller payout after reviewing buyer receipt and party evidence."
+        : "Admin refunded the buyer after reviewing the dispute and party evidence.");
+    const releaseType: EscrowReleaseType =
+      parsed.data.status === "Completed" ? "seller_release" : "buyer_refund";
+
+    if (!hasAutomaticPiReleaseConfig()) {
+      throw new Error(
+        "Automatic Test Pi release is not configured. Add PI_WALLET_PRIVATE_SEED on the server before resolving escrow funds.",
+      );
+    }
+
+    let releaseResult: Awaited<ReturnType<typeof executeEscrowRelease>>;
+
+    try {
+      releaseResult = await executeEscrowRelease({
+        admin: user,
+        notes: resolutionNotes,
+        releaseType,
+        trade,
+      });
+    } catch (releaseError) {
+      await markEscrowReleaseFailed({
+        failure:
+          releaseError instanceof Error
+            ? releaseError.message
+            : "Pi release failed before completion.",
+        releaseType,
+        tradeId,
+      }).catch(() => undefined);
+      throw releaseError;
+    }
+
     const { error: tradeError } = await supabase
       .from("trades")
       .update({
@@ -118,8 +159,12 @@ export async function POST(
       action_type: `resolve_${parsed.data.status.toLowerCase()}`,
       notes: resolutionNotes,
       metadata: {
-        releasePath:
-          parsed.data.status === "Completed" ? "seller_release" : "buyer_refund",
+        releasePath: releaseType,
+        releasePiPaymentId:
+          "releasePiPaymentId" in releaseResult
+            ? releaseResult.releasePiPaymentId
+            : releaseResult.payment.release_pi_payment_id,
+        releaseTxid: releaseResult.releaseTxid,
       },
     });
 
@@ -131,9 +176,21 @@ export async function POST(
         : "Admin approved buyer refund",
       resolutionNotes,
       {
-        releasePath:
-          parsed.data.status === "Completed" ? "seller_release" : "buyer_refund",
+        releasePath: releaseType,
+        releasePiPaymentId:
+          "releasePiPaymentId" in releaseResult
+            ? releaseResult.releasePiPaymentId
+            : releaseResult.payment.release_pi_payment_id,
+        releaseTxid: releaseResult.releaseTxid,
       },
+    );
+    await addTradeChatSystemMessage(
+      { ...trade, status: parsed.data.status },
+      `Admin @${user.username} resolved this dispute: ${resolutionNotes}`,
+    );
+    await closeTradeChatRoom(
+      { ...trade, status: parsed.data.status },
+      "Dispute resolved. Chat is now read-only for record keeping.",
     );
 
     await Promise.all([
@@ -144,8 +201,8 @@ export async function POST(
         title: "Admin resolved dispute",
         body:
           parsed.data.status === "Completed"
-            ? "Admin approved the seller release path after review."
-            : "Admin approved the buyer refund path after cancellation review.",
+            ? "Admin released the held Test Pi to the seller after review."
+            : "Admin refunded the held Test Pi to the buyer after review.",
       }),
       createNotification({
         userId: trade.buyer_user_id,
@@ -154,8 +211,8 @@ export async function POST(
         title: "Admin resolved dispute",
         body:
           parsed.data.status === "Completed"
-            ? "Admin approved the seller release path after review."
-            : "Admin approved the buyer refund path after cancellation review.",
+            ? "Admin released the held Test Pi to the seller after review."
+            : "Admin refunded the held Test Pi to the buyer after review.",
       }),
     ]);
 

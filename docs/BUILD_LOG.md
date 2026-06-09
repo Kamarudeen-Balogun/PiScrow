@@ -7,9 +7,11 @@ PiScrow is a Pi Testnet/Sandbox marketplace prototype for safer peer-to-peer bar
 - Sellers post public or private offers.
 - Many buyers can show interest with short responses.
 - The seller selects one active buyer.
-- The selected buyer gets a 20-minute Test Pi funding window.
+- The selected buyer gets a 1-hour Test Pi funding window.
 - Payment routes verify amount, buyer identity, trade state, and duplicate completion.
 - Sellers and buyers upload delivery/receipt proof.
+- Funded trades open a private buyer/seller chat room for delivery updates and proof.
+- Disputed chats can be claimed by one admin for resolution.
 - Disputes freeze the trade and move it to admin review.
 - Public ledger activity shows listings, selections, funding, delivery, disputes, and outcomes.
 - Profile trust scores and admin-approved verified badges help buyers and sellers judge risk.
@@ -23,12 +25,15 @@ PiScrow is not a Mainnet app and does not claim to be legal escrow. It is built 
 Curated screenshots live in `docs/screenshots/`:
 
 - Consent and sign-in state.
-- Buyer marketplace and seller offers.
-- Seller desk with buyer responses.
-- Public activity ledger.
-- Profile trust score and verified badge state.
-- Admin review tools.
-- Mobile layout.
+- Explore feed and compact live listings.
+- Seller desk with funded-trade proof workflow.
+- Public activity ledger and timeline view.
+- Profile trust score, payout readiness, and badge state.
+- Admin dispute room and review assistant controls.
+- Mobile ledger/profile captures from the current responsive layout.
+
+The screenshot set was refreshed on June 10, 2026 from passing smoke and
+full-site Playwright runs after the latest redesign and payout-readiness work.
 
 ## Remaining Real-World Validation
 

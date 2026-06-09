@@ -7,6 +7,7 @@ import {
   readJsonObject,
   secureJson,
 } from "@/server/security";
+import { markTradeChatRoomDisputed } from "@/server/trade-chat";
 import {
   getServiceClientOrThrow,
   getTradeForAction,
@@ -40,7 +41,7 @@ export async function POST(
       throw new Error("Only the buyer or seller can dispute this trade.");
     }
 
-    if (!["Funded", "DeliverySubmitted"].includes(trade.status)) {
+    if (!["Funded", "DeliverySubmitted", "AwaitingRelease"].includes(trade.status)) {
       throw new Error("Trades can only be reported after buyer funding has been verified.");
     }
 
@@ -71,6 +72,7 @@ export async function POST(
     }
 
     await insertTradeEvent(tradeId, user.id, "Dispute opened", parsed.data.reason);
+    await markTradeChatRoomDisputed(trade, user, parsed.data.reason);
 
     await createNotification({
       userId: isBuyer ? trade.seller_user_id : trade.buyer_user_id,

@@ -23,6 +23,7 @@ export type PiPaymentDTO = {
   transaction?: {
     txid: string;
     verified: boolean;
+    _link?: string;
   };
 };
 

@@ -3,6 +3,8 @@ export type UserReputation = {
   piUsername: string;
   verifiedBadge: boolean;
   verificationRequestedAt?: string;
+  payoutReady: boolean;
+  payoutReadinessConfirmedAt?: string;
   successfulTrades: number;
   disputedTrades: number;
   cancelledTrades: number;

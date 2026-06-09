@@ -19,7 +19,7 @@ export async function GET(request: Request) {
     const { data, error } = await supabase
       .from("trades")
       .select("id")
-      .eq("status", "Disputed")
+      .in("status", ["Disputed", "AwaitingRelease"])
       .order("updated_at", { ascending: false })
       .limit(50);
 

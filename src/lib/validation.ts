@@ -70,7 +70,6 @@ export const createTradeInterestSchema = z.object({
   responseNote: sanitizedString(
     z
       .string()
-      .min(12, "Your buyer response is too short. Add enough detail so the seller can compare buyers.")
       .max(600, "Keep the response under 600 characters."),
   ),
 });
@@ -131,6 +130,13 @@ export const confirmReceiptSchema = z.object({
   buyerReceiptImagePath: sanitizedString().optional().or(z.literal("")),
 });
 
+export const tradeChatMessageSchema = z.object({
+  tradeId: z.string().min(1),
+  body: sanitizedString(
+    z.string().max(1000, "Keep chat messages under 1,000 characters."),
+  ).optional().or(z.literal("")),
+});
+
 export const feedbackSchema = z.object({
   category: z.enum(["suggestion", "improvement", "issue", "other"]),
   message: sanitizedString(
@@ -154,4 +160,5 @@ export type DeliveryProofInput = z.infer<typeof deliveryProofSchema>;
 export type DisputeInput = z.infer<typeof disputeSchema>;
 export type DisputeFollowUpInput = z.infer<typeof disputeFollowUpSchema>;
 export type ConfirmReceiptInput = z.infer<typeof confirmReceiptSchema>;
+export type TradeChatMessageInput = z.infer<typeof tradeChatMessageSchema>;
 export type FeedbackInput = z.infer<typeof feedbackSchema>;

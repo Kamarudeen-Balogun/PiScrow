@@ -7,6 +7,7 @@ import type {
   Trade,
   TradeEvent,
   TradeInterest,
+  TradePaymentSummary,
   TradeStatus,
 } from "@/types/trade";
 import type { UserReputation } from "@/types/profile";
@@ -16,6 +17,16 @@ type UserRow = {
   pi_username: string;
   verified_badge?: boolean;
   verification_requested_at?: string | null;
+  payout_ready?: boolean;
+  payout_readiness_confirmed_at?: string | null;
+};
+
+type UserTradingStatusRow = {
+  id: string;
+  pi_uid: string;
+  pi_username: string;
+  payout_ready: boolean | null;
+  payout_readiness_confirmed_at: string | null;
 };
 
 export type TradeRow = {
@@ -71,6 +82,30 @@ type TradeEventRow = {
   created_at: string;
 };
 
+type PaymentRow = {
+  id: string;
+  trade_id: string;
+  pi_payment_id: string;
+  amount_test_pi: number | string;
+  seller_amount_test_pi: number | string | null;
+  platform_fee_test_pi: number | string | null;
+  buyer_total_test_pi: number | string | null;
+  buyer_payment_txid: string | null;
+  buyer_payment_link: string | null;
+  escrow_status: TradePaymentSummary["escrowStatus"] | null;
+  release_type: TradePaymentSummary["releaseType"] | null;
+  release_status: TradePaymentSummary["releaseStatus"] | null;
+  release_pi_payment_id: string | null;
+  release_txid: string | null;
+  release_transaction_link: string | null;
+  release_amount_test_pi: number | string | null;
+  release_target_pi_username: string | null;
+  release_requested_at: string | null;
+  release_completed_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 export function getServiceClientOrThrow() {
   const supabase = createServiceSupabaseClient();
 
@@ -81,11 +116,48 @@ export function getServiceClientOrThrow() {
   return supabase;
 }
 
+export async function getUserTradingStatus(userId: string) {
+  const supabase = getServiceClientOrThrow();
+  const { data, error } = await supabase
+    .from("users")
+    .select(
+      "id, pi_uid, pi_username, payout_ready, payout_readiness_confirmed_at",
+    )
+    .eq("id", userId)
+    .single();
+
+  if (error || !data) {
+    throw new Error(error?.message ?? "Could not load PiScrow trading profile.");
+  }
+
+  return data as UserTradingStatusRow;
+}
+
+export async function assertUserPayoutReady(
+  userId: string,
+  intent: "buy" | "fund" | "sell",
+) {
+  const status = await getUserTradingStatus(userId);
+
+  if (status.payout_ready) {
+    return status;
+  }
+
+  const messageByIntent = {
+    buy: "Complete payout readiness in Profile before showing buyer interest. PiScrow uses your authenticated Pi account for refunds and escrow releases.",
+    fund: "Complete payout readiness in Profile before funding trades. PiScrow releases refunds and seller payouts through your authenticated Pi account.",
+    sell: "Complete payout readiness in Profile before posting seller offers. PiScrow releases seller payouts to your authenticated Pi account.",
+  } as const;
+
+  throw new Error(messageByIntent[intent]);
+}
+
 export function mapTrade(
   row: TradeRow,
   users: Map<string, string>,
   interestCount = 0,
   reputations = new Map<string, UserReputation>(),
+  payments = new Map<string, TradePaymentSummary>(),
 ): Trade {
   return {
     id: row.id,
@@ -118,6 +190,7 @@ export function mapTrade(
     deliveryProofUrl: row.delivery_proof_url ?? undefined,
     buyerReceiptNote: row.buyer_receipt_note ?? undefined,
     buyerReceiptProofUrl: row.buyer_receipt_proof_url ?? undefined,
+    payment: payments.get(row.id),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -129,8 +202,9 @@ export async function mapTradeWithSignedProofs(
   interestCount = 0,
   canViewProofs = false,
   reputations = new Map<string, UserReputation>(),
+  payments = new Map<string, TradePaymentSummary>(),
 ) {
-  const trade = mapTrade(row, users, interestCount, reputations);
+  const trade = mapTrade(row, users, interestCount, reputations, payments);
 
   if (!canViewProofs) {
     return {
@@ -177,6 +251,76 @@ export function mapEvent(row: TradeEventRow, users: Map<string, string>): TradeE
   };
 }
 
+function mapPayment(row: PaymentRow): TradePaymentSummary {
+  return {
+    id: row.id,
+    tradeId: row.trade_id,
+    piPaymentId: row.pi_payment_id,
+    amountTestPi: Number(row.amount_test_pi),
+    sellerAmountTestPi:
+      row.seller_amount_test_pi == null
+        ? undefined
+        : Number(row.seller_amount_test_pi),
+    platformFeeTestPi:
+      row.platform_fee_test_pi == null
+        ? undefined
+        : Number(row.platform_fee_test_pi),
+    buyerTotalTestPi:
+      row.buyer_total_test_pi == null
+        ? undefined
+        : Number(row.buyer_total_test_pi),
+    buyerPaymentTxid: row.buyer_payment_txid ?? undefined,
+    buyerPaymentLink: row.buyer_payment_link ?? undefined,
+    escrowStatus: row.escrow_status ?? undefined,
+    releaseType: row.release_type ?? undefined,
+    releaseStatus: row.release_status ?? undefined,
+    releasePiPaymentId: row.release_pi_payment_id ?? undefined,
+    releaseTxid: row.release_txid ?? undefined,
+    releaseTransactionLink: row.release_transaction_link ?? undefined,
+    releaseAmountTestPi:
+      row.release_amount_test_pi == null
+        ? undefined
+        : Number(row.release_amount_test_pi),
+    releaseTargetPiUsername: row.release_target_pi_username ?? undefined,
+    releaseRequestedAt: row.release_requested_at ?? undefined,
+    releaseCompletedAt: row.release_completed_at ?? undefined,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+async function getCompletedPaymentMap(tradeIds: string[]) {
+  const supabase = getServiceClientOrThrow();
+  const uniqueIds = [...new Set(tradeIds.filter(Boolean))];
+
+  if (uniqueIds.length === 0) {
+    return new Map<string, TradePaymentSummary>();
+  }
+
+  const { data, error } = await supabase
+    .from("payments")
+    .select(
+      "id, trade_id, pi_payment_id, amount_test_pi, seller_amount_test_pi, platform_fee_test_pi, buyer_total_test_pi, buyer_payment_txid, buyer_payment_link, escrow_status, release_type, release_status, release_pi_payment_id, release_txid, release_transaction_link, release_amount_test_pi, release_target_pi_username, release_requested_at, release_completed_at, created_at, updated_at",
+    )
+    .in("trade_id", uniqueIds)
+    .eq("status", "Completed")
+    .order("updated_at", { ascending: false });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const payments = new Map<string, TradePaymentSummary>();
+
+  for (const row of (data ?? []) as PaymentRow[]) {
+    if (!payments.has(row.trade_id)) {
+      payments.set(row.trade_id, mapPayment(row));
+    }
+  }
+
+  return payments;
+}
+
 export async function getUserMap(userIds: string[]) {
   const supabase = getServiceClientOrThrow();
   const uniqueIds = [...new Set(userIds.filter(Boolean))];
@@ -209,7 +353,9 @@ export async function getUserReputations(userIds: string[]) {
 
   const { data: userData, error: userError } = await supabase
     .from("users")
-    .select("id, pi_username, verified_badge, verification_requested_at")
+    .select(
+      "id, pi_username, verified_badge, verification_requested_at, payout_ready, payout_readiness_confirmed_at",
+    )
     .in("id", uniqueIds);
 
   if (userError) {
@@ -235,6 +381,9 @@ export async function getUserReputations(userIds: string[]) {
         piUsername: user.pi_username,
         verifiedBadge: Boolean(user.verified_badge),
         verificationRequestedAt: user.verification_requested_at ?? undefined,
+        payoutReady: Boolean(user.payout_ready),
+        payoutReadinessConfirmedAt:
+          user.payout_readiness_confirmed_at ?? undefined,
         successfulTrades: 0,
         disputedTrades: 0,
         cancelledTrades: 0,
@@ -381,6 +530,7 @@ export async function listTradesForUser(user: AppUser) {
   ].filter((userId): userId is string => Boolean(userId));
   const users = await getUserMap(userIds);
   const reputations = await getUserReputations(userIds);
+  const payments = await getCompletedPaymentMap(tradeIds);
   const interests = allInterestRows.filter((interest) => {
     const trade = visibleRows.find((item) => item.id === interest.trade_id);
 
@@ -417,6 +567,7 @@ export async function listTradesForUser(user: AppUser) {
           interestCounts.get(trade.id) ?? 0,
           canViewProofs,
           reputations,
+          payments,
         );
       }),
     ),
@@ -475,10 +626,17 @@ export async function listPublicLedger() {
   ].filter((userId): userId is string => Boolean(userId));
   const users = await getUserMap(userIds);
   const reputations = await getUserReputations(userIds);
+  const payments = await getCompletedPaymentMap(tradeIds);
 
   return {
     trades: rows.map((trade) => ({
-      ...mapTrade(trade, users, interestCounts.get(trade.id) ?? 0, reputations),
+      ...mapTrade(
+        trade,
+        users,
+        interestCounts.get(trade.id) ?? 0,
+        reputations,
+        payments,
+      ),
       targetBuyerPiUsernames: [],
       deliveryProofUrl: undefined,
       buyerReceiptProofUrl: undefined,
@@ -582,7 +740,7 @@ export function assertSelectedBuyerCanFund(trade: TradeRow, user: AppUser) {
   }
 
   if (new Date(trade.selection_expires_at).getTime() <= Date.now()) {
-    throw new Error("Your 20-minute funding window expired. Ask the seller to select you again.");
+    throw new Error("Your 1-hour funding window expired. Ask the seller to select you again.");
   }
 }
 
@@ -613,7 +771,7 @@ export function interestSubmittedEvent(username: string) {
 }
 
 export function sellerSelectedBuyerEvent(username: string) {
-  return `Seller selected @${username}. The buyer has 20 minutes to start funding.`;
+  return `Seller selected @${username}. The buyer has 1 hour to start funding.`;
 }
 
 export function assertTradeStatus(trade: TradeRow, allowed: TradeStatus[]) {

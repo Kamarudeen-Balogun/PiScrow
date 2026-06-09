@@ -117,6 +117,7 @@ export function buildReviewRecommendation({
   const hasBuyerReceipt =
     buyerReceiptText.length >= 8 || Boolean(trade.buyer_receipt_proof_url);
   const hasOpenDispute = trade.status === "Disputed" || disputes.length > 0;
+  const awaitingRelease = trade.status === "AwaitingRelease";
 
   if (!hasCompletedPayment) {
     missingEvidence.push("verified completed Test Pi payment");
@@ -144,6 +145,11 @@ export function buildReviewRecommendation({
   if (hasOpenDispute) {
     riskFlags.push("active_dispute_review");
     confidence -= 8;
+  }
+
+  if (awaitingRelease) {
+    riskFlags.push("release_ready_review");
+    confidence += 6;
   }
 
   if (Number(trade.amount_test_pi) > 250) {
@@ -223,8 +229,8 @@ export async function runReviewCopilot(tradeId: string, admin: AppUser) {
 
   const tradeRow = trade as TradeRow;
 
-  if (tradeRow.status !== "Disputed") {
-    throw new Error("Review copilot only runs on disputed trades.");
+  if (!["Disputed", "AwaitingRelease"].includes(tradeRow.status)) {
+    throw new Error("Review copilot only runs on disputed or release-ready trades.");
   }
 
   const { data: payments, error: paymentsError } = await supabase

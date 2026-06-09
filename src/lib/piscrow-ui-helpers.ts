@@ -35,7 +35,7 @@ export function selectionExpired(trade: Trade) {
 
 export function fundingWindowLabel(trade: Trade) {
   if (!trade.selectionExpiresAt) {
-    return "20-minute funding window pending";
+    return "1-hour funding window pending";
   }
 
   const remainingMs = new Date(trade.selectionExpiresAt).getTime() - Date.now();
@@ -45,19 +45,19 @@ export function fundingWindowLabel(trade: Trade) {
   }
 
   const minutes = Math.max(1, Math.ceil(remainingMs / 60_000));
-  return `${minutes} min funding window`;
+  return `${minutes} min left to fund`;
 }
 
 export function interestErrorMessage(message?: string) {
   if (!message) {
-    return "Add a buyer response before showing interest.";
+    return "Could not submit interest.";
   }
 
   if (
     message.includes("expected string") ||
     message.includes("received undefined")
   ) {
-    return "Your buyer response is too short. Add enough detail so the seller can compare buyers.";
+    return "Could not read the optional buyer note. Try submitting again.";
   }
 
   return message;
@@ -100,6 +100,8 @@ export function buildDemoProfile(
     verifiedBadge: normalized === "lagos_phone_hub",
     verificationRequestedAt:
       normalized === "market_runner" ? "2026-06-06T19:30:00.000Z" : undefined,
+    payoutReady: true,
+    payoutReadinessConfirmedAt: "2026-06-07T08:00:00.000Z",
     successfulTrades: 0,
     disputedTrades: 0,
     cancelledTrades: 0,

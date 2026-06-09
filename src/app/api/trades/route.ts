@@ -8,6 +8,7 @@ import {
   secureJson,
 } from "@/server/security";
 import {
+  assertUserPayoutReady,
   getServiceClientOrThrow,
   insertTradeEvent,
   listTradesForUser,
@@ -37,6 +38,8 @@ export async function POST(request: Request) {
 
     const targetBuyerPiUsernames = parsed.data.targetBuyerPiUsernames;
     const normalizedSeller = normalizePiUsername(user.username);
+
+    await assertUserPayoutReady(user.id, "sell");
 
     if (targetBuyerPiUsernames.includes(normalizedSeller)) {
       throw new Error("You cannot send a private offer to your own Pi username.");

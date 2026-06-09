@@ -35,7 +35,7 @@ export async function uploadTradeProofImage({
 }: {
   tradeId: string;
   userId: string;
-  purpose: "seller-delivery" | "buyer-receipt";
+  purpose: "seller-delivery" | "buyer-receipt" | "chat-proof";
   file: File | null;
 }) {
   if (!file || file.size === 0) {

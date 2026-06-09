@@ -7,6 +7,10 @@ export function hasPiNetworkApiKey() {
   return Boolean(process.env.PI_NETWORK_API_KEY);
 }
 
+export function hasPiWalletPrivateSeed() {
+  return Boolean(process.env.PI_WALLET_PRIVATE_SEED);
+}
+
 function getPiApiKey() {
   const apiKey = process.env.PI_NETWORK_API_KEY;
 
@@ -55,6 +59,10 @@ export async function completePiPayment(paymentId: string, txid: string) {
     method: "POST",
     body: JSON.stringify({ txid }),
   });
+}
+
+export function piTransactionLink(txid: string) {
+  return `https://api.testnet.minepi.com/transactions/${encodeURIComponent(txid)}`;
 }
 
 export async function verifyPiAccessToken(accessToken: string) {

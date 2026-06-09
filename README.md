@@ -30,11 +30,12 @@ PiScrow is testnet-only. It does not custody Mainnet Pi and should not be descri
 - Pi Browser authentication with approved-admin username gating
 - Seller-first public and private offers
 - Buyer interest responses with one active seller-selected buyer
-- 20-minute selected-buyer funding window before seller reselection
+- 1-hour selected-buyer funding window before seller reselection
 - Buyer funding amount validation with PiScrow fee calculation
 - Profile reputation scores, trade stats, and admin-approved verified badges
 - Supabase-backed users, trades, interests, payments, events, disputes, notifications, and proof storage
 - Private proof image uploads through Supabase Storage signed URLs
+- Funded-trade chat rooms for delivery updates, proof uploads, and dispute evidence
 - Public transparency ledger for listings, funding, delivery, disputes, admin follow-up, and outcomes
 - Admin dispute desk with buyer/seller follow-up requests
 - Recommend-only Review Copilot for admin dispute evidence triage
@@ -131,7 +132,7 @@ completes them through the Pi Platform API with `PI_NETWORK_API_KEY`. Payment
 metadata includes the trade ID, selected buyer username, seller username, offer
 title, seller amount, fee amount, and buyer total.
 
-When a seller selects a buyer, PiScrow gives that buyer a 20-minute Test Pi
+When a seller selects a buyer, PiScrow gives that buyer a 1-hour Test Pi
 funding window. Funding routes reject any non-selected buyer and reject expired
 selections. If no funding has started, the seller can choose another buyer.
 

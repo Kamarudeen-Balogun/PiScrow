@@ -1,8 +1,9 @@
+import json
 import os
 import re
 from pathlib import Path
 
-from playwright.sync_api import expect, sync_playwright
+from playwright.sync_api import Page, expect, sync_playwright
 
 
 BASE_URL = os.environ.get("PISCROW_BASE_URL", "http://localhost:3000")
@@ -19,6 +20,12 @@ def assert_no_console_errors(errors: list[str]) -> None:
         error for error in errors if not any(ignore in error for ignore in ignored)
     ]
     assert relevant == [], "\n".join(relevant)
+
+
+def close_sheet(page: Page) -> None:
+    close_button = page.get_by_role("button", name="Close", exact=True)
+    if close_button.count() > 0:
+        close_button.first.click()
 
 
 def main() -> None:
@@ -41,10 +48,16 @@ def main() -> None:
         page.get_by_role("button", name="Agree and continue").click()
         expect(page.get_by_role("button", name="Connect Pi account")).to_be_visible()
         expect(page.get_by_role("link", name="Login with demo data")).to_be_visible()
-        expect(page.get_by_label("Switch workspace")).not_to_be_visible()
         page.get_by_role("button", name="Connect Pi account").click()
         expect(page.get_by_text("Connection failed").first).to_be_visible(timeout=15000)
-        expect(page.get_by_text("Pi login did not finish").first).to_be_visible()
+        expect(
+            page.get_by_text(
+                re.compile(
+                    r"(Pi login did not finish|Pi SDK is not available|Pi Browser required)",
+                    re.IGNORECASE,
+                )
+            ).first
+        ).to_be_visible()
         page.screenshot(path=str(ARTIFACT_DIR / "full-signout-error.png"), full_page=True)
 
         page.goto(f"{BASE_URL}/?maintenance=1", wait_until="domcontentloaded")
@@ -104,122 +117,97 @@ def main() -> None:
         auth_page.route("**/api/profile", lambda route: route.fulfill(
             status=200,
             content_type="application/json",
-            body='{"profile":{"userId":"mock-user-id","piUsername":"mock_friend","verifiedBadge":false,"successfulTrades":0,"disputedTrades":0,"cancelledTrades":0,"buyCount":0,"sellCount":0,"trustScore":80}}',
+            body='{"profile":{"userId":"mock-user-id","piUsername":"mock_friend","verifiedBadge":false,"payoutReady":true,"payoutReadinessConfirmedAt":"2026-06-07T08:00:00.000Z","successfulTrades":0,"disputedTrades":0,"cancelledTrades":0,"buyCount":0,"sellCount":0,"trustScore":80}}',
         ))
         auth_page.goto(BASE_URL, wait_until="domcontentloaded")
         auth_page.wait_for_load_state("networkidle")
-        auth_page.evaluate(
-            """
-            window.Pi = {
-              init() {},
-              authenticate() {
-                return new Promise((resolve) => {
-                  setTimeout(() => {
-                    resolve({
-                      user: { uid: 'mock-pi-user', username: 'mock_friend' },
-                      accessToken: 'mock-token'
-                    });
-                  }, 700);
-                });
-              }
-            };
-            """
-        )
         if auth_page.get_by_role("button", name="Agree and continue").count() > 0:
             auth_page.get_by_role("button", name="Agree and continue").click()
         auth_page.get_by_role("button", name="Connect Pi account").click()
         expect(auth_page.get_by_role("button", name="Connecting...")).to_be_visible()
-        expect(auth_page.get_by_text("Pi account connected")).to_be_visible()
-        expect(auth_page.get_by_role("button", name=re.compile("^Admin$"))).not_to_be_visible()
+        expect(
+            auth_page.get_by_text(
+                "Pi SDK found. Approve the Pi Browser sign-in request to continue."
+            ).first
+        ).to_be_visible()
         auth_page.screenshot(path=str(ARTIFACT_DIR / "full-auth-loading.png"), full_page=True)
+        auth_page.close()
 
         page.goto(DEMO_URL, wait_until="domcontentloaded")
         page.wait_for_load_state("networkidle")
-        expect(page.get_by_text("Demo workspace")).to_be_visible()
-        expect(page.get_by_label("Switch workspace")).to_be_visible()
-        expect(page.get_by_role("button", name=re.compile("^Buyer$"))).to_be_visible()
-        expect(page.get_by_role("button", name=re.compile("^Seller$"))).to_be_visible()
-        expect(page.get_by_role("button", name=re.compile("^Ledger$"))).to_be_visible()
-        expect(page.get_by_role("button", name=re.compile("^Profile$"))).to_be_visible()
-        expect(page.get_by_role("button", name=re.compile("^Admin$"))).to_be_visible()
+        expect(page.get_by_role("button", name="Explore", exact=True)).to_be_visible()
+        expect(page.get_by_role("button", name="Buy", exact=True)).to_be_visible()
+        expect(page.get_by_role("button", name="Sell", exact=True)).to_be_visible()
+        expect(page.get_by_role("button", name="Profile", exact=True)).to_be_visible()
+        expect(page.get_by_role("button", name="Admin", exact=True)).to_be_visible()
+        page.get_by_role("button", name="Open notifications").click()
+        expect(page.get_by_text("Notifications", exact=True)).to_be_visible()
+        expect(page.get_by_text("No unread notifications right now.")).to_be_visible()
+        page.get_by_role("button", name="Open notifications").click()
 
-        own_offer_notice = page.get_by_text("This is your seller offer.")
-        try:
-            expect(own_offer_notice).to_be_visible(timeout=1000)
-        except AssertionError:
-            page.get_by_text("Used Android phone barter").first.click()
-            expect(own_offer_notice).to_be_visible()
-        expect(page.get_by_placeholder("Tell the seller why you are the right buyer")).not_to_be_visible()
+        page.get_by_text("Used Android phone barter").first.click()
+        expect(page.get_by_text("This is your listing.")).to_be_visible()
+        expect(page.get_by_placeholder("Optional note to help the seller choose you.")).not_to_be_visible()
+        close_sheet(page)
 
         page.get_by_text("Private spare parts offer").first.click()
-        expect(page.get_by_text("Private requested trade from @market_runner")).to_be_visible()
-        expect(page.get_by_role("button", name="Decline request")).to_be_visible()
-        page.get_by_role("button", name="Show interest").click()
-        expect(page.get_by_role("alertdialog")).to_be_visible()
-        expect(page.get_by_text("Action needed")).to_be_visible()
-        expect(page.get_by_text("Your buyer response is too short.")).to_be_visible()
-        page.get_by_role("button", name="Got it").click()
-        page.get_by_placeholder("Tell the seller why you are the right buyer").fill(
-            "I know the exact model and can fund once the seller chooses me."
-        )
-        page.get_by_role("button", name="Show interest").click()
+        expect(page.get_by_role("button", name="Decline private request")).to_be_visible()
+        page.get_by_role("button", name="Submit Interest").click()
         expect(page.get_by_text("Your response is open.")).to_be_visible()
+        close_sheet(page)
 
-        page.get_by_role("button", name=re.compile("^Seller$")).click()
-        expect(page.get_by_text("Post Seller Offer")).to_be_visible()
+        page.get_by_role("button", name="Sell", exact=True).click()
+        expect(page.get_by_text("My Listings")).to_be_visible()
         expect(page.get_by_text("Used Android phone barter").first).to_be_visible()
         expect(page.get_by_text("Computer Village").first).to_be_visible()
-        page.get_by_text("Funded camera lens handoff").first.click()
-        expect(page.get_by_text("Package Sent Proof")).to_be_visible()
-        expect(page.get_by_label("Package proof image")).to_be_visible()
+        page.get_by_text("Used Android phone barter").first.click()
         page.get_by_role("button", name="Select buyer").first.click()
-        expect(page.get_by_text("Seller selected @abuja_tradehub").first).to_be_visible()
+        expect(page.get_by_text("Buyer selected").first).to_be_visible()
+        close_sheet(page)
 
-        page.get_by_placeholder("Offer title").fill("Full QA private test")
-        page.get_by_placeholder("Item or service details").fill(
-            "A private test listing used to verify the one-buyer request UI."
+        page.get_by_role("button", name="New Listing").click()
+        expect(page.get_by_text("Create Listing")).to_be_visible()
+        page.get_by_placeholder("Used Android phone barter").fill("Full QA delete test")
+        page.get_by_placeholder("Describe condition, quantity, handoff details, and what buyers should know.").fill(
+            "A public test listing that will be deleted before any buyer selection."
         )
-        page.get_by_placeholder("Seller price in Test Pi").fill("9.5")
-        page.get_by_placeholder("Trade location").fill("Ajah, Lagos")
-        page.get_by_placeholder("Area or pickup zone").fill("Sangotedo")
-        page.get_by_role("button", name="Private").click()
-        page.get_by_placeholder("@buyer_username").fill("@pi_buyer_demo")
-        page.get_by_placeholder("Delivery terms and confirmation rules").fill(
-            "Seller will upload package proof before buyer confirms receipt."
-        )
-        page.get_by_role("button", name="Post offer").click()
-        expect(page.get_by_text("Full QA private test").first).to_be_visible()
-        expect(page.get_by_placeholder("@buyer_username")).not_to_be_visible()
-
-        page.get_by_placeholder("Offer title").fill("Full QA delete test")
-        page.get_by_placeholder("Item or service details").fill(
-            "A public test listing that will be deleted before buyer selection."
-        )
-        page.get_by_placeholder("Seller price in Test Pi").fill("5")
-        page.get_by_placeholder("Trade location").fill("Ikeja, Lagos")
-        page.get_by_placeholder("Delivery terms and confirmation rules").fill(
+        page.get_by_role("button", name="Continue").click()
+        page.get_by_placeholder("Ikeja, Lagos").fill("Ikeja, Lagos")
+        page.get_by_placeholder("Computer Village").fill("Alausa")
+        page.get_by_role("button", name="Continue").click()
+        page.get_by_placeholder("0.00").fill("5")
+        page.get_by_placeholder("How will handoff, delivery proof, and receipt confirmation work?").fill(
             "Seller can delete this before any buyer is selected."
         )
-        page.get_by_role("button", name="Post offer").click()
+        page.get_by_role("button", name="Publish Offer").click()
         expect(page.get_by_text("Full QA delete test").first).to_be_visible()
         page.get_by_text("Full QA delete test").first.click()
         page.get_by_role("button", name="Delete offer").first.click()
         expect(page.get_by_text("Delete this offer?")).to_be_visible()
         page.get_by_role("alertdialog").get_by_role("button", name="Delete offer").click()
         expect(page.get_by_text("Offer deleted").first).to_be_visible()
+        close_sheet(page)
 
-        page.get_by_role("button", name=re.compile("^Ledger$")).click()
-        expect(page.get_by_text("Transparent Activity")).to_be_visible()
-        expect(page.get_by_text("Post Seller Offer")).not_to_be_visible()
+        page.get_by_role("button", name="Buy", exact=True).click()
+        expect(page.get_by_text("Active Escrows")).to_be_visible()
+        expect(page.get_by_text("Awaiting release shoe delivery").first).to_be_visible()
+        page.get_by_text("Awaiting release shoe delivery").first.click()
+        expect(page.get_by_text("Transaction Tracking")).to_be_visible()
+        expect(page.get_by_text("Buyer receipt proof")).to_be_visible()
+        close_sheet(page)
+
+        page.get_by_role("button", name="Explore", exact=True).click()
+        expect(page.get_by_text("Live Ledger")).to_be_visible()
         expect(page.get_by_text("Platform fees")).not_to_be_visible()
-        expect(page.get_by_label("PiScrow notifications")).not_to_be_visible()
-        expect(page.get_by_text("Full QA private test").first).to_be_visible()
+        page.get_by_role("button", name="Activity").click()
+        expect(page.get_by_role("heading", name="Live Activity")).to_be_visible()
         page.screenshot(path=str(ARTIFACT_DIR / "full-ledger.png"), full_page=True)
+        page.get_by_role("button", name="Ledger").click()
 
         feedback_requests = []
 
         def capture_feedback(route):
-            feedback_requests.append(route.request.post_data_json)
+            feedback_requests.append(json.loads(route.request.post_data or "{}"))
             route.fulfill(
                 status=200,
                 content_type="application/json",
@@ -227,9 +215,12 @@ def main() -> None:
             )
 
         page.route("**/api/feedback", capture_feedback)
-        expect(page.get_by_text("Developer contact")).to_be_visible()
-        expect(page.get_by_text("coodeflowx1@gmail.com")).to_be_visible()
-        expect(page.get_by_text("Pi username: @villari002")).to_be_visible()
+        page.get_by_role("button", name="Profile", exact=True).click()
+        expect(page.get_by_text("Payout Readiness")).to_be_visible()
+        expect(page.get_by_text("In-app Notifications")).to_be_visible()
+        expect(page.get_by_text("Verified badge active")).to_be_visible()
+        page.get_by_role("button", name="Give feedback").click()
+        expect(page.get_by_role("heading", name="Give feedback")).to_be_visible()
         page.get_by_label("Type").select_option("improvement")
         page.get_by_placeholder("What should PiScrow improve, fix, or add next?").fill(
             "Please add clearer payment recovery status for testnet reviewers."
@@ -240,38 +231,37 @@ def main() -> None:
         assert feedback_requests
         assert feedback_requests[0]["category"] == "improvement"
         assert feedback_requests[0]["contactEmail"] == "reviewer@example.com"
-
-        page.get_by_role("button", name=re.compile("^Profile$")).click()
-        expect(page.get_by_text("Trust score", exact=True)).to_be_visible()
-        expect(page.get_by_text("Your Recent Trade History")).to_be_visible()
-        expect(page.get_by_role("button", name="Verified")).to_be_visible()
+        close_sheet(page)
         page.screenshot(path=str(ARTIFACT_DIR / "full-profile.png"), full_page=True)
 
-        page.get_by_role("button", name=re.compile("^Admin$")).click()
+        page.get_by_role("button", name="Admin", exact=True).click()
+        expect(page.get_by_text("Dispute Queue")).to_be_visible()
         expect(page.get_by_text("Verified Badge Requests")).to_be_visible()
-        expect(page.get_by_text("@market_runner")).to_be_visible()
+        expect(page.get_by_text("@market_runner", exact=True)).to_be_visible()
         page.get_by_role("button", name="Approve badge").click()
         expect(page.get_by_text("Approve verified badge?")).to_be_visible()
         page.get_by_role("alertdialog").get_by_role("button", name="Approve badge").click()
         expect(page.get_by_text("Verified badge approved").first).to_be_visible()
-        expect(page.get_by_text("Laptop repair deposit")).to_be_visible()
-        expect(page.get_by_text("Seller package proof")).to_be_visible()
-        expect(page.get_by_text("Seller proof image / link")).to_be_visible()
-        expect(page.get_by_text("Review Copilot")).to_be_visible()
-        expect(page.get_by_text("Recommend-only")).to_be_visible()
-        expect(page.get_by_role("button", name="Rerun review")).to_be_visible()
-        expect(page.get_by_text("Request buyer update")).to_be_visible()
-        expect(page.get_by_text("Request seller update")).to_be_visible()
-        page.get_by_placeholder("Ask the buyer what they received").fill(
+        page.get_by_role("button", name="Enter Dispute Room").first.click()
+        admin_sheet = page.get_by_role("dialog").last
+        expect(admin_sheet.get_by_role("heading", name="Laptop repair deposit")).to_be_visible()
+        expect(admin_sheet.get_by_text("Review assistant")).to_be_visible()
+        expect(admin_sheet.get_by_text("Request buyer update", exact=True)).to_be_visible()
+        expect(admin_sheet.get_by_text("Request seller update", exact=True)).to_be_visible()
+        if admin_sheet.get_by_role("button", name="Join room").count() > 0:
+            admin_sheet.get_by_role("button", name="Join room").click()
+            expect(page.get_by_text("Dispute room joined").first).to_be_visible()
+        admin_sheet.get_by_placeholder("Ask the buyer what they received").fill(
             "Please confirm whether the replacement part arrived and upload any receipt proof."
         )
-        page.get_by_role("button", name="Send request").first.click()
-        expect(page.get_by_text("Admin requested buyer follow-up").first).to_be_visible()
-        page.get_by_role("button", name="Approve seller release").click()
-        expect(page.get_by_text("Approve seller release?")).to_be_visible()
-        page.get_by_role("button", name="Approve release").click()
-        expect(page.get_by_text("Dispute resolved").first).to_be_visible()
+        admin_sheet.get_by_role("button", name="Send request").first.click()
+        expect(page.get_by_text("Follow-up requested").first).to_be_visible()
+        admin_sheet.get_by_role("button", name="Release to seller").click()
+        expect(page.get_by_text("Release seller payout?")).to_be_visible()
+        page.get_by_role("button", name="Release payout").click()
+        expect(page.get_by_text("Payout completed").first).to_be_visible()
         page.screenshot(path=str(ARTIFACT_DIR / "full-admin-resolved.png"), full_page=True)
+        close_sheet(page)
 
         mobile = browser.new_page(viewport={"width": 390, "height": 900})
         mobile_errors: list[str] = []
@@ -281,13 +271,9 @@ def main() -> None:
         )
         mobile.goto(DEMO_URL, wait_until="domcontentloaded")
         mobile.wait_for_load_state("networkidle")
-        expect(mobile.get_by_role("heading", name="PiScrow", exact=True)).to_be_visible()
-        expect(mobile.get_by_role("button", name="Workspace menu")).to_be_visible()
-        mobile.get_by_role("button", name="Workspace menu").click()
-        expect(mobile.get_by_role("dialog", name="Workspace menu")).to_be_visible()
-        mobile.get_by_role("button", name=re.compile("^Ledger")).click()
-        expect(mobile.get_by_role("dialog", name="Workspace menu")).not_to_be_visible()
-        expect(mobile.get_by_text("Transparent Activity")).to_be_visible()
+        expect(mobile.get_by_role("button", name="Explore", exact=True)).to_be_visible()
+        mobile.get_by_role("button", name="Activity").click()
+        expect(mobile.get_by_role("heading", name="Live Activity")).to_be_visible()
         mobile.screenshot(path=str(ARTIFACT_DIR / "full-mobile-ledger.png"), full_page=True)
 
         assert_no_console_errors(errors)

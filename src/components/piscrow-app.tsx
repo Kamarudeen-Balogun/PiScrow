@@ -2,41 +2,37 @@
 
 import {
   AlertTriangle,
-  AtSign,
+  Bell,
   CirclePlay,
   X,
   CheckCircle2,
-  FileWarning,
-  HandCoins,
   Heart,
-  History,
+  Home,
   LockKeyhole,
-  Megaphone,
   Mail,
-  MessageSquare,
-  Send,
+  RefreshCcw,
   ShieldCheck,
   LoaderCircle,
-  Menu,
-  Store,
+  ShoppingBag,
+  Tag,
   UserCircle,
   UserRoundCheck,
   Wrench,
 } from "lucide-react";
 import Link from "next/link";
-import Image from "next/image";
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   AdminDesk,
-  OfferFeed,
+  BuyerDesk,
   ProfileDesk,
   PublicLedger,
   SellerDesk,
   SellerPostPanel,
-  SideRail,
 } from "@/components/piscrow-workspaces";
 import {
+  demoChatMessages,
+  demoChatRooms,
   demoEvents,
   demoInterests,
   demoTrades,
@@ -78,11 +74,20 @@ import {
   disputeFollowUpSchema,
   disputeSchema,
   feedbackSchema,
+  tradeChatMessageSchema,
 } from "@/lib/validation";
 import type { PiPaymentDTO, PiUser } from "@/types/pi";
 import type { UserReputation } from "@/types/profile";
 import type { TradeReviewRecommendation } from "@/types/review";
-import type { Trade, TradeEvent, TradeInterest, TradeStatus } from "@/types/trade";
+import type {
+  Trade,
+  TradeChatMessage,
+  TradeChatRoom,
+  TradeEvent,
+  TradeInterest,
+  TradePaymentSummary,
+  TradeStatus,
+} from "@/types/trade";
 
 type ViewMode = "market" | "sell" | "ledger" | "profile" | "admin";
 type SessionUser = PiUser & {
@@ -108,11 +113,22 @@ type ReviewRecommendationsPayload = {
   recommendations: TradeReviewRecommendation[];
 };
 
+type ChatPayload = {
+  room: TradeChatRoom;
+  messages: TradeChatMessage[];
+};
+
 type AppNotice = {
   id: string;
   title: string;
   body: string;
   tone: "info" | "success" | "warning";
+  persistent?: boolean;
+};
+
+type BlockingAction = {
+  title: string;
+  body: string;
 };
 
 type ConfirmAction = {
@@ -173,13 +189,28 @@ const nextPublicMaintenanceMessage =
 const workspaceFallbackSyncIntervalMs = 60_000;
 const realtimeSyncChannelName = "piscrow-app-sync";
 
-const viewIcons: Record<ViewMode, typeof Store> = {
-  market: Store,
-  sell: Megaphone,
-  ledger: History,
+const viewIcons: Record<ViewMode, typeof Home> = {
+  market: ShoppingBag,
+  sell: Tag,
+  ledger: Home,
   profile: UserCircle,
   admin: LockKeyhole,
 };
+
+const viewTabLabels: Record<ViewMode, string> = {
+  ledger: "Explore",
+  market: "Buy",
+  sell: "Sell",
+  profile: "Profile",
+  admin: "Admin",
+};
+
+function formatHeaderPi(amount: number) {
+  return `π ${amount.toLocaleString("en-US", {
+    maximumFractionDigits: 2,
+    minimumFractionDigits: 2,
+  })}`;
+}
 
 const supportedLanguages: { code: LanguageCode; label: string; shortLabel: string }[] = [
   { code: "en", label: "English", shortLabel: "EN" },
@@ -986,12 +1017,20 @@ export function PiScrowApp({
   const [authMessage, setAuthMessage] = useState<AuthMessageState>({
     key: allowDemo ? "demo" : "initial",
   });
-  const [mode, setMode] = useState<ViewMode>("market");
+  const [mode, setMode] = useState<ViewMode>("ledger");
   const [trades, setTrades] = useState<Trade[]>(allowDemo ? demoTrades : []);
   const [interests, setInterests] = useState<TradeInterest[]>(
     allowDemo ? demoInterests : [],
   );
   const [events, setEvents] = useState<TradeEvent[]>(allowDemo ? demoEvents : []);
+  const [chatRooms, setChatRooms] = useState<TradeChatRoom[]>(
+    allowDemo ? demoChatRooms : [],
+  );
+  const [chatMessages, setChatMessages] = useState<TradeChatMessage[]>(
+    allowDemo ? demoChatMessages : [],
+  );
+  const [chatLoadingTradeId, setChatLoadingTradeId] = useState("");
+  const [chatSending, setChatSending] = useState(false);
   const [ledgerTrades, setLedgerTrades] = useState<Trade[]>(
     allowDemo ? demoTrades : [],
   );
@@ -1008,8 +1047,9 @@ export function PiScrowApp({
   const [paymentState, setPaymentState] = useState("No payment started.");
   const [ledgerLoading, setLedgerLoading] = useState(false);
   const [notices, setNotices] = useState<AppNotice[]>([]);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null);
-  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [sellerComposerOpen, setSellerComposerOpen] = useState(false);
   const [sellerFormResetKey, setSellerFormResetKey] = useState(0);
   const [connectingPi, setConnectingPi] = useState(false);
   const [profile, setProfile] = useState<UserReputation | null>(
@@ -1026,6 +1066,8 @@ export function PiScrowApp({
   const [verificationLoading, setVerificationLoading] = useState(false);
   const [feedbackSending, setFeedbackSending] = useState(false);
   const [feedbackStatus, setFeedbackStatus] = useState<FeedbackStatus>(null);
+  const [blockingAction, setBlockingAction] = useState<BlockingAction | null>(null);
+  const [payoutReadyLoading, setPayoutReadyLoading] = useState(false);
   const [consentState, setConsentState] = useState<ConsentState>(
     allowDemo ? "accepted" : "checking",
   );
@@ -1041,9 +1083,12 @@ export function PiScrowApp({
   const maintenanceEnabled = forceMaintenance || nextPublicMaintenanceEnabled;
   const normalizedUsername = normalizeUsername(user?.username ?? "");
   const navItems: ViewMode[] = user?.isAdmin
-    ? ["market", "sell", "ledger", "profile", "admin"]
-    : ["market", "sell", "ledger", "profile"];
-  const activeMode: ViewMode = mode === "admin" && !user?.isAdmin ? "market" : mode;
+    ? ["ledger", "market", "sell", "profile", "admin"]
+    : ["ledger", "market", "sell", "profile"];
+  const activeMode: ViewMode = mode === "admin" && !user?.isAdmin ? "ledger" : mode;
+  const unreadNoticeCount = notices.filter((notice) => notice.persistent).length;
+  const toastNotices = notices.filter((notice) => !notice.persistent);
+  const inboxNotices = notices.filter((notice) => notice.persistent);
 
   const selectedTrade =
     trades.find((trade) => trade.id === selectedTradeId) ??
@@ -1075,13 +1120,20 @@ export function PiScrowApp({
           return true;
         }
 
+        if (normalizeUsername(trade.buyerPiUsername ?? "") === normalizedUsername) {
+          return true;
+        }
+
         return trade.targetBuyerPiUsernames.includes(normalizedUsername);
       }),
     [normalizedUsername, trades, user],
   );
 
   const adminTrades = useMemo(
-    () => trades.filter((trade) => trade.status === "Disputed"),
+    () =>
+      trades.filter((trade) =>
+        ["Disputed", "AwaitingRelease"].includes(trade.status),
+      ),
     [trades],
   );
 
@@ -1094,6 +1146,42 @@ export function PiScrowApp({
     [profile, trades, user],
   );
 
+  function showBlockingAction(title: string, body: string) {
+    setBlockingAction({ title, body });
+  }
+
+  function hideBlockingAction() {
+    setBlockingAction(null);
+  }
+
+  function requirePayoutReadiness(actionLabel: string) {
+    if (allowDemo) {
+      return true;
+    }
+
+    if (!user) {
+      return false;
+    }
+
+    if (!profileStats) {
+      setMode("profile");
+      setFormError("PiScrow is still loading your profile. Open Profile and try again in a moment.");
+      return false;
+    }
+
+    if (profileStats.payoutReady) {
+      return true;
+    }
+
+    setSellerComposerOpen(false);
+    setNotificationsOpen(false);
+    setMode("profile");
+    setFormError(
+      `Complete payout readiness in Profile before you ${actionLabel}. PiScrow uses your authenticated Pi account for buyer refunds and seller releases.`,
+    );
+    return false;
+  }
+
   function changeLanguage(nextLanguage: LanguageCode) {
     setLanguage(nextLanguage);
 
@@ -1105,10 +1193,11 @@ export function PiScrowApp({
   }
 
   function changeMode(nextMode: ViewMode) {
-    setMobileNavOpen(false);
+    setNotificationsOpen(false);
+    setSellerComposerOpen(false);
 
     if (nextMode === "admin" && !user?.isAdmin) {
-      setMode("market");
+      setMode("ledger");
       return;
     }
 
@@ -1123,6 +1212,35 @@ export function PiScrowApp({
     }
 
     if (nextMode === "admin") {
+      void refreshVerificationRequests();
+      void refreshReviewRecommendations();
+    }
+  }
+
+  function refreshCurrentView() {
+    setNotificationsOpen(false);
+
+    if (!signedIn) {
+      void refreshPublicLedger();
+      return;
+    }
+
+    if (activeMode === "ledger") {
+      void refreshPublicLedger();
+      return;
+    }
+
+    void refreshAuthenticatedWorkspace({
+      includeProfile: activeMode === "profile",
+      includeAdmin: activeMode === "admin" && Boolean(user?.isAdmin),
+      silent: false,
+    });
+
+    if (activeMode === "profile") {
+      void refreshProfile();
+    }
+
+    if (activeMode === "admin") {
       void refreshVerificationRequests();
       void refreshReviewRecommendations();
     }
@@ -1149,13 +1267,89 @@ export function PiScrowApp({
     }
   }
 
+  function applyChatPayload(payload: ChatPayload) {
+    setChatRooms((current) => [
+      payload.room,
+      ...current.filter((room) => room.tradeId !== payload.room.tradeId),
+    ]);
+    setChatMessages((current) => [
+      ...current.filter((message) => message.tradeId !== payload.room.tradeId),
+      ...payload.messages,
+    ]);
+  }
+
+  function upsertDemoChatRoom(
+    trade: Trade,
+    status: TradeChatRoom["status"] = trade.status === "Disputed" ? "disputed" : "active",
+  ) {
+    const existing = chatRooms.find((room) => room.tradeId === trade.id);
+    const now = new Date().toISOString();
+    const room: TradeChatRoom = existing
+      ? { ...existing, status, updatedAt: now }
+      : {
+          id: `chat-room-${trade.id}`,
+          tradeId: trade.id,
+          status,
+          createdAt: now,
+          updatedAt: now,
+        };
+
+    setChatRooms((current) => [
+      room,
+      ...current.filter((item) => item.tradeId !== trade.id),
+    ]);
+
+    if (!existing) {
+      setChatMessages((current) => [
+        ...current,
+        {
+          id: `chat-system-${crypto.randomUUID()}`,
+          roomId: room.id,
+          tradeId: trade.id,
+          senderPiUsername: "system",
+          senderRole: "system",
+          messageType: "system",
+          body: "Secure trade room opened. Use this chat for delivery updates, proof, and dispute evidence.",
+          createdAt: now,
+        },
+      ]);
+    }
+
+    return room;
+  }
+
+  function appendDemoChatMessage(
+    trade: Trade,
+    message: Omit<TradeChatMessage, "id" | "roomId" | "tradeId" | "createdAt">,
+    status?: TradeChatRoom["status"],
+  ) {
+    const room = upsertDemoChatRoom(trade, status);
+    setChatMessages((current) => [
+      ...current,
+      {
+        id: `chat-message-${crypto.randomUUID()}`,
+        roomId: room.id,
+        tradeId: trade.id,
+        createdAt: new Date().toISOString(),
+        ...message,
+      },
+    ]);
+  }
+
   function pushNotice(
     title: string,
     body: string,
     tone: AppNotice["tone"] = "info",
+    options: { persistent?: boolean } = {},
   ) {
     setNotices((current) => [
-      { id: `notice-${crypto.randomUUID()}`, title, body, tone },
+      {
+        id: `notice-${crypto.randomUUID()}`,
+        title,
+        body,
+        tone,
+        persistent: options.persistent ?? false,
+      },
       ...current,
     ].slice(0, 6));
   }
@@ -1368,27 +1562,6 @@ export function PiScrowApp({
   }
 
   useEffect(() => {
-    if (!mobileNavOpen) {
-      return;
-    }
-
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-
-    function closeOnEscape(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        setMobileNavOpen(false);
-      }
-    }
-
-    window.addEventListener("keydown", closeOnEscape);
-    return () => {
-      document.body.style.overflow = previousOverflow;
-      window.removeEventListener("keydown", closeOnEscape);
-    };
-  }, [mobileNavOpen]);
-
-  useEffect(() => {
     const timer = window.setTimeout(() => {
       if (!allowDemo) {
         if (!demoSessionRef.current) {
@@ -1400,7 +1573,7 @@ export function PiScrowApp({
         setPiConnected(false);
         setPiAccessToken("");
         setAuthMessage({ key: "initial" });
-        setMode("market");
+        setMode("ledger");
         setTrades([]);
         setInterests([]);
         setEvents([]);
@@ -1425,7 +1598,7 @@ export function PiScrowApp({
       setPiAccessToken("");
       setAuthMessage({ key: "demo" });
       setConsentState("accepted");
-      setMode("market");
+      setMode("ledger");
       setTrades(demoTrades);
       setInterests(demoInterests);
       setEvents(demoEvents);
@@ -1483,13 +1656,15 @@ export function PiScrowApp({
       return;
     }
 
-    const timers = notices.map((notice) =>
-      window.setTimeout(() => {
-        setNotices((current) =>
-          current.filter((item) => item.id !== notice.id),
-        );
-      }, 6500),
-    );
+    const timers = notices
+      .filter((notice) => !notice.persistent)
+      .map((notice) =>
+        window.setTimeout(() => {
+          setNotices((current) =>
+            current.filter((item) => item.id !== notice.id),
+          );
+        }, 6500),
+      );
 
     return () => {
       timers.forEach(window.clearTimeout);
@@ -1619,6 +1794,11 @@ export function PiScrowApp({
         return;
       }
 
+      if (path.startsWith("/api/profile/payout-readiness")) {
+        void broadcastRealtimeSync("profile-refresh");
+        return;
+      }
+
       if (path.startsWith("/api/admin/verification-requests")) {
         void broadcastRealtimeSync("profile-refresh");
         void broadcastRealtimeSync("admin-refresh");
@@ -1709,6 +1889,7 @@ export function PiScrowApp({
           title: notice.title,
           body: notice.body,
           tone: toneFromNotificationType(notice.type),
+          persistent: true,
         }));
 
       incoming.forEach((notice) => {
@@ -1745,6 +1926,29 @@ export function PiScrowApp({
     );
   }
 
+  function demoTransactionLink(txid: string) {
+    return `https://api.testnet.minepi.com/transactions/${encodeURIComponent(txid)}`;
+  }
+
+  function ensureDemoPaymentSummary(trade: Trade): TradePaymentSummary {
+    const now = new Date().toISOString();
+
+    return (
+      trade.payment ?? {
+        id: `demo-payment-${trade.id}`,
+        tradeId: trade.id,
+        piPaymentId: `demo-pi-payment-${trade.id}`,
+        amountTestPi: calculateBuyerTotal(trade.amountTestPi),
+        sellerAmountTestPi: trade.amountTestPi,
+        platformFeeTestPi: calculatePlatformFee(trade.amountTestPi),
+        buyerTotalTestPi: calculateBuyerTotal(trade.amountTestPi),
+        releaseStatus: "NotStarted",
+        createdAt: now,
+        updatedAt: now,
+      }
+    );
+  }
+
   async function connectPi() {
     setFormError("");
 
@@ -1759,11 +1963,16 @@ export function PiScrowApp({
 
     setConnectingPi(true);
     setAuthMessage({ key: "preparing" });
+    showBlockingAction(
+      "Connecting Pi account",
+      "PiScrow is preparing Pi Browser authentication for your private workspace.",
+    );
 
     const pi = await waitForPiSdk().catch((error) => {
       const message = resolvePiAuthMessage(error, copy.auth);
       setAuthMessage({ text: message });
       pushNotice(copy.notices.piSdkTitle, message, "warning");
+      hideBlockingAction();
       setConnectingPi(false);
       return null;
     });
@@ -1774,6 +1983,10 @@ export function PiScrowApp({
 
     try {
       setAuthMessage({ key: "sdkReady" });
+      showBlockingAction(
+        "Approve in Pi Browser",
+        "PiScrow is ready. Approve the Pi Browser sign-in request to continue.",
+      );
       const authResult = await authenticateWithPiBrowser(
         pi,
         nextPublicSandbox,
@@ -1790,14 +2003,19 @@ export function PiScrowApp({
       if (!accessToken) {
         setUser(null);
         setAuthMessage({ text: copy.notices.connectedNoToken(piUser.username) });
+        hideBlockingAction();
         return;
       }
 
+      showBlockingAction(
+        "Loading workspace",
+        "PiScrow is syncing your trades, notifications, and profile.",
+      );
       const session = await apiRequest<{ user: SessionUser }>("/api/auth/pi", accessToken, {
         method: "POST",
       });
       setUser(session.user);
-      setMode("market");
+      setMode("ledger");
       setAuthMessage({ text: copy.notices.signedIn(session.user.username) });
 
       const payload = await apiRequest<TradePayload>("/api/trades", accessToken);
@@ -1821,6 +2039,7 @@ export function PiScrowApp({
       pushNotice(copy.notices.connectionFailedTitle, message, "warning");
     } finally {
       setConnectingPi(false);
+      hideBlockingAction();
     }
   }
 
@@ -1891,6 +2110,59 @@ export function PiScrowApp({
       );
     } finally {
       setProfileLoading(false);
+    }
+  }
+
+  async function confirmPayoutReadiness() {
+    setFormError("");
+
+    if (allowDemo) {
+      setProfile((current) => {
+        const next = current ?? buildDemoProfile(user?.username ?? demoUser.username, trades);
+        return {
+          ...next,
+          payoutReady: true,
+          payoutReadinessConfirmedAt: new Date().toISOString(),
+        };
+      });
+      pushNotice(
+        "Payouts enabled",
+        "Demo account can now post offers, show interest, and receive releases.",
+        "success",
+      );
+      return;
+    }
+
+    if (!piAccessToken) {
+      setFormError("Connect your Pi account before enabling payouts.");
+      return;
+    }
+
+    setPayoutReadyLoading(true);
+    showBlockingAction(
+      "Enabling PiScrow payouts",
+      "PiScrow is linking refunds and seller releases to your authenticated Pi account.",
+    );
+
+    try {
+      const payload = await apiRequest<ProfilePayload>(
+        "/api/profile/payout-readiness",
+        piAccessToken,
+        { method: "POST" },
+      );
+      setProfile(payload.profile);
+      pushNotice(
+        "Payouts enabled",
+        "You can now post offers, show buyer interest, and fund trades.",
+        "success",
+      );
+    } catch (error) {
+      setFormError(
+        error instanceof Error ? error.message : "Could not enable PiScrow payouts.",
+      );
+    } finally {
+      setPayoutReadyLoading(false);
+      hideBlockingAction();
     }
   }
 
@@ -2084,6 +2356,10 @@ export function PiScrowApp({
       return;
     }
 
+    if (!requirePayoutReadiness("post seller offers")) {
+      return;
+    }
+
     const form = event.currentTarget;
     const formData = new FormData(form);
     const parsed = createTradeSchema.safeParse({
@@ -2113,6 +2389,10 @@ export function PiScrowApp({
     }
 
     if (piConnected && piAccessToken) {
+      showBlockingAction(
+        "Publishing offer",
+        "PiScrow is saving your seller listing and syncing it to buyers.",
+      );
       void apiRequest<TradePayload>("/api/trades", piAccessToken, {
         method: "POST",
         body: JSON.stringify(parsed.data),
@@ -2121,6 +2401,7 @@ export function PiScrowApp({
         .then(() => {
           form.reset();
           setSellerFormResetKey((current) => current + 1);
+          setSellerComposerOpen(false);
           setMode("sell");
           pushNotice("Offer posted", "Your seller offer is now live.");
         })
@@ -2128,6 +2409,9 @@ export function PiScrowApp({
           setFormError(
             error instanceof Error ? error.message : "Could not post offer.",
           );
+        })
+        .finally(() => {
+          hideBlockingAction();
         });
       return;
     }
@@ -2171,6 +2455,7 @@ export function PiScrowApp({
     );
     pushNotice("Offer posted", "Your seller offer is now live.");
     form.reset();
+    setSellerComposerOpen(false);
     setSellerFormResetKey((current) => current + 1);
   }
 
@@ -2188,6 +2473,10 @@ export function PiScrowApp({
       return;
     }
 
+    if (!requirePayoutReadiness("show buyer interest")) {
+      return;
+    }
+
     const form = event.currentTarget;
     const formData = new FormData(form);
     const parsed = createTradeInterestSchema.safeParse({
@@ -2201,6 +2490,10 @@ export function PiScrowApp({
     }
 
     if (piConnected && piAccessToken) {
+      showBlockingAction(
+        "Sending interest",
+        "PiScrow is submitting your buyer response to the seller.",
+      );
       void apiRequest<TradePayload>(
         `/api/trades/${trade.id}/interests`,
         piAccessToken,
@@ -2220,6 +2513,9 @@ export function PiScrowApp({
               ? interestErrorMessage(error.message)
               : "Could not submit interest.",
           );
+        })
+        .finally(() => {
+          hideBlockingAction();
         });
       return;
     }
@@ -2230,7 +2526,7 @@ export function PiScrowApp({
       tradeId: trade.id,
       buyerUserId: user.uid,
       buyerPiUsername: normalizeUsername(user.username),
-      responseNote: parsed.data.responseNote,
+      responseNote: parsed.data.responseNote ?? "",
       status: "Open",
       createdAt: now,
       updatedAt: now,
@@ -2356,7 +2652,7 @@ export function PiScrowApp({
     }
 
     const selectedAt = new Date().toISOString();
-    const selectionExpiresAt = new Date(Date.now() + 20 * 60 * 1000).toISOString();
+    const selectionExpiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
 
     updateTrade(trade.id, "PendingFunding", {
       buyerUserId: interest.buyerUserId,
@@ -2434,6 +2730,10 @@ export function PiScrowApp({
   }
 
   function fundTrade(trade: Trade) {
+    if (!requirePayoutReadiness("fund a selected trade")) {
+      return;
+    }
+
     askConfirmation({
       title: "Start Test Pi funding?",
       body: `You will fund ${formatTestPi(calculateBuyerTotal(trade.amountTestPi))}. PiScrow holds this testnet payment while delivery proof is reviewed.`,
@@ -2444,11 +2744,37 @@ export function PiScrowApp({
 
   async function fundTradeConfirmed(trade: Trade) {
     setPaymentState("Preparing Test Pi payment...");
+    showBlockingAction(
+      "Opening Pi payment",
+      "Approve the Pi Browser payment prompt to move this buyer payment into PiScrow escrow.",
+    );
     const buyerTotal = calculateBuyerTotal(trade.amountTestPi);
     const platformFee = calculatePlatformFee(trade.amountTestPi);
 
     if (allowDemo && (!window.Pi || !piConnected)) {
-      updateTrade(trade.id, "Funded");
+      const paymentTxid = `demo-fund-${trade.id}-${Date.now()}`;
+      updateTrade(trade.id, "Funded", {
+        payment: {
+          ...ensureDemoPaymentSummary(trade),
+          amountTestPi: buyerTotal,
+          sellerAmountTestPi: trade.amountTestPi,
+          platformFeeTestPi: platformFee,
+          buyerTotalTestPi: buyerTotal,
+          buyerPaymentTxid: paymentTxid,
+          buyerPaymentLink: demoTransactionLink(paymentTxid),
+          escrowStatus: "held_in_app",
+          releaseType: undefined,
+          releaseStatus: "NotStarted",
+          releasePiPaymentId: undefined,
+          releaseTxid: undefined,
+          releaseTransactionLink: undefined,
+          releaseAmountTestPi: undefined,
+          releaseTargetPiUsername: undefined,
+          releaseRequestedAt: undefined,
+          releaseCompletedAt: undefined,
+          updatedAt: new Date().toISOString(),
+        },
+      });
       appendEvent(
         trade.id,
         "Payment completed",
@@ -2460,11 +2786,13 @@ export function PiScrowApp({
         "The buyer payment is now held for seller delivery proof.",
         "success",
       );
+      hideBlockingAction();
       return;
     }
 
     if (!window.Pi || !piConnected || !piAccessToken) {
       setPaymentState("Connect with Pi Browser before funding a real trade.");
+      hideBlockingAction();
       return;
     }
 
@@ -2474,6 +2802,7 @@ export function PiScrowApp({
       const message = resolvePiAuthMessage(error, copy.auth);
       setPaymentState(message);
       pushNotice("Payment setup failed", message, "warning");
+      hideBlockingAction();
       return;
     }
 
@@ -2498,16 +2827,25 @@ export function PiScrowApp({
           void (async () => {
             try {
               setPaymentState("Payment is waiting for PiScrow approval.");
+              showBlockingAction(
+                "Approving payment",
+                "PiScrow is approving the buyer payment with the Pi server.",
+              );
               await apiRequest(`/api/pi/approve`, piAccessToken, {
                 method: "POST",
                 body: JSON.stringify({ paymentId, tradeId: trade.id }),
               });
               setPaymentState("PiScrow approved the Test Pi payment.");
+              showBlockingAction(
+                "Waiting for final confirmation",
+                "Pi Browser is finishing the buyer funding on Pi Testnet.",
+              );
             } catch (error) {
               const message =
                 error instanceof Error ? error.message : "Payment approval failed.";
               setPaymentState(message);
               pushNotice("Payment approval failed", message, "warning");
+              hideBlockingAction();
             }
           })();
         },
@@ -2515,6 +2853,10 @@ export function PiScrowApp({
           void (async () => {
             try {
               setPaymentState("Finalizing Test Pi payment...");
+              showBlockingAction(
+                "Finalizing funding",
+                "PiScrow is finalizing the escrow funding on Pi Testnet.",
+              );
               const payload = await apiRequest<
                 (TradePayload & { mode?: string }) | { mode: string }
               >(`/api/pi/complete`, piAccessToken, {
@@ -2532,6 +2874,7 @@ export function PiScrowApp({
                 "The buyer payment is now held for seller delivery proof.",
                 "success",
               );
+              hideBlockingAction();
             } catch (error) {
               const message =
                 error instanceof Error
@@ -2539,16 +2882,19 @@ export function PiScrowApp({
                   : "Payment completion failed.";
               setPaymentState(message);
               pushNotice("Payment completion failed", message, "warning");
+              hideBlockingAction();
             }
           })();
         },
         onCancel: () => {
           setPaymentState("Payment was cancelled.");
           pushNotice("Payment cancelled", "No escrow funding was completed.", "warning");
+          hideBlockingAction();
         },
         onError: (error) => {
           setPaymentState(error.message);
           pushNotice("Payment error", error.message, "warning");
+          hideBlockingAction();
         },
       },
     );
@@ -2650,34 +2996,48 @@ export function PiScrowApp({
     }
 
     if (piConnected && piAccessToken) {
-      void apiRequest<TradePayload>(
-        `/api/trades/${selectedTrade.id}/delivery`,
-        piAccessToken,
-        {
-          method: "POST",
-          body: formData,
-        },
-      )
-        .then(applyTradePayload)
-        .then(() => {
+      void (async () => {
+        try {
+          showBlockingAction(
+            "Submitting seller proof",
+            "PiScrow is uploading seller proof and notifying the buyer.",
+          );
+          await optimizeImageInFormData(formData, "deliveryProofImage");
+          const payload = await apiRequest<TradePayload>(
+            `/api/trades/${selectedTrade.id}/delivery`,
+            piAccessToken,
+            {
+              method: "POST",
+              body: formData,
+            },
+          );
+          applyTradePayload(payload);
           form.reset();
           pushNotice(
             "Package proof submitted",
             "The buyer can now review and confirm receipt.",
             "success",
           );
-        })
-        .catch((error) => {
+        } catch (error) {
           setFormError(
             error instanceof Error ? error.message : "Could not submit proof.",
           );
-        });
+        } finally {
+          hideBlockingAction();
+        }
+      })();
       return;
     }
 
     updateTrade(selectedTrade.id, "DeliverySubmitted", {
       deliveryProofNote: parsed.data.deliveryProofNote,
       deliveryProofUrl: parsed.data.deliveryProofUrl || undefined,
+      payment: {
+        ...ensureDemoPaymentSummary(selectedTrade),
+        escrowStatus: "held_in_app",
+        releaseStatus: "NotStarted",
+        updatedAt: new Date().toISOString(),
+      },
     });
     appendEvent(selectedTrade.id, "Delivery submitted", parsed.data.deliveryProofNote);
     pushNotice(
@@ -2708,7 +3068,7 @@ export function PiScrowApp({
 
     askConfirmation({
       title: "Confirm receipt?",
-      body: "This marks the trade as completed and records buyer receipt proof on the activity timeline.",
+      body: "This records buyer receipt proof and moves the trade to admin release review before seller payout.",
       confirmLabel: "Confirm receipt",
       onConfirm: () => confirmReceiptConfirmed(trade, formData, parsed.data, form),
     });
@@ -2727,29 +3087,55 @@ export function PiScrowApp({
   ) {
 
     if (piConnected && piAccessToken) {
-      void apiRequest<TradePayload>(`/api/trades/${trade.id}/confirm`, piAccessToken, {
-        method: "POST",
-        body: formData,
-      })
-        .then(applyTradePayload)
-        .then(() => {
+      void (async () => {
+        try {
+          showBlockingAction(
+            "Confirming receipt",
+            "PiScrow is saving buyer proof and moving the trade to release review.",
+          );
+          await optimizeImageInFormData(formData, "buyerReceiptImage");
+          const payload = await apiRequest<TradePayload>(
+            `/api/trades/${trade.id}/confirm`,
+            piAccessToken,
+            {
+              method: "POST",
+              body: formData,
+            },
+          );
+          applyTradePayload(payload);
           form.reset();
-          pushNotice("Receipt confirmed", "The trade is marked completed.", "success");
-        })
-        .catch((error) => {
+          pushNotice(
+            "Receipt confirmed",
+            "The trade is waiting for admin release to the seller.",
+            "success",
+          );
+        } catch (error) {
           setFormError(
             error instanceof Error ? error.message : "Could not confirm receipt.",
           );
-        });
+        } finally {
+          hideBlockingAction();
+        }
+      })();
       return;
     }
 
-    updateTrade(trade.id, "Completed", {
+    updateTrade(trade.id, "AwaitingRelease", {
       buyerReceiptNote: parsed.buyerReceiptNote,
       buyerReceiptProofUrl: parsed.buyerReceiptProofUrl || undefined,
+      payment: {
+        ...ensureDemoPaymentSummary(trade),
+        escrowStatus: "held_in_app",
+        releaseStatus: "NotStarted",
+        updatedAt: new Date().toISOString(),
+      },
     });
     appendEvent(trade.id, "Receipt confirmed", parsed.buyerReceiptNote);
-    pushNotice("Receipt confirmed", "The trade is marked completed.", "success");
+    pushNotice(
+      "Receipt confirmed",
+      "The trade is waiting for admin release to the seller.",
+      "success",
+    );
     form.reset();
   }
 
@@ -2797,6 +3183,10 @@ export function PiScrowApp({
   ) {
 
     if (piConnected && piAccessToken) {
+      showBlockingAction(
+        "Freezing trade",
+        "PiScrow is freezing this trade and sending it to admin review.",
+      );
       void apiRequest<TradePayload>(
         `/api/trades/${trade.id}/dispute`,
         piAccessToken,
@@ -2818,11 +3208,21 @@ export function PiScrowApp({
           setFormError(
             error instanceof Error ? error.message : "Could not open dispute.",
           );
+        })
+        .finally(() => {
+          hideBlockingAction();
         });
       return;
     }
 
-    updateTrade(trade.id, "Disputed");
+    updateTrade(trade.id, "Disputed", {
+      payment: {
+        ...ensureDemoPaymentSummary(trade),
+        escrowStatus: "held_in_app",
+        releaseStatus: "NotStarted",
+        updatedAt: new Date().toISOString(),
+      },
+    });
     appendEvent(trade.id, "Dispute opened", parsed.reason);
     pushNotice("Dispute opened", "The trade is frozen for admin review.", "warning");
     form.reset();
@@ -2887,6 +3287,193 @@ export function PiScrowApp({
     form.reset();
   }
 
+  function chatSenderRoleFor(trade: Trade): TradeChatMessage["senderRole"] {
+    if (normalizeUsername(trade.buyerPiUsername ?? "") === normalizedUsername) {
+      return "buyer";
+    }
+
+    if (normalizeUsername(trade.sellerPiUsername) === normalizedUsername) {
+      return "seller";
+    }
+
+    return "admin";
+  }
+
+  async function openTradeChat(trade: Trade) {
+    setFormError("");
+
+    if (allowDemo) {
+      upsertDemoChatRoom(
+        trade,
+        trade.status === "Disputed" ? "disputed" : "active",
+      );
+      return;
+    }
+
+    if (!piAccessToken) {
+      setFormError("Connect your Pi account before opening trade chat.");
+      return;
+    }
+
+    setChatLoadingTradeId(trade.id);
+
+    try {
+      const payload = await apiRequest<ChatPayload>(
+        `/api/trades/${trade.id}/chat`,
+        piAccessToken,
+      );
+      applyChatPayload(payload);
+    } catch (error) {
+      setFormError(error instanceof Error ? error.message : "Could not open chat.");
+    } finally {
+      setChatLoadingTradeId("");
+    }
+  }
+
+  async function sendTradeChatMessage(
+    trade: Trade,
+    event: FormEvent<HTMLFormElement>,
+  ) {
+    event.preventDefault();
+    setFormError("");
+
+    if (!user) {
+      setFormError("Connect your Pi account before sending chat messages.");
+      return;
+    }
+
+    const form = event.currentTarget;
+    const formData = new FormData(form);
+    const parsed = tradeChatMessageSchema.safeParse({
+      tradeId: trade.id,
+      body: formData.get("body"),
+    });
+
+    if (!parsed.success) {
+      setFormError(parsed.error.issues[0]?.message ?? "Chat message is invalid.");
+      return;
+    }
+
+    const attachment = fileFromFormData(formData, "attachment");
+
+    if (!(parsed.data.body ?? "").trim() && !attachment) {
+      setFormError("Add a message or proof image before sending.");
+      return;
+    }
+
+    setChatSending(true);
+
+    if (allowDemo) {
+      const attachmentUrl = attachment ? URL.createObjectURL(attachment) : undefined;
+      appendDemoChatMessage(
+        trade,
+        {
+          senderUserId: user.uid,
+          senderPiUsername: normalizedUsername,
+          senderRole: chatSenderRoleFor(trade),
+          messageType: attachmentUrl ? "proof" : "text",
+          body: parsed.data.body ?? "",
+          attachmentUrl,
+        },
+        trade.status === "Disputed" ? "disputed" : "active",
+      );
+      form.reset();
+      setChatSending(false);
+      pushNotice("Message sent", "The trade chat was updated.", "success");
+      return;
+    }
+
+    if (!piAccessToken) {
+      setFormError("Connect your Pi account before sending chat messages.");
+      setChatSending(false);
+      return;
+    }
+
+    try {
+      await optimizeImageInFormData(formData, "attachment");
+      const payload = await apiRequest<ChatPayload>(
+        `/api/trades/${trade.id}/chat`,
+        piAccessToken,
+        {
+          method: "POST",
+          body: formData,
+        },
+      );
+      applyChatPayload(payload);
+      form.reset();
+      pushNotice("Message sent", "The trade chat was updated.", "success");
+    } catch (error) {
+      setFormError(error instanceof Error ? error.message : "Could not send message.");
+    } finally {
+      setChatSending(false);
+    }
+  }
+
+  async function claimTradeChat(trade: Trade) {
+    setFormError("");
+
+    if (!user?.isAdmin) {
+      setFormError("Only admins can join dispute rooms.");
+      return;
+    }
+
+    if (allowDemo) {
+      const room = upsertDemoChatRoom(trade, "disputed");
+      const now = new Date().toISOString();
+      setChatRooms((current) =>
+        current.map((item) =>
+          item.tradeId === trade.id
+            ? {
+                ...item,
+                claimedAdminUserId: user.uid,
+                claimedAdminPiUsername: normalizedUsername,
+                claimedAt: now,
+                updatedAt: now,
+              }
+            : item,
+        ),
+      );
+      setChatMessages((current) => [
+        ...current,
+        {
+          id: `chat-claim-${crypto.randomUUID()}`,
+          roomId: room.id,
+          tradeId: trade.id,
+          senderPiUsername: "system",
+          senderRole: "system",
+          messageType: "system",
+          body: `Admin @${normalizedUsername} joined this dispute room.`,
+          createdAt: now,
+        },
+      ]);
+      pushNotice("Dispute room joined", "You can now message this dispute room.", "success");
+      return;
+    }
+
+    if (!piAccessToken) {
+      setFormError("Connect your admin Pi account before joining dispute rooms.");
+      return;
+    }
+
+    setChatLoadingTradeId(trade.id);
+
+    try {
+      const payload = await apiRequest<ChatPayload>(
+        `/api/trades/${trade.id}/chat/claim`,
+        piAccessToken,
+        { method: "POST" },
+      );
+      applyChatPayload(payload);
+      pushNotice("Dispute room joined", "You can now message this dispute room.", "success");
+    } catch (error) {
+      setFormError(
+        error instanceof Error ? error.message : "Could not join dispute room.",
+      );
+    } finally {
+      setChatLoadingTradeId("");
+    }
+  }
+
   function adminRequestFollowUp(
     trade: Trade,
     action: AdminFollowUpAction,
@@ -2906,6 +3493,10 @@ export function PiScrowApp({
     }
 
     if (piConnected && piAccessToken) {
+      showBlockingAction(
+        "Sending follow-up request",
+        `PiScrow is notifying the ${targetRole} and recording the request for admin review.`,
+      );
       void apiRequest<TradePayload>(
         `/api/trades/${trade.id}/admin-resolve`,
         piAccessToken,
@@ -2930,6 +3521,9 @@ export function PiScrowApp({
           setFormError(
             error instanceof Error ? error.message : "Could not request follow-up.",
           );
+        })
+        .finally(() => {
+          hideBlockingAction();
         });
       return;
     }
@@ -2954,14 +3548,14 @@ export function PiScrowApp({
     askConfirmation({
       title:
         status === "Completed"
-          ? "Approve seller release?"
-          : "Approve buyer refund?",
+          ? "Release seller payout?"
+          : "Refund buyer from escrow?",
       body:
         status === "Completed"
-          ? "This records that admin reviewed the dispute and approved the seller release path."
-          : "This records that admin reviewed the dispute and approved the buyer refund path.",
+          ? "PiScrow will release the held Test Pi from escrow to the seller after this review."
+          : "PiScrow will refund the held Test Pi from escrow back to the buyer after this review.",
       confirmLabel:
-        status === "Completed" ? "Approve release" : "Approve refund",
+        status === "Completed" ? "Release payout" : "Refund buyer",
       tone: status === "Cancelled" ? "danger" : "warning",
       onConfirm: () => adminResolveConfirmed(trade, status),
     });
@@ -2991,10 +3585,10 @@ export function PiScrowApp({
         .then(applyTradePayload)
         .then(() => {
           pushNotice(
-            "Dispute resolved",
+            status === "Completed" ? "Payout completed" : "Refund completed",
             status === "Completed"
-              ? "Seller release path approved after review."
-              : "Buyer refund path approved after cancellation review.",
+              ? "Held Test Pi was released to the seller after admin review."
+              : "Held Test Pi was refunded to the buyer after admin review.",
             status === "Completed" ? "success" : "warning",
           );
         })
@@ -3002,11 +3596,36 @@ export function PiScrowApp({
           setFormError(
             error instanceof Error ? error.message : "Could not resolve dispute.",
           );
+        })
+        .finally(() => {
+          hideBlockingAction();
         });
       return;
     }
 
-    updateTrade(trade.id, status);
+    const releaseTxid = `demo-${status === "Completed" ? "release" : "refund"}-${trade.id}-${Date.now()}`;
+    updateTrade(trade.id, status, {
+      payment: {
+        ...ensureDemoPaymentSummary(trade),
+        escrowStatus:
+          status === "Completed" ? "released_to_seller" : "refunded_to_buyer",
+        releaseType:
+          status === "Completed" ? "seller_release" : "buyer_refund",
+        releaseStatus: "Completed",
+        releasePiPaymentId: `demo-release-payment-${trade.id}`,
+        releaseTxid,
+        releaseTransactionLink: demoTransactionLink(releaseTxid),
+        releaseAmountTestPi:
+          status === "Completed"
+            ? trade.payment?.sellerAmountTestPi ?? trade.amountTestPi
+            : trade.payment?.buyerTotalTestPi ?? calculateBuyerTotal(trade.amountTestPi),
+        releaseTargetPiUsername:
+          status === "Completed" ? trade.sellerPiUsername : trade.buyerPiUsername,
+        releaseRequestedAt: new Date().toISOString(),
+        releaseCompletedAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+    });
     appendEvent(
       trade.id,
       status === "Completed"
@@ -3016,241 +3635,239 @@ export function PiScrowApp({
       user?.username ?? "admin",
     );
     pushNotice(
-      "Dispute resolved",
+      status === "Completed" ? "Payout completed" : "Refund completed",
       status === "Completed"
-        ? "Seller release path approved after review."
-        : "Buyer refund path approved after cancellation review.",
+        ? "Held Test Pi was released to the seller after admin review."
+        : "Held Test Pi was refunded to the buyer after admin review.",
       status === "Completed" ? "success" : "warning",
     );
   }
 
   return (
     <main className="min-h-screen bg-[var(--background)] text-[var(--foreground)]">
-      <section className="mx-auto grid w-full max-w-7xl gap-5 px-4 py-4 sm:px-6 lg:px-8">
-        <header className="grid gap-4 border-b border-black/10 pb-5 lg:grid-cols-[1fr_390px]">
-          <div className="grid gap-4">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div className="inline-flex w-fit items-center gap-2 border border-black/15 bg-white px-3 py-2 text-xs font-bold uppercase text-zinc-700">
-                <ShieldCheck className="h-4 w-4 text-emerald-700" />
-                {copy.testnetBadge}
-              </div>
+      <NotificationStack notices={toastNotices} onDismiss={dismissNotice} />
+      {formError && (
+        <ActionFeedbackDialog
+          message={formError}
+          onDismiss={() => setFormError("")}
+        />
+      )}
+      {confirmAction && (
+        <ConfirmActionDialog
+          action={confirmAction}
+          onCancel={() => setConfirmAction(null)}
+          onConfirm={runConfirmedAction}
+        />
+      )}
+
+      <section className="ps">
+        {blockingAction && <ProcessingOverlay action={blockingAction} />}
+        <AppTopBar
+          activeValue={activeValue}
+          authState={authState}
+          copy={copy}
+          notificationsOpen={notificationsOpen}
+          refreshDisabled={ledgerLoading || connectingPi}
+          signedIn={signedIn}
+          unreadCount={unreadNoticeCount}
+          username={normalizedUsername}
+          onRefresh={refreshCurrentView}
+          onToggleNotifications={() => setNotificationsOpen((current) => !current)}
+        />
+
+        {notificationsOpen && (
+          <NotificationDrawer
+            notices={inboxNotices}
+            onClose={() => setNotificationsOpen(false)}
+            onDismiss={dismissNotice}
+          />
+        )}
+
+        <div className="psc">
+          {maintenanceEnabled && (
+            <MaintenanceBanner copy={copy} message={nextPublicMaintenanceMessage} />
+          )}
+
+          {allowDemo && !signedIn && <DemoModeBanner copy={copy} />}
+
+          {!signedIn && (
+            <div className="grid gap-3 pb-4">
+              <WelcomeHero copy={copy} />
               <LanguageSelector
                 copy={copy}
                 language={language}
                 onChange={changeLanguage}
               />
-            </div>
-            <div>
-              <div className="flex items-center gap-3">
-                <Image
-                  alt=""
-                  className="h-14 w-14 border border-black/10 bg-white p-2 shadow-[4px_4px_0_#10b981]"
-                  height={56}
-                  src="/piscrow-logo.svg"
-                  width={56}
-                />
-                <h1 className="text-4xl font-black leading-none text-zinc-950 sm:text-6xl">
-                  {copy.heroTitle}
-                </h1>
-              </div>
-              <p className="mt-4 max-w-3xl text-base leading-7 text-zinc-700">
-                {copy.heroBody}
-              </p>
-            </div>
-          </div>
-
-          <SessionCard
-            authState={authState}
-            canConnect={canConnectPi}
-            connecting={connectingPi}
-            copy={copy}
-            user={user}
-            onConnect={connectPi}
-          />
-        </header>
-
-        {maintenanceEnabled && (
-          <MaintenanceBanner copy={copy} message={nextPublicMaintenanceMessage} />
-        )}
-
-        {allowDemo && <DemoModeBanner copy={copy} />}
-
-        {formError && (
-          <ActionFeedbackDialog
-            message={formError}
-            onDismiss={() => setFormError("")}
-          />
-        )}
-
-        {confirmAction && (
-          <ConfirmActionDialog
-            action={confirmAction}
-            onCancel={() => setConfirmAction(null)}
-            onConfirm={runConfirmedAction}
-          />
-        )}
-
-        {!signedIn && (
-          <>
-            {consentState !== "accepted" ? (
-              <ConsentGate
-                consentState={consentState}
-                copy={copy}
-                onAccept={acceptConsent}
-                onReject={rejectConsent}
-              />
-            ) : (
-              <SignInPanel
+              <SessionCard
                 authState={authState}
                 canConnect={canConnectPi}
                 connecting={connectingPi}
                 copy={copy}
+                user={user}
                 onConnect={connectPi}
               />
-            )}
-            {activeMode !== "ledger" && (
-              <NotificationStack notices={notices} onDismiss={dismissNotice} />
-            )}
-            <PublicLedger
-              trades={ledgerTrades}
-              events={ledgerEvents}
-              loading={ledgerLoading}
-              onRefresh={refreshPublicLedger}
-            />
-          </>
-        )}
-
-        {signedIn && (
-          <>
-            <WorkspaceSwitcher
-              copy={copy}
-              mode={activeMode}
-              mobileOpen={mobileNavOpen}
-              navItems={navItems}
-              username={normalizedUsername}
-              onMobileOpenChange={setMobileNavOpen}
-              onModeChange={changeMode}
-            />
-
-            {activeMode !== "ledger" && (
-              <section className="grid gap-3 md:grid-cols-3">
-                <Metric
-                  icon={<Store className="h-5 w-5" />}
-                  label={copy.metrics.openOffers}
-                  value={trades.filter((trade) => trade.status === "Draft").length}
+              {consentState !== "accepted" ? (
+                <ConsentGate
+                  consentState={consentState}
+                  copy={copy}
+                  onAccept={acceptConsent}
+                  onReject={rejectConsent}
                 />
-                <Metric
-                  icon={<HandCoins className="h-5 w-5" />}
-                  label={copy.metrics.activeValue}
-                  value={formatTestPi(activeValue)}
+              ) : (
+                <SignInPanel
+                  authState={authState}
+                  canConnect={canConnectPi}
+                  connecting={connectingPi}
+                  copy={copy}
+                  onConnect={connectPi}
                 />
-                <Metric
-                  icon={<FileWarning className="h-5 w-5" />}
-                  label={copy.metrics.disputes}
-                  value={trades.filter((trade) => trade.status === "Disputed").length}
-                />
-              </section>
-            )}
-
-            {activeMode !== "ledger" && (
-              <NotificationStack notices={notices} onDismiss={dismissNotice} />
-            )}
-
-            {activeMode === "market" && (
-              <section className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_380px]">
-                <OfferFeed
-                  trades={buyerTrades}
-                  interests={interests}
-                  currentUsername={normalizedUsername}
-                  expandedTradeId={expandedTradeId}
-                  onExpand={setExpandedTradeId}
-                  onSelect={setSelectedTradeId}
-                  onSubmitInterest={submitInterest}
-                  onDeclinePrivate={declinePrivateOffer}
-                  onFund={fundTrade}
-                  onConfirm={confirmReceipt}
-                />
-                <SideRail
-                  trade={selectedTrade}
-                  currentUsername={normalizedUsername}
-                  events={events}
-                  paymentState={paymentState}
-                  onOpenDispute={openDispute}
-                  onSubmitDisputeUpdate={submitDisputeUpdate}
-                />
-              </section>
-            )}
-
-            {activeMode === "sell" && (
-              <section className="grid gap-5 lg:grid-cols-[430px_minmax(0,1fr)]">
-                <SellerPostPanel
-                  key={sellerFormResetKey}
-                  username={normalizedUsername}
-                  onCreateTrade={createTrade}
-                />
-                <SellerDesk
-                  trades={sellerTrades}
-                  interests={interests}
-                  events={events}
-                  currentUsername={normalizedUsername}
-                  selectedTrade={selectedTrade}
-                  onSelect={(tradeId) => {
-                    setSelectedTradeId(tradeId);
-                    setExpandedTradeId(tradeId);
-                  }}
-                  onSelectInterest={selectInterest}
-                  onDeleteOffer={deleteOffer}
-                  onSubmitDelivery={submitDelivery}
-                  onOpenDispute={openDispute}
-                  onSubmitDisputeUpdate={submitDisputeUpdate}
-                />
-              </section>
-            )}
-
-            {activeMode === "ledger" && (
+              )}
               <PublicLedger
                 trades={ledgerTrades}
                 events={ledgerEvents}
+                currentUsername=""
+                interests={[]}
                 loading={ledgerLoading}
                 onRefresh={refreshPublicLedger}
               />
-            )}
+            </div>
+          )}
 
-            {activeMode === "profile" && (
-              <ProfileDesk
-                loading={profileLoading}
-                profile={profileStats}
-                trades={trades}
-                username={normalizedUsername}
-                onRefresh={() => void refreshProfile()}
-                onRequestVerifiedBadge={() => void requestVerifiedBadge()}
-              />
-            )}
+          {signedIn && (
+            <div className="grid gap-3 pb-4">
+              {activeMode === "market" && (
+                <BuyerDesk
+                  chatLoadingTradeId={chatLoadingTradeId}
+                  chatMessages={chatMessages}
+                  chatRooms={chatRooms}
+                  chatSending={chatSending}
+                  trades={buyerTrades}
+                  interests={interests}
+                  events={events}
+                  currentUserId={user?.id ?? user?.uid}
+                  currentUsername={normalizedUsername}
+                  activeValue={activeValue}
+                  paymentState={paymentState}
+                  onConfirm={confirmReceipt}
+                  onDeclinePrivate={declinePrivateOffer}
+                  onFund={fundTrade}
+                  onOpenChat={openTradeChat}
+                  onOpenDispute={openDispute}
+                  onSendChatMessage={sendTradeChatMessage}
+                  onSubmitInterest={submitInterest}
+                  onSubmitDisputeUpdate={submitDisputeUpdate}
+                />
+              )}
 
-            {activeMode === "admin" && user?.isAdmin && (
-              <AdminDesk
-                trades={adminTrades}
-                events={events}
-                reviewLoadingTradeId={reviewLoadingTradeId}
-                reviewRecommendations={reviewRecommendations}
-                verificationLoading={verificationLoading}
-                verificationRequests={verificationRequests}
-                onApproveVerification={(request) => void approveVerifiedBadge(request)}
-                onRefreshVerifications={() => void refreshVerificationRequests()}
-                onRequestFollowUp={adminRequestFollowUp}
-                onRunReview={runReviewRecommendation}
-                onResolve={adminResolve}
-              />
-            )}
-          </>
+              {activeMode === "sell" && (
+                <section className="grid gap-3">
+                  {sellerComposerOpen ? (
+                    <SellerPostPanel
+                      key={sellerFormResetKey}
+                      username={normalizedUsername}
+                      onCancel={() => setSellerComposerOpen(false)}
+                      onCreateTrade={createTrade}
+                    />
+                  ) : (
+                    <SellerDesk
+                      chatLoadingTradeId={chatLoadingTradeId}
+                      chatMessages={chatMessages}
+                      chatRooms={chatRooms}
+                      chatSending={chatSending}
+                      trades={sellerTrades}
+                      interests={interests}
+                      events={events}
+                      currentUserId={user?.id ?? user?.uid}
+                      currentUsername={normalizedUsername}
+                      selectedTrade={selectedTrade}
+                      onNewListing={() => {
+                        if (requirePayoutReadiness("post seller offers")) {
+                          setSellerComposerOpen(true);
+                        }
+                      }}
+                      onSelect={(tradeId) => {
+                        setSelectedTradeId(tradeId);
+                        setExpandedTradeId(tradeId);
+                      }}
+                      onSelectInterest={selectInterest}
+                      onDeleteOffer={deleteOffer}
+                      onOpenChat={openTradeChat}
+                      onSubmitDelivery={submitDelivery}
+                      onOpenDispute={openDispute}
+                      onSendChatMessage={sendTradeChatMessage}
+                      onSubmitDisputeUpdate={submitDisputeUpdate}
+                    />
+                  )}
+                </section>
+              )}
+
+              {activeMode === "ledger" && (
+                <PublicLedger
+                  trades={ledgerTrades}
+                  events={ledgerEvents}
+                  currentUsername={normalizedUsername}
+                  interests={interests}
+                  loading={ledgerLoading}
+                  onDeclinePrivate={declinePrivateOffer}
+                  onSubmitInterest={signedIn ? submitInterest : undefined}
+                  onRefresh={refreshPublicLedger}
+                />
+              )}
+
+              {activeMode === "profile" && (
+                <>
+                  <ProfileDesk
+                    feedbackSending={feedbackSending}
+                    feedbackStatus={feedbackStatus}
+                    loading={profileLoading}
+                    payoutReadyLoading={payoutReadyLoading}
+                    profile={profileStats}
+                    trades={trades}
+                    username={normalizedUsername}
+                    onConfirmPayoutReadiness={() => void confirmPayoutReadiness()}
+                    onSubmitFeedback={submitFeedback}
+                    onRefresh={() => void refreshProfile()}
+                    onRequestVerifiedBadge={() => void requestVerifiedBadge()}
+                  />
+                  <AppFooter />
+                </>
+              )}
+
+              {activeMode === "admin" && user?.isAdmin && (
+                <AdminDesk
+                  chatLoadingTradeId={chatLoadingTradeId}
+                  chatMessages={chatMessages}
+                  chatRooms={chatRooms}
+                  chatSending={chatSending}
+                  currentUserId={user?.id ?? user?.uid}
+                  currentUsername={normalizedUsername}
+                  trades={adminTrades}
+                  events={events}
+                  reviewLoadingTradeId={reviewLoadingTradeId}
+                  reviewRecommendations={reviewRecommendations}
+                  verificationLoading={verificationLoading}
+                  verificationRequests={verificationRequests}
+                  onApproveVerification={(request) => void approveVerifiedBadge(request)}
+                  onClaimChat={claimTradeChat}
+                  onOpenChat={openTradeChat}
+                  onRefreshVerifications={() => void refreshVerificationRequests()}
+                  onRequestFollowUp={adminRequestFollowUp}
+                  onRunReview={runReviewRecommendation}
+                  onSendChatMessage={sendTradeChatMessage}
+                  onResolve={adminResolve}
+                />
+              )}
+            </div>
+          )}
+        </div>
+
+        {signedIn && (
+          <BottomTabBar
+            mode={activeMode}
+            navItems={navItems}
+            onModeChange={changeMode}
+          />
         )}
-        <AppFooter
-          feedbackStatus={feedbackStatus}
-          feedbackSending={feedbackSending}
-          footerDisclaimer={copy.footerDisclaimer}
-          rulesLink={copy.rulesLink}
-          onSubmitFeedback={submitFeedback}
-        />
       </section>
     </main>
   );
@@ -3290,155 +3907,108 @@ async function apiRequest<T>(
   return response.json() as Promise<T>;
 }
 
-function AppFooter({
-  feedbackStatus,
-  feedbackSending,
-  footerDisclaimer,
-  rulesLink,
-  onSubmitFeedback,
-}: {
-  feedbackStatus: FeedbackStatus;
-  feedbackSending: boolean;
-  footerDisclaimer: string;
-  rulesLink: string;
-  onSubmitFeedback: (event: FormEvent<HTMLFormElement>) => void;
-}) {
-  return (
-    <footer className="border-t border-black/10 py-6">
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(320px,440px)]">
-        <section className="grid gap-4 border border-black/10 bg-white p-4">
-          <div>
-            <p className="text-xs font-bold uppercase text-zinc-500">Developer contact</p>
-            <h2 className="mt-1 text-lg font-black text-zinc-950">
-              Help improve PiScrow
-            </h2>
-            <p className="mt-2 text-sm leading-6 text-zinc-600">
-              Send product issues, marketplace suggestions, payment-flow feedback,
-              or hackathon review notes directly to the builder.
-            </p>
-          </div>
-          <div className="grid gap-2 text-sm font-semibold text-zinc-700">
-            <a
-              className="inline-flex w-fit items-center gap-2 underline-offset-4 hover:text-emerald-800 hover:underline"
-              href="mailto:coodeflowx1@gmail.com"
-            >
-              <Mail className="h-4 w-4" />
-              coodeflowx1@gmail.com
-            </a>
-            <p className="inline-flex items-center gap-2">
-              <AtSign className="h-4 w-4" />
-              Pi username: @villari002
-            </p>
-          </div>
-          <div className="flex flex-col gap-2 text-xs font-semibold text-zinc-500 sm:flex-row sm:items-center sm:justify-between">
-            <p>{footerDisclaimer}</p>
-            <Link
-              className="w-fit underline underline-offset-4 hover:text-zinc-950"
-              href="/rules"
-            >
-              {rulesLink}
-            </Link>
-          </div>
-          <p className="inline-flex items-center gap-1 text-xs font-black uppercase tracking-normal text-zinc-500">
-            Built with
-            <Heart className="h-3.5 w-3.5 fill-rose-600 text-rose-600" />
-            by Kamarudeen
-          </p>
-        </section>
-
-        <FeedbackForm
-          sending={feedbackSending}
-          status={feedbackStatus}
-          onSubmit={onSubmitFeedback}
-        />
-      </div>
-    </footer>
-  );
+function fileFromFormData(formData: FormData, name: string) {
+  const file = formData.get(name);
+  return file instanceof File && file.size > 0 ? file : null;
 }
 
-function FeedbackForm({
-  sending,
-  status,
-  onSubmit,
-}: {
-  sending: boolean;
-  status: FeedbackStatus;
-  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
-}) {
+async function imageFileToBitmap(file: File) {
+  if ("createImageBitmap" in window) {
+    return createImageBitmap(file);
+  }
+
+  return new Promise<HTMLImageElement>((resolve, reject) => {
+    const image = new Image();
+    const url = URL.createObjectURL(file);
+
+    image.onload = () => {
+      URL.revokeObjectURL(url);
+      resolve(image);
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("Could not read image."));
+    };
+    image.src = url;
+  });
+}
+
+async function compressImageForUpload(file: File | null) {
+  if (!file || file.size < 350 * 1024 || typeof window === "undefined") {
+    return file;
+  }
+
+  try {
+    const source = await imageFileToBitmap(file);
+    const sourceWidth =
+      source instanceof HTMLImageElement ? source.naturalWidth : source.width;
+    const sourceHeight =
+      source instanceof HTMLImageElement ? source.naturalHeight : source.height;
+    const maxSide = 1280;
+    const ratio = Math.min(1, maxSide / Math.max(sourceWidth, sourceHeight));
+    const width = Math.max(1, Math.round(sourceWidth * ratio));
+    const height = Math.max(1, Math.round(sourceHeight * ratio));
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext("2d");
+
+    if (!context) {
+      return file;
+    }
+
+    context.drawImage(source, 0, 0, width, height);
+
+    if ("close" in source && typeof source.close === "function") {
+      source.close();
+    }
+
+    const blob = await new Promise<Blob | null>((resolve) => {
+      canvas.toBlob(resolve, "image/webp", 0.78);
+    });
+
+    if (!blob || blob.size >= file.size) {
+      return file;
+    }
+
+    return new File(
+      [blob],
+      `${file.name.replace(/\.[^.]+$/, "") || "proof"}.webp`,
+      {
+        type: "image/webp",
+        lastModified: Date.now(),
+      },
+    );
+  } catch {
+    return file;
+  }
+}
+
+async function optimizeImageInFormData(formData: FormData, fieldName: string) {
+  const file = fileFromFormData(formData, fieldName);
+  const optimized = await compressImageForUpload(file);
+
+  if (file && optimized && optimized !== file) {
+    formData.set(fieldName, optimized);
+  }
+}
+
+function AppFooter() {
   return (
-    <form
-      className="grid gap-3 border border-emerald-200 bg-white p-4"
-      onSubmit={onSubmit}
-    >
-      <div className="flex items-start gap-3">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center bg-emerald-100 text-emerald-800">
-          <MessageSquare className="h-5 w-5" />
-        </div>
-        <div>
-          <h2 className="font-black text-zinc-950">Feedback</h2>
-          <p className="mt-1 text-sm leading-6 text-zinc-600">
-            Your message is saved for review. Add your email only if you want a reply.
-          </p>
-        </div>
-      </div>
-      <label className="grid gap-2">
-        <span className="text-xs font-bold uppercase text-zinc-500">Type</span>
-        <select
-          className="h-11 border border-black/15 bg-white px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-emerald-700"
-          defaultValue="suggestion"
-          name="category"
-        >
-          <option value="suggestion">Suggestion</option>
-          <option value="improvement">Improvement</option>
-          <option value="issue">Issue</option>
-          <option value="other">Other</option>
-        </select>
-      </label>
-      <label className="grid gap-2">
-        <span className="text-xs font-bold uppercase text-zinc-500">Message</span>
-        <textarea
-          className="min-h-28 resize-y border border-black/15 bg-white p-3 text-sm leading-6 outline-none focus:border-emerald-700"
-          maxLength={1500}
-          name="message"
-          placeholder="What should PiScrow improve, fix, or add next?"
-        />
-      </label>
-      <label className="grid gap-2">
-        <span className="text-xs font-bold uppercase text-zinc-500">
-          Email for reply
-        </span>
-        <input
-          className="h-11 border border-black/15 bg-white px-3 text-sm outline-none focus:border-emerald-700"
-          name="contactEmail"
-          placeholder="Optional"
-          type="email"
-        />
-      </label>
-      <button
-        className="inline-flex h-11 items-center justify-center gap-2 bg-zinc-950 px-4 text-sm font-black text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-zinc-400"
-        disabled={sending}
-        type="submit"
+    <footer className="mx-[14px] mb-4 grid gap-2 border-t border-white/8 pt-4 text-center">
+      <p className="inline-flex items-center justify-center gap-1 text-[11px] font-bold uppercase tracking-[0.16em] text-slate-500">
+        Built with
+        <Heart className="h-3.5 w-3.5 fill-rose-500 text-rose-500" />
+        by Kamarudeen
+      </p>
+      <a
+        className="inline-flex items-center justify-center gap-2 text-xs font-semibold text-[var(--gold)]"
+        href="mailto:coodeflowx1@gmail.com"
       >
-        {sending ? (
-          <LoaderCircle className="h-4 w-4 animate-spin" />
-        ) : (
-          <Send className="h-4 w-4" />
-        )}
-        {sending ? "Sending" : "Send feedback"}
-      </button>
-      {status && (
-        <p
-          className={`border px-3 py-2 text-sm font-semibold leading-6 ${
-            status.tone === "success"
-              ? "border-emerald-200 bg-emerald-50 text-emerald-900"
-              : "border-rose-200 bg-rose-50 text-rose-900"
-          }`}
-          role="status"
-        >
-          {status.message}
-        </p>
-      )}
-    </form>
+        <Mail className="h-3.5 w-3.5" />
+        coodeflowx1@gmail.com
+      </a>
+    </footer>
   );
 }
 
@@ -3452,10 +4022,10 @@ function LanguageSelector({
   onChange: (language: LanguageCode) => void;
 }) {
   return (
-    <label className="grid w-full gap-1 text-xs font-bold uppercase text-zinc-500 sm:w-56">
+    <label className="mx-[14px] grid gap-1 text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--muted)]">
       {copy.language}
       <select
-        className="h-10 border border-black/15 bg-white px-3 text-sm font-black normal-case text-zinc-950 outline-none transition focus:border-emerald-700"
+        className="inp h-10 normal-case"
         value={language}
         onChange={(event) => {
           const nextLanguage = event.target.value;
@@ -3490,16 +4060,18 @@ function SessionCard({
   onConnect: () => void;
 }) {
   return (
-    <aside className="border border-black/10 bg-white p-4 shadow-[8px_8px_0_#111827]">
+    <aside className="card mx-[14px] grid gap-4">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-xs font-bold uppercase text-zinc-500">{copy.session}</p>
-          <p className="mt-2 text-lg font-black text-zinc-950">
+          <p className="lbl">
+            {copy.session}
+          </p>
+          <p className="mt-1 text-base font-bold text-white">
             {user ? `@${user.username}` : copy.notConnected}
           </p>
         </div>
         <button
-          className="inline-flex h-10 items-center gap-2 border border-zinc-950 bg-zinc-950 px-3 text-sm font-bold text-white transition hover:bg-emerald-700 disabled:border-emerald-700 disabled:bg-emerald-700"
+          className="btn-gh shrink-0 border-[rgba(245,166,35,0.22)] bg-[rgba(245,166,35,0.12)] text-[var(--gold)]"
           type="button"
           onClick={onConnect}
           disabled={Boolean(user) || connecting || !canConnect}
@@ -3514,7 +4086,7 @@ function SessionCard({
           {user ? copy.connected : connecting ? copy.connecting : copy.connect}
         </button>
       </div>
-      <p className="mt-4 border-t border-black/10 pt-4 text-sm leading-6 text-zinc-600">
+      <p className="rounded-xl border border-white/8 bg-black/15 px-3 py-3 text-sm leading-6 text-slate-300">
         {authState}
       </p>
     </aside>
@@ -3535,31 +4107,24 @@ function SignInPanel({
   onConnect: () => void;
 }) {
   return (
-    <section className="grid gap-5 border border-black/10 bg-white p-5 shadow-[8px_8px_0_#111827] md:grid-cols-[1fr_280px]">
+    <section className="card mx-[14px] grid gap-4">
       <div>
-        <p className="text-xs font-bold uppercase text-zinc-500">
+        <p className="lbl">
           {copy.privateWorkspace}
         </p>
-        <h2 className="mt-3 text-2xl font-black text-zinc-950">
+        <h2 className="mt-2 text-lg font-bold text-white">
           {copy.signInTitle}
         </h2>
-        <p className="mt-3 max-w-2xl text-sm leading-6 text-zinc-600">
+        <p className="mt-3 text-sm leading-6 text-slate-300">
           {copy.signInBody}
         </p>
-        <p className="mt-4 border-l-4 border-emerald-700 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-950">
+        <p className="mt-4 rounded-xl border border-white/8 bg-black/15 px-3 py-3 text-sm font-semibold leading-6 text-slate-200">
           {authState}
         </p>
-        <Link
-          className="mt-4 inline-flex h-11 w-full items-center justify-center gap-2 border border-zinc-950 bg-white px-4 text-sm font-black text-zinc-950 transition hover:bg-zinc-50 sm:w-auto"
-          href="/?demo=1"
-        >
-          <CirclePlay className="h-4 w-4" />
-          {copy.loginDemo}
-        </Link>
       </div>
-      <div className="flex items-center md:justify-end">
+      <div className="grid gap-3">
         <button
-          className="inline-flex h-12 w-full items-center justify-center gap-2 bg-zinc-950 px-4 text-sm font-black text-white transition hover:bg-emerald-700 md:w-auto"
+          className="btn-g"
           type="button"
           onClick={onConnect}
           disabled={connecting || !canConnect}
@@ -3571,6 +4136,13 @@ function SignInPanel({
           )}
           {connecting ? `${copy.connecting}...` : copy.connectPiAccount}
         </button>
+        <Link
+          className="btn-gh"
+          href="/?demo=1"
+        >
+          <CirclePlay className="h-4 w-4" />
+          {copy.loginDemo}
+        </Link>
       </div>
     </section>
   );
@@ -3584,17 +4156,17 @@ function MaintenanceBanner({
   message: string;
 }) {
   return (
-    <section className="flex flex-col gap-3 border border-amber-300 bg-amber-50 p-4 text-amber-950 sm:flex-row sm:items-center sm:justify-between">
+    <section className="card mx-[14px] mt-3 flex flex-col gap-3 border-amber-400/25 bg-amber-400/10 text-amber-100">
       <div className="flex items-start gap-3">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center bg-amber-200">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-400/14">
           <Wrench className="h-5 w-5" />
         </div>
         <div>
           <p className="text-sm font-black">{copy.maintenanceNotice}</p>
-          <p className="mt-1 text-sm leading-6">{message}</p>
+          <p className="mt-1 text-sm leading-6 text-amber-50/85">{message}</p>
         </div>
       </div>
-      <p className="text-xs font-bold uppercase tracking-normal">
+      <p className="text-[11px] font-black uppercase tracking-[0.22em] text-amber-200/80">
         {copy.appStaysOnline}
       </p>
     </section>
@@ -3603,23 +4175,21 @@ function MaintenanceBanner({
 
 function DemoModeBanner({ copy }: { copy: AppCopy }) {
   return (
-    <section className="flex flex-col gap-3 border border-sky-200 bg-sky-50 p-4 text-sky-950 sm:flex-row sm:items-center sm:justify-between">
-      <div className="flex items-start gap-3">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center bg-sky-200">
-          <CirclePlay className="h-5 w-5" />
-        </div>
-        <div>
-          <p className="text-sm font-black">{copy.demoWorkspace}</p>
-          <p className="mt-1 text-sm leading-6">
-            {copy.demoBody}
-          </p>
-        </div>
+    <section className="mx-[14px] mt-3 flex items-center gap-3 rounded-2xl border border-sky-400/25 bg-sky-500/10 px-3 py-2.5 text-sky-100">
+      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-sky-400/14">
+        <CirclePlay className="h-4 w-4" />
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-black">{copy.demoWorkspace}</p>
+        <p className="truncate text-xs text-sky-50/75">
+          Local demo only. No Pi, Supabase, or testnet writes.
+        </p>
       </div>
       <Link
-        className="inline-flex h-10 items-center justify-center border border-sky-950 bg-white px-3 text-sm font-black transition hover:bg-sky-100"
+        className="btn-gh shrink-0 border-sky-300/25 px-3 py-2 text-xs text-sky-100"
         href="/"
       >
-        {copy.exitDemo}
+        Exit
       </Link>
     </section>
   );
@@ -3640,47 +4210,47 @@ function ConsentGate({
   const checking = consentState === "checking";
 
   return (
-    <section className="grid gap-5 border border-black/10 bg-white p-5 shadow-[8px_8px_0_#111827] lg:grid-cols-[1fr_340px]">
+    <section className="card mx-[14px] grid gap-5">
       <div>
-        <p className="text-xs font-bold uppercase text-zinc-500">
+        <p className="lbl">
           {copy.consentRequired}
         </p>
-        <h2 className="mt-3 text-2xl font-black text-zinc-950">
+        <h2 className="mt-2 text-lg font-bold text-white">
           {copy.consentTitle}
         </h2>
-        <p className="mt-3 max-w-3xl text-sm leading-6 text-zinc-600">
+        <p className="mt-3 text-sm leading-6 text-slate-300">
           {copy.consentBody}
         </p>
-        <div className="mt-4 grid gap-2 text-sm font-semibold leading-6 text-zinc-700 sm:grid-cols-2">
+        <div className="mt-4 grid gap-2 text-sm font-semibold leading-6 text-slate-200">
           {copy.consentCards.map((card) => (
-            <div key={card} className="border border-black/10 bg-zinc-50 p-3">
+            <div key={card} className="rounded-xl border border-white/8 bg-black/15 p-3">
               {card}
             </div>
           ))}
         </div>
         <Link
-          className="mt-4 inline-flex text-sm font-black text-emerald-800 underline underline-offset-4 hover:text-zinc-950"
+          className="mt-4 inline-flex text-sm font-black text-[var(--gold)] underline underline-offset-4"
           href="/rules"
         >
           {copy.readRules}
         </Link>
       </div>
-      <div className="flex flex-col justify-between gap-4 border border-black/10 bg-emerald-50 p-4">
+      <div className="grid gap-3 rounded-xl border border-[rgba(245,166,35,0.16)] bg-[rgba(245,166,35,0.08)] p-3">
         <div>
-          <p className="text-sm font-black text-zinc-950">
+          <p className="text-sm font-black text-white">
             {checking
               ? copy.checkingConsent
               : rejected
                 ? copy.loginDisabled
                 : copy.agreeBeforeLogin}
           </p>
-          <p className="mt-2 text-sm leading-6 text-zinc-700">
+          <p className="mt-2 text-sm leading-6 text-slate-200">
             {rejected ? copy.rejectedBody : copy.consentBlockBody}
           </p>
         </div>
         <div className="grid gap-2">
           <button
-            className="inline-flex h-12 items-center justify-center gap-2 bg-zinc-950 px-4 text-sm font-black text-white transition hover:bg-emerald-700"
+            className="btn-g"
             disabled={checking}
             type="button"
             onClick={onAccept}
@@ -3689,7 +4259,7 @@ function ConsentGate({
             {copy.agreeContinue}
           </button>
           <button
-            className="inline-flex h-11 items-center justify-center border border-zinc-950 bg-white px-4 text-sm font-black text-zinc-950 transition hover:bg-amber-50"
+            className="btn-gh"
             disabled={checking}
             type="button"
             onClick={onReject}
@@ -3697,7 +4267,7 @@ function ConsentGate({
             {copy.reject}
           </button>
           <Link
-            className="inline-flex h-11 items-center justify-center gap-2 border border-zinc-950 bg-white px-4 text-sm font-black text-zinc-950 transition hover:bg-zinc-50"
+            className="btn-gh"
             href="/?demo=1"
           >
             <CirclePlay className="h-4 w-4" />
@@ -3709,196 +4279,172 @@ function ConsentGate({
   );
 }
 
-function WorkspaceSwitcher({
-  copy,
-  mode,
-  mobileOpen,
-  navItems,
-  username,
-  onMobileOpenChange,
-  onModeChange,
-}: {
-  copy: AppCopy;
-  mode: ViewMode;
-  mobileOpen: boolean;
-  navItems: ViewMode[];
-  username: string;
-  onMobileOpenChange: (open: boolean) => void;
-  onModeChange: (mode: ViewMode) => void;
-}) {
-  const active = copy.views[mode];
-  const Icon = viewIcons[mode];
-
+function WelcomeHero({ copy }: { copy: AppCopy }) {
   return (
-    <section className="relative flex flex-col gap-3 border border-black/10 bg-white p-3 sm:flex-row sm:items-center sm:justify-between">
-      <div className="flex min-w-0 items-center gap-3">
-        <div className="flex h-11 w-11 shrink-0 items-center justify-center bg-zinc-950 text-white">
-          <Icon className="h-5 w-5" />
+    <section className="card mx-[14px] mt-3 grid gap-4">
+      <div className="flex items-center gap-3">
+        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-[linear-gradient(135deg,var(--purple),var(--gold))] text-xl font-black text-white shadow-[0_8px_22px_rgba(91,37,159,0.35)]">
+          π
         </div>
-        <div className="min-w-0 flex-1">
-          <p className="text-xs font-bold uppercase text-zinc-500">
-            {copy.workspace}
-          </p>
-          <div className="flex min-w-0 items-center justify-between gap-3">
-            <h2 className="truncate text-lg font-black text-zinc-950">
-              {active.label}
-            </h2>
-            <button
-              aria-expanded={mobileOpen}
-              aria-label={copy.workspaceMenu}
-              className="inline-flex h-11 shrink-0 items-center justify-center gap-2 border border-zinc-950 bg-zinc-950 px-3 text-sm font-black text-white transition hover:bg-emerald-700 sm:hidden"
-              type="button"
-              onClick={() => onMobileOpenChange(true)}
-            >
-              <Menu className="h-4 w-4" />
-              {copy.menu}
-            </button>
-          </div>
-          <p className="mt-1 text-sm leading-6 text-zinc-600 sm:mt-0">
-            {active.description}
-          </p>
+        <div>
+          <span className="bdg bv">
+            <ShieldCheck className="h-3 w-3" />
+            {copy.testnetBadge}
+          </span>
+          <h1 className="mt-2 text-2xl font-black leading-none tracking-[-0.4px] text-white">
+            {copy.heroTitle}
+          </h1>
         </div>
       </div>
-      <div
-        aria-label="Switch workspace"
-        className="hidden gap-1 border border-black/15 bg-zinc-50 p-1 sm:grid sm:w-auto sm:grid-flow-col sm:auto-cols-fr sm:grid-cols-none"
-        role="group"
-      >
-        {navItems.map((item) => {
-          const ItemIcon = viewIcons[item];
-          const selected = mode === item;
-
-          return (
-            <button
-              key={item}
-              aria-pressed={selected}
-              className={`inline-flex h-11 min-w-24 items-center justify-center gap-2 px-3 text-sm font-black transition ${
-                selected
-                  ? "bg-zinc-950 text-white shadow-[3px_3px_0_#10b981]"
-                  : "text-zinc-600 hover:bg-white hover:text-zinc-950"
-              }`}
-              type="button"
-              onClick={() => onModeChange(item)}
-            >
-              <ItemIcon className="h-4 w-4" />
-              {copy.views[item].label}
-            </button>
-          );
-        })}
-      </div>
-      {mobileOpen && (
-        <div
-          aria-label={copy.workspaceMenu}
-          aria-modal="true"
-          className="fixed inset-0 z-[80] sm:hidden"
-          role="dialog"
-        >
-          <button
-            aria-label={copy.closeWorkspaceMenu}
-            className="absolute inset-0 bg-zinc-950/45"
-            type="button"
-            onClick={() => onMobileOpenChange(false)}
-          />
-          <aside className="absolute right-0 top-0 flex h-full w-[72vw] min-w-[280px] max-w-[360px] flex-col border-l border-black/20 bg-white shadow-[-8px_0_0_#111827]">
-            <div className="flex items-start justify-between gap-3 border-b border-black/10 p-4">
-              <div className="min-w-0">
-                <p className="text-xs font-black uppercase text-emerald-700">
-                  PiScrow {copy.workspace.toLowerCase()}
-                </p>
-                <h2 className="mt-1 truncate text-xl font-black text-zinc-950">
-                  @{username || "pi-user"}
-                </h2>
-                <p className="mt-1 text-xs font-bold uppercase text-zinc-500">
-                  {copy.testnetBadge}
-                </p>
-              </div>
-              <button
-                aria-label={copy.closeWorkspaceMenu}
-                className="inline-flex h-10 w-10 shrink-0 items-center justify-center border border-zinc-950 bg-white text-zinc-950 transition hover:bg-zinc-950 hover:text-white"
-                type="button"
-                onClick={() => onMobileOpenChange(false)}
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-            <nav className="grid content-start gap-2 overflow-y-auto p-3">
-              {navItems.map((item) => {
-                const ItemIcon = viewIcons[item];
-                const selected = mode === item;
-
-                return (
-                  <button
-                    key={item}
-                    aria-current={selected ? "page" : undefined}
-                    className={`grid min-h-20 grid-cols-[2.75rem_minmax(0,1fr)] items-center gap-3 border p-3 text-left transition ${
-                      selected
-                        ? "border-zinc-950 bg-zinc-950 text-white shadow-[4px_4px_0_#10b981]"
-                        : "border-black/10 bg-zinc-50 text-zinc-950 hover:border-zinc-950 hover:bg-white"
-                    }`}
-                    type="button"
-                    onClick={() => onModeChange(item)}
-                  >
-                    <span className="flex h-11 w-11 items-center justify-center bg-white text-zinc-950">
-                      <ItemIcon className="h-5 w-5" />
-                    </span>
-                    <span className="min-w-0">
-                      <span className="block text-base font-black">
-                        {copy.views[item].label}
-                      </span>
-                      <span
-                        className={`mt-1 block text-xs font-semibold leading-5 ${
-                          selected ? "text-zinc-200" : "text-zinc-600"
-                        }`}
-                      >
-                        {copy.views[item].description}
-                      </span>
-                    </span>
-                  </button>
-                );
-              })}
-            </nav>
-            <div className="mt-auto grid grid-cols-2 gap-2 border-t border-black/10 bg-emerald-50 p-4">
-              <div className="border border-black/10 bg-white p-2">
-                <p className="text-[10px] font-bold uppercase text-zinc-500">
-                  {copy.current}
-                </p>
-                <p className="mt-1 truncate text-sm font-black text-zinc-950">
-                  {active.label}
-                </p>
-              </div>
-              <div className="border border-black/10 bg-white p-2">
-                <p className="text-[10px] font-bold uppercase text-zinc-500">
-                  {copy.network}
-                </p>
-                <p className="mt-1 truncate text-sm font-black text-zinc-950">
-                  {copy.testnet}
-                </p>
-              </div>
-            </div>
-          </aside>
-        </div>
-      )}
+      <p className="text-sm leading-6 text-slate-300">{copy.heroBody}</p>
     </section>
   );
 }
 
-function Metric({
-  icon,
-  label,
-  value,
+function AppTopBar({
+  activeValue,
+  authState,
+  copy,
+  notificationsOpen,
+  refreshDisabled,
+  signedIn,
+  unreadCount,
+  username,
+  onRefresh,
+  onToggleNotifications,
 }: {
-  icon: React.ReactNode;
-  label: string;
-  value: string | number;
+  activeValue: number;
+  authState: string;
+  copy: AppCopy;
+  notificationsOpen: boolean;
+  refreshDisabled: boolean;
+  signedIn: boolean;
+  unreadCount: number;
+  username: string;
+  onRefresh: () => void;
+  onToggleNotifications: () => void;
+}) {
+  const balanceLabel = signedIn ? formatHeaderPi(activeValue) : copy.testnet;
+
+  return (
+    <header className="hd">
+      <div className="hd-logo">PiScrow</div>
+      <span className="hd-pill">{copy.testnet}</span>
+      <span className="hd-bal" title={signedIn ? `@${username}` : authState}>
+        {balanceLabel}
+      </span>
+      <button
+        aria-label="Refresh PiScrow"
+        className="hd-nd"
+        disabled={refreshDisabled}
+        type="button"
+        onClick={onRefresh}
+      >
+        <RefreshCcw className="h-4 w-4" />
+      </button>
+      <button
+        aria-expanded={notificationsOpen}
+        aria-label="Open notifications"
+        className="hd-nd"
+        type="button"
+        onClick={onToggleNotifications}
+      >
+        <Bell className="h-4 w-4" />
+        {unreadCount > 0 && <span className="hd-dot" />}
+      </button>
+    </header>
+  );
+}
+
+function NotificationDrawer({
+  notices,
+  onClose,
+  onDismiss,
+}: {
+  notices: AppNotice[];
+  onClose: () => void;
+  onDismiss: (id: string) => void;
 }) {
   return (
-    <div className="border border-black/10 bg-white p-4">
-      <div className="flex items-center gap-3 text-zinc-500">
-        {icon}
-        <p className="text-xs font-bold uppercase">{label}</p>
+    <section className="absolute inset-x-0 top-[76px] z-40 px-4">
+      <div className="rounded-2xl border border-white/10 bg-[rgba(11,23,40,0.96)] p-3 shadow-[0_24px_60px_rgba(0,0,0,0.42)] backdrop-blur">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <div>
+            <p className="text-sm font-black text-white">Notifications</p>
+            <p className="text-xs text-slate-400">Trade updates and admin follow-ups.</p>
+          </div>
+          <button
+            className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/6 text-slate-200"
+            type="button"
+            onClick={onClose}
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <div className="grid max-h-[320px] gap-2 overflow-y-auto pr-1">
+          {notices.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-white/10 bg-black/12 p-4 text-sm text-slate-400">
+              No unread notifications right now.
+            </div>
+          ) : (
+            notices.map((notice) => (
+              <article
+                key={notice.id}
+                className="grid gap-2 rounded-xl border border-white/8 bg-black/14 p-3"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-black text-white">{notice.title}</p>
+                    <p className="mt-1 text-sm leading-6 text-slate-300">{notice.body}</p>
+                  </div>
+                  <button
+                    aria-label={`Dismiss ${notice.title}`}
+                    className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/6 text-slate-300"
+                    type="button"
+                    onClick={() => onDismiss(notice.id)}
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              </article>
+            ))
+          )}
+        </div>
       </div>
-      <p className="mt-3 text-2xl font-black text-zinc-950">{value}</p>
-    </div>
+    </section>
+  );
+}
+
+function BottomTabBar({
+  mode,
+  navItems,
+  onModeChange,
+}: {
+  mode: ViewMode;
+  navItems: ViewMode[];
+  onModeChange: (mode: ViewMode) => void;
+}) {
+  return (
+    <nav className="nav">
+      {navItems.map((item) => {
+        const Icon = viewIcons[item];
+        const selected = mode === item;
+
+        return (
+          <button
+            key={item}
+            aria-label={viewTabLabels[item]}
+            aria-pressed={selected}
+            className={`nb${selected ? " on" : ""}`}
+            type="button"
+            onClick={() => onModeChange(item)}
+          >
+            <Icon className="h-4 w-4" />
+            <span className="nb-l">{viewTabLabels[item]}</span>
+          </button>
+        );
+      })}
+    </nav>
   );
 }
 
@@ -3914,24 +4460,24 @@ function NotificationStack({
   }
 
   const tones: Record<AppNotice["tone"], string> = {
-    info: "border-sky-200 bg-sky-50 text-sky-950",
-    success: "border-emerald-200 bg-emerald-50 text-emerald-950",
-    warning: "border-amber-200 bg-amber-50 text-amber-950",
+    info: "border-sky-400/25 bg-sky-500/12 text-sky-100",
+    success: "border-emerald-400/25 bg-emerald-500/12 text-emerald-100",
+    warning: "border-amber-400/25 bg-amber-400/12 text-amber-100",
   };
 
   return (
     <section
       aria-label="PiScrow notifications"
-      className="fixed right-4 top-4 z-50 grid w-[calc(100vw-2rem)] max-w-sm gap-2 sm:right-6 sm:top-6"
+      className="fixed left-1/2 top-4 z-50 grid w-[calc(100vw-2rem)] max-w-sm -translate-x-1/2 gap-2"
     >
       {notices.map((notice) => (
         <article
           key={notice.id}
-          className={`relative border p-3 pr-10 text-sm leading-6 shadow-[6px_6px_0_#111827] ${tones[notice.tone]}`}
+          className={`relative rounded-2xl border p-3 pr-10 text-sm leading-6 shadow-[0_24px_60px_rgba(0,0,0,0.42)] backdrop-blur ${tones[notice.tone]}`}
         >
           <button
             aria-label={`Dismiss ${notice.title}`}
-            className="absolute right-3 top-3 inline-flex h-7 w-7 items-center justify-center border border-black/10 bg-white/75 text-zinc-700 transition hover:bg-white hover:text-zinc-950"
+            className="absolute right-3 top-3 inline-flex h-7 w-7 items-center justify-center rounded-lg border border-white/10 bg-white/8 text-current"
             type="button"
             onClick={() => onDismiss(notice.id)}
           >
@@ -3941,6 +4487,22 @@ function NotificationStack({
           <p>{notice.body}</p>
         </article>
       ))}
+    </section>
+  );
+}
+
+function ProcessingOverlay({
+  action,
+}: {
+  action: BlockingAction;
+}) {
+  return (
+    <section aria-live="polite" className="pub-ov">
+      <div className="spin" />
+      <div className="max-w-[270px] px-6 text-center">
+        <p className="text-base font-black text-white">{action.title}</p>
+        <p className="mt-2 text-sm leading-6 text-slate-300">{action.body}</p>
+      </div>
     </section>
   );
 }
@@ -3956,30 +4518,30 @@ function ActionFeedbackDialog({
     <section
       aria-labelledby="action-feedback-title"
       aria-modal="true"
-      className="fixed inset-0 z-[60] grid place-items-center bg-zinc-950/40 px-4 py-6"
+      className="fixed inset-0 z-[60] grid place-items-center bg-zinc-950/70 px-4 py-6 backdrop-blur-sm"
       role="alertdialog"
     >
-      <div className="w-full max-w-md border border-rose-300 bg-white p-5 shadow-[10px_10px_0_#111827]">
+      <div className="w-full max-w-md rounded-[26px] border border-rose-400/25 bg-[rgba(11,23,40,0.96)] p-5 shadow-[0_32px_80px_rgba(0,0,0,0.48)]">
         <div className="flex items-start justify-between gap-4">
           <div className="flex items-start gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center bg-rose-100 text-rose-800">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-rose-500/14 text-rose-200">
               <AlertTriangle className="h-5 w-5" />
             </div>
             <div>
               <h2
-                className="text-lg font-black text-zinc-950"
+                className="text-lg font-black text-white"
                 id="action-feedback-title"
               >
                 Action needed
               </h2>
-              <p className="mt-2 text-sm font-semibold leading-6 text-zinc-700">
+              <p className="mt-2 text-sm font-semibold leading-6 text-slate-300">
                 {message}
               </p>
             </div>
           </div>
           <button
             aria-label="Dismiss action message"
-            className="inline-flex h-9 w-9 shrink-0 items-center justify-center border border-black/10 bg-zinc-50 text-zinc-700 transition hover:bg-zinc-950 hover:text-white"
+            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/6 text-slate-300"
             type="button"
             onClick={onDismiss}
           >
@@ -3987,7 +4549,7 @@ function ActionFeedbackDialog({
           </button>
         </div>
         <button
-          className="mt-5 inline-flex h-11 w-full items-center justify-center bg-zinc-950 px-4 text-sm font-black text-white transition hover:bg-emerald-700"
+          className="mt-5 inline-flex h-11 w-full items-center justify-center rounded-xl bg-[linear-gradient(135deg,#f5a623,#d97706)] px-4 text-sm font-black text-slate-950 transition hover:brightness-105"
           type="button"
           onClick={onDismiss}
         >
@@ -4013,41 +4575,45 @@ function ConfirmActionDialog({
     <section
       aria-labelledby="confirm-action-title"
       aria-modal="true"
-      className="fixed inset-0 z-[65] grid place-items-center bg-zinc-950/45 px-4 py-6"
+      className="fixed inset-0 z-[65] grid place-items-center bg-zinc-950/70 px-4 py-6 backdrop-blur-sm"
       role="alertdialog"
     >
-      <div className="w-full max-w-md border border-black/15 bg-white p-5 shadow-[10px_10px_0_#111827]">
+      <div className="w-full max-w-md rounded-[26px] border border-white/10 bg-[rgba(11,23,40,0.96)] p-5 shadow-[0_32px_80px_rgba(0,0,0,0.48)]">
         <div className="flex items-start gap-3">
           <div
-            className={`flex h-10 w-10 shrink-0 items-center justify-center ${
-              danger ? "bg-rose-100 text-rose-800" : "bg-amber-100 text-amber-800"
+            className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
+              danger
+                ? "bg-rose-500/14 text-rose-200"
+                : "bg-amber-400/14 text-amber-200"
             }`}
           >
             <AlertTriangle className="h-5 w-5" />
           </div>
           <div>
             <h2
-              className="text-lg font-black text-zinc-950"
+              className="text-lg font-black text-white"
               id="confirm-action-title"
             >
               {action.title}
             </h2>
-            <p className="mt-2 text-sm font-semibold leading-6 text-zinc-700">
+            <p className="mt-2 text-sm font-semibold leading-6 text-slate-300">
               {action.body}
             </p>
           </div>
         </div>
         <div className="mt-5 grid gap-2 sm:grid-cols-2">
           <button
-            className="inline-flex h-11 items-center justify-center border border-zinc-950 bg-white px-4 text-sm font-black text-zinc-950 transition hover:bg-zinc-50"
+            className="inline-flex h-11 items-center justify-center rounded-xl border border-white/10 bg-white/6 px-4 text-sm font-black text-white transition hover:bg-white/10"
             type="button"
             onClick={onCancel}
           >
             Cancel
           </button>
           <button
-            className={`inline-flex h-11 items-center justify-center px-4 text-sm font-black text-white transition ${
-              danger ? "bg-rose-700 hover:bg-rose-800" : "bg-zinc-950 hover:bg-emerald-700"
+            className={`inline-flex h-11 items-center justify-center rounded-xl px-4 text-sm font-black text-white transition ${
+              danger
+                ? "bg-rose-600 hover:bg-rose-700"
+                : "bg-[linear-gradient(135deg,#f5a623,#d97706)] text-slate-950 hover:brightness-105"
             }`}
             type="button"
             onClick={onConfirm}
