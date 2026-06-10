@@ -17,8 +17,12 @@ export const metadata: Metadata = {
   title: "PiScrow",
   description: "Pi Testnet escrow-style P2P barter workflow demo.",
   icons: {
-    icon: "/piscrow-logo.svg",
-    apple: "/piscrow-logo.svg",
+    icon: [
+      { url: "/brand/piscrow-favicon.svg", type: "image/svg+xml" },
+      { url: "/brand/piscrow-app-icon.png", sizes: "512x512", type: "image/png" },
+    ],
+    apple: "/brand/piscrow-app-icon.png",
+    shortcut: "/brand/piscrow-favicon.svg",
   },
 };
 

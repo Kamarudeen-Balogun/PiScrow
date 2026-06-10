@@ -158,13 +158,17 @@ select option {
 }
 
 .hd-logo {
-  background: linear-gradient(135deg, var(--gold), var(--purple));
-  background-clip: text;
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  font-size: 19px;
-  font-weight: 800;
-  letter-spacing: -0.5px;
+  align-items: center;
+  display: flex;
+  flex-shrink: 0;
+  min-width: 0;
+}
+
+.hd-logo-img {
+  display: block;
+  height: 22px;
+  max-width: 156px;
+  width: auto;
 }
 
 .hd-pill {
@@ -682,37 +686,6 @@ select option {
   height: 4px;
   margin: 0 auto 14px;
   width: 34px;
-}
-
-.chat-list {
-  display: grid;
-  gap: 8px;
-  max-height: 360px;
-  overflow-y: auto;
-  padding-right: 2px;
-}
-
-.chat-bubble {
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  color: var(--foreground);
-  padding: 10px 12px;
-}
-
-.chat-bubble.own {
-  background: rgba(245, 166, 35, 0.12);
-  border-color: rgba(245, 166, 35, 0.24);
-  margin-left: 34px;
-}
-
-.chat-bubble.other {
-  background: rgba(255, 255, 255, 0.05);
-  margin-right: 34px;
-}
-
-.chat-bubble.system {
-  background: rgba(91, 37, 159, 0.12);
-  border-color: rgba(124, 60, 207, 0.22);
 }
 
 .pub-ov {

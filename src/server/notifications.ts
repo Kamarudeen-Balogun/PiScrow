@@ -1,4 +1,5 @@
 import { getServiceClientOrThrow } from "@/server/trades";
+import { deliverTelegramNotification } from "@/server/telegram";
 
 export type NotificationRow = {
   id: string;
@@ -71,16 +72,26 @@ export async function createNotification({
   }
 
   const supabase = getServiceClientOrThrow();
-  const { error } = await supabase.from("notifications").insert({
-    user_id: userId,
-    trade_id: tradeId ?? null,
-    type,
-    title,
-    body,
-    metadata,
-  });
+  const { data, error } = await supabase
+    .from("notifications")
+    .insert({
+      user_id: userId,
+      trade_id: tradeId ?? null,
+      type,
+      title,
+      body,
+      metadata,
+    })
+    .select("id, user_id, trade_id, type, title, body, read_at, created_at")
+    .single();
 
   if (error) {
     return;
   }
+
+  if (!data) {
+    return;
+  }
+
+  void deliverTelegramNotification(mapNotification(data as NotificationRow));
 }

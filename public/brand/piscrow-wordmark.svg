@@ -1,0 +1,36 @@
+<svg width="860" height="220" viewBox="0 0 860 220" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="iconBg" x1="20" y1="12" x2="180" y2="204" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0A1322"/>
+      <stop offset="1" stop-color="#08101C"/>
+    </linearGradient>
+    <linearGradient id="leftArc" x1="54" y1="44" x2="104" y2="146" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F5A623"/>
+      <stop offset="1" stop-color="#FBB040"/>
+    </linearGradient>
+    <linearGradient id="rightArc" x1="146" y1="44" x2="96" y2="146" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#8E52DE"/>
+      <stop offset="1" stop-color="#5B259F"/>
+    </linearGradient>
+    <linearGradient id="core" x1="82" y1="24" x2="98" y2="172" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F8B84B"/>
+      <stop offset="0.5" stop-color="#F5A623"/>
+      <stop offset="1" stop-color="#7C3CCF"/>
+    </linearGradient>
+    <linearGradient id="word" x1="214" y1="60" x2="508" y2="166" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F8FBFF"/>
+      <stop offset="0.62" stop-color="#F5A623"/>
+      <stop offset="1" stop-color="#C6B7FF"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="12" y="12" width="168" height="168" rx="42" fill="url(#iconBg)"/>
+  <rect x="14" y="14" width="164" height="164" rx="40" stroke="#F5A623" stroke-opacity="0.2" stroke-width="2"/>
+  <path d="M60 50C49 59 42 73 42 92C42 111 49 125 60 134" stroke="url(#leftArc)" stroke-width="16" stroke-linecap="round"/>
+  <path d="M132 50C143 59 150 73 150 92C150 111 143 125 132 134" stroke="url(#rightArc)" stroke-width="16" stroke-linecap="round"/>
+  <rect x="82" y="28" width="28" height="128" rx="14" fill="url(#core)"/>
+  <rect x="82" y="74" width="28" height="26" rx="13" fill="#F8FBFF"/>
+
+  <text x="214" y="112" fill="url(#word)" font-family="Inter, Geist, Arial, sans-serif" font-size="76" font-weight="800" letter-spacing="0">PiScrow</text>
+  <text x="218" y="156" fill="#94A3B8" font-family="Inter, Geist, Arial, sans-serif" font-size="26" font-weight="600" letter-spacing="0">Pi Testnet escrow marketplace</text>
+</svg>

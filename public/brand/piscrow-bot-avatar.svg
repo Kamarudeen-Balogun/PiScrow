@@ -1,0 +1,49 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="84" y1="70" x2="432" y2="446" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0A1322"/>
+      <stop offset="1" stop-color="#08101C"/>
+    </linearGradient>
+    <linearGradient id="ring" x1="70" y1="68" x2="442" y2="442" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#7C3CCF"/>
+      <stop offset="1" stop-color="#F5A623"/>
+    </linearGradient>
+    <radialGradient id="purpleGlow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(150 138) rotate(45) scale(164 164)">
+      <stop stop-color="#7C3CCF" stop-opacity="0.4"/>
+      <stop offset="1" stop-color="#7C3CCF" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="goldGlow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(364 382) rotate(90) scale(172 172)">
+      <stop stop-color="#F5A623" stop-opacity="0.34"/>
+      <stop offset="1" stop-color="#F5A623" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="leftArc" x1="142" y1="160" x2="234" y2="348" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F5A623"/>
+      <stop offset="1" stop-color="#FBB040"/>
+    </linearGradient>
+    <linearGradient id="rightArc" x1="370" y1="160" x2="278" y2="348" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#8E52DE"/>
+      <stop offset="1" stop-color="#5B259F"/>
+    </linearGradient>
+    <linearGradient id="core" x1="218" y1="118" x2="294" y2="394" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F8B84B"/>
+      <stop offset="0.5" stop-color="#F5A623"/>
+      <stop offset="1" stop-color="#7C3CCF"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="512" height="512" rx="120" fill="#060C18"/>
+  <circle cx="256" cy="256" r="220" fill="url(#bg)"/>
+  <circle cx="256" cy="256" r="219" stroke="url(#ring)" stroke-opacity="0.35" stroke-width="2"/>
+  <circle cx="150" cy="138" r="118" fill="url(#purpleGlow)"/>
+  <circle cx="364" cy="382" r="146" fill="url(#goldGlow)"/>
+
+  <path d="M190 162C160 186 142 220 142 256C142 292 160 326 190 350" stroke="url(#leftArc)" stroke-width="44" stroke-linecap="round"/>
+  <path d="M322 162C352 186 370 220 370 256C370 292 352 326 322 350" stroke="url(#rightArc)" stroke-width="44" stroke-linecap="round"/>
+
+  <rect x="218" y="118" width="76" height="276" rx="38" fill="url(#core)"/>
+  <rect x="218" y="224" width="76" height="60" rx="30" fill="#F8FBFF"/>
+  <rect x="210" y="110" width="92" height="292" rx="46" stroke="#FFF8EE" stroke-opacity="0.12" stroke-width="2"/>
+
+  <circle cx="388" cy="126" r="30" fill="#F5A623"/>
+  <circle cx="388" cy="126" r="13" fill="#F8FBFF"/>
+</svg>

@@ -1,0 +1,59 @@
+<svg width="1600" height="900" viewBox="0 0 1600 900" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="226" y1="58" x2="1370" y2="854" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#08111F"/>
+      <stop offset="1" stop-color="#060C18"/>
+    </linearGradient>
+    <radialGradient id="purpleGlow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(506 228) rotate(42) scale(320 320)">
+      <stop stop-color="#7C3CCF" stop-opacity="0.34"/>
+      <stop offset="1" stop-color="#7C3CCF" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="goldGlow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(1108 632) rotate(90) scale(340 340)">
+      <stop stop-color="#F5A623" stop-opacity="0.28"/>
+      <stop offset="1" stop-color="#F5A623" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="panel" x1="598" y1="164" x2="1000" y2="612" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0D1829"/>
+      <stop offset="1" stop-color="#09111F"/>
+    </linearGradient>
+    <linearGradient id="ring" x1="604" y1="170" x2="996" y2="610" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#7C3CCF"/>
+      <stop offset="1" stop-color="#F5A623"/>
+    </linearGradient>
+    <linearGradient id="leftArc" x1="684" y1="270" x2="790" y2="490" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F5A623"/>
+      <stop offset="1" stop-color="#FBB040"/>
+    </linearGradient>
+    <linearGradient id="rightArc" x1="918" y1="270" x2="812" y2="490" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#8E52DE"/>
+      <stop offset="1" stop-color="#5B259F"/>
+    </linearGradient>
+    <linearGradient id="core" x1="768" y1="220" x2="836" y2="552" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F8B84B"/>
+      <stop offset="0.5" stop-color="#F5A623"/>
+      <stop offset="1" stop-color="#7C3CCF"/>
+    </linearGradient>
+    <linearGradient id="word" x1="540" y1="626" x2="1060" y2="770" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F8FBFF"/>
+      <stop offset="0.52" stop-color="#F5A623"/>
+      <stop offset="1" stop-color="#C6B7FF"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1600" height="900" fill="url(#bg)"/>
+  <circle cx="506" cy="228" r="286" fill="url(#purpleGlow)"/>
+  <circle cx="1108" cy="632" r="320" fill="url(#goldGlow)"/>
+
+  <rect x="598" y="164" width="404" height="404" rx="104" fill="url(#panel)"/>
+  <rect x="600" y="166" width="400" height="400" rx="102" stroke="url(#ring)" stroke-opacity="0.34" stroke-width="2"/>
+
+  <path d="M710 276C664 312 636 365 636 424C636 483 664 536 710 572" stroke="url(#leftArc)" stroke-width="68" stroke-linecap="round"/>
+  <path d="M890 276C936 312 964 365 964 424C964 483 936 536 890 572" stroke="url(#rightArc)" stroke-width="68" stroke-linecap="round"/>
+  <rect x="758" y="214" width="84" height="332" rx="42" fill="url(#core)"/>
+  <rect x="758" y="352" width="84" height="76" rx="38" fill="#F8FBFF"/>
+  <rect x="750" y="206" width="100" height="348" rx="50" stroke="#FFF8EE" stroke-opacity="0.12" stroke-width="2"/>
+
+  <text x="800" y="676" text-anchor="middle" fill="url(#word)" font-family="Inter, Geist, Arial, sans-serif" font-size="104" font-weight="800" letter-spacing="0">PiScrow</text>
+  <text x="800" y="734" text-anchor="middle" fill="#B7C3D4" font-family="Inter, Geist, Arial, sans-serif" font-size="32" font-weight="600" letter-spacing="0">Pi Testnet escrow marketplace</text>
+  <text x="800" y="786" text-anchor="middle" fill="#6E829B" font-family="Inter, Geist, Arial, sans-serif" font-size="22" font-weight="600" letter-spacing="0">Transparent trade flows, protected proof, release-ready reviews</text>
+</svg>

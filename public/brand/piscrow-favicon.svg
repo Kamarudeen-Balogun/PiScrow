@@ -1,0 +1,28 @@
+<svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="9" y1="6" x2="55" y2="58" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0A1322"/>
+      <stop offset="1" stop-color="#08101C"/>
+    </linearGradient>
+    <linearGradient id="leftArc" x1="16.5" y1="18.5" x2="28.5" y2="45" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F5A623"/>
+      <stop offset="1" stop-color="#FBB040"/>
+    </linearGradient>
+    <linearGradient id="rightArc" x1="47.5" y1="18.5" x2="35.5" y2="45" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#8E52DE"/>
+      <stop offset="1" stop-color="#5B259F"/>
+    </linearGradient>
+    <linearGradient id="core" x1="27" y1="14" x2="37" y2="49.5" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F8B84B"/>
+      <stop offset="0.5" stop-color="#F5A623"/>
+      <stop offset="1" stop-color="#7C3CCF"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="64" height="64" rx="18" fill="url(#bg)"/>
+  <rect x="3" y="3" width="58" height="58" rx="15" stroke="#F5A623" stroke-opacity="0.22" stroke-width="1.5"/>
+  <path d="M23 19C19.5 21.9 17 26.4 17 32C17 37.6 19.5 42.1 23 45" stroke="url(#leftArc)" stroke-width="6" stroke-linecap="round"/>
+  <path d="M41 19C44.5 21.9 47 26.4 47 32C47 37.6 44.5 42.1 41 45" stroke="url(#rightArc)" stroke-width="6" stroke-linecap="round"/>
+  <rect x="27" y="14" width="10" height="35.5" rx="5" fill="url(#core)"/>
+  <rect x="27" y="28" width="10" height="8" rx="4" fill="#F8FBFF"/>
+</svg>

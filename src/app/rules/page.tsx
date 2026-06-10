@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { ArrowLeft, ShieldCheck } from "lucide-react";
 
 export const metadata: Metadata = {
   title: "PiScrow Rules, Privacy, And Consent",
@@ -20,7 +21,7 @@ const sections = [
     body: [
       "To use seller, buyer, funding, proof upload, notification, and dispute features, users must connect through Pi Browser and agree to these rules.",
       "PiScrow may store the Pi username, Pi UID, app session state, role activity, and admin status needed to operate the app.",
-      "Rejecting the agreement blocks Pi login and private app actions. Public ledger viewing may remain available for transparency.",
+      "Rejecting the agreement blocks Pi login and private app actions until the user accepts the rules and consent terms.",
     ],
   },
   {
@@ -41,10 +42,10 @@ const sections = [
     ],
   },
   {
-    title: "Public Ledger Transparency",
+    title: "Public Activity And Transparency",
     body: [
       "PiScrow may display public trade activity, public listing details, trade states, dispute states, and completion activity so the marketplace remains transparent.",
-      "Private offer targeting and protected proof links are not intended for the public ledger, but trade activity may still appear in a redacted form.",
+      "Private offer targeting and protected proof links are not intended for the public activity feed, but trade activity may still appear in a redacted form.",
     ],
   },
   {
@@ -58,14 +59,14 @@ const sections = [
     title: "Notifications",
     body: [
       "PiScrow may show in-app notifications for login, private requests, buyer interest, seller selection, payment status, proof uploads, disputes, admin actions, and completed trades.",
-      "Future realtime notifications may use the same trade and account data to keep users informed about their own activity.",
+      "Future realtime and Telegram notifications may use the same trade and account data to keep users informed about their own activity.",
     ],
   },
   {
     title: "Feedback And Support",
     body: [
       "Users may submit feedback, suggestions, issues, and optional contact email through the PiScrow feedback form.",
-      "Feedback is stored for developer review and may be forwarded to a configured automation webhook so the developer can receive and respond to reports.",
+      "Feedback is stored for developer review and may be forwarded to a configured automation webhook or notification channel so the developer can receive and respond to reports.",
       "Users should not include wallet seed phrases, private keys, payment secrets, identity documents, or unrelated personal information in feedback messages.",
     ],
   },
@@ -88,46 +89,58 @@ const sections = [
 
 export default function RulesPage() {
   return (
-    <main className="min-h-screen bg-[var(--background)] px-4 py-5 text-[var(--foreground)] sm:px-6 lg:px-8">
-      <article className="mx-auto grid max-w-4xl gap-5">
-        <header className="border-b border-black/10 pb-5">
+    <main className="min-h-screen bg-[radial-gradient(circle_at_top,rgba(91,37,159,0.18),transparent_28%),linear-gradient(180deg,#060c18_0%,#091321_100%)] px-4 py-5 text-[var(--foreground)] sm:px-6 lg:px-8">
+      <article className="mx-auto grid max-w-5xl gap-4 pb-6">
+        <header className="rounded-[28px] border border-white/8 bg-[linear-gradient(180deg,rgba(14,30,51,0.94),rgba(11,23,40,0.98))] p-5 shadow-[0_24px_80px_rgba(0,0,0,0.32)] sm:p-7">
           <Link
-            className="text-sm font-bold text-zinc-600 underline underline-offset-4 hover:text-zinc-950"
+            className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-2 text-xs font-bold uppercase tracking-[0.14em] text-slate-300 transition hover:border-[rgba(245,166,35,0.28)] hover:text-white"
             href="/"
           >
+            <ArrowLeft className="h-3.5 w-3.5" />
             Back to PiScrow
           </Link>
-          <p className="mt-5 text-xs font-bold uppercase text-emerald-800">
-            PiScrow legal and consent notice
-          </p>
-          <h1 className="mt-2 text-4xl font-black leading-tight text-zinc-950 sm:text-5xl">
-            Rules, Privacy, And User Agreement
-          </h1>
-          <p className="mt-4 max-w-3xl text-sm leading-6 text-zinc-700">
-            Last updated June 7, 2026. This page is the submit-ready consent,
-            privacy, and agreement reference for PiScrow Testnet/Sandbox users.
-          </p>
+
+          <div className="mt-5 flex items-start gap-4">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-[linear-gradient(135deg,rgba(91,37,159,0.92),rgba(245,166,35,0.92))] text-white shadow-[0_18px_40px_rgba(91,37,159,0.28)]">
+              <ShieldCheck className="h-5 w-5" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-[11px] font-black uppercase tracking-[0.2em] text-[var(--gold)]">
+                Rules, Privacy, And Consent
+              </p>
+              <h1 className="mt-3 text-3xl font-black leading-tight text-white sm:text-4xl">
+                PiScrow User Agreement
+              </h1>
+              <p className="mt-4 max-w-3xl text-sm leading-7 text-slate-300">
+                Last updated June 10, 2026. This page is the official rules,
+                privacy, and acknowledgement reference for PiScrow Testnet and
+                Sandbox users.
+              </p>
+            </div>
+          </div>
         </header>
 
-        <section className="border border-black/10 bg-white p-5 shadow-[8px_8px_0_#111827]">
-          <h2 className="text-xl font-black text-zinc-950">
+        <section className="rounded-[26px] border border-[rgba(245,166,35,0.16)] bg-[linear-gradient(180deg,rgba(245,166,35,0.1),rgba(245,166,35,0.04))] p-5 shadow-[0_18px_48px_rgba(245,166,35,0.08)] sm:p-6">
+          <p className="text-[11px] font-black uppercase tracking-[0.2em] text-[var(--gold)]">
             Consent Summary
-          </h2>
-          <p className="mt-3 text-sm leading-6 text-zinc-700">
+          </p>
+          <p className="mt-3 text-sm leading-7 text-amber-50/90">
             By clicking agree in PiScrow, you confirm that you understand this
-            is a Pi Testnet/Sandbox app, you consent to the app storing the data
-            needed to run trades and notifications, and you agree that uploaded
-            trade proof may be reviewed by the relevant trade parties and admins.
+            is a Pi Testnet and Sandbox app, you consent to the app storing the
+            data needed to run trades and notifications, and you agree that
+            uploaded trade proof may be reviewed by the relevant trade parties
+            and approved admins.
           </p>
         </section>
 
-        <section className="grid gap-4">
+        <section className="grid gap-4 md:grid-cols-2">
           {sections.map((section) => (
-            <section key={section.title} className="border border-black/10 bg-white p-5">
-              <h2 className="text-xl font-black text-zinc-950">
-                {section.title}
-              </h2>
-              <div className="mt-3 grid gap-3 text-sm leading-6 text-zinc-700">
+            <section
+              key={section.title}
+              className="rounded-[24px] border border-white/8 bg-[linear-gradient(180deg,rgba(14,30,51,0.96),rgba(11,23,40,0.98))] p-5 shadow-[0_18px_60px_rgba(0,0,0,0.2)]"
+            >
+              <h2 className="text-lg font-black text-white">{section.title}</h2>
+              <div className="mt-4 grid gap-3 text-sm leading-7 text-slate-300">
                 {section.body.map((paragraph) => (
                   <p key={paragraph}>{paragraph}</p>
                 ))}

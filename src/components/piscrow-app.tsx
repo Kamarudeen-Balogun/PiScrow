@@ -19,6 +19,7 @@ import {
   UserRoundCheck,
   Wrench,
 } from "lucide-react";
+import NextImage from "next/image";
 import Link from "next/link";
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -30,6 +31,7 @@ import {
   SellerDesk,
   SellerPostPanel,
 } from "@/components/piscrow-workspaces";
+import { TradeChatModal } from "@/components/trade-chat-modal";
 import {
   demoChatMessages,
   demoChatRooms,
@@ -77,7 +79,7 @@ import {
   tradeChatMessageSchema,
 } from "@/lib/validation";
 import type { PiPaymentDTO, PiUser } from "@/types/pi";
-import type { UserReputation } from "@/types/profile";
+import type { TelegramLinkStatus, UserReputation } from "@/types/profile";
 import type { TradeReviewRecommendation } from "@/types/review";
 import type {
   Trade,
@@ -103,6 +105,7 @@ type TradePayload = {
 
 type ProfilePayload = {
   profile: UserReputation;
+  telegram?: TelegramLinkStatus;
 };
 
 type VerificationQueuePayload = {
@@ -195,6 +198,13 @@ const viewIcons: Record<ViewMode, typeof Home> = {
   ledger: Home,
   profile: UserCircle,
   admin: LockKeyhole,
+};
+
+const defaultTelegramStatus: TelegramLinkStatus = {
+  configured: false,
+  linked: false,
+  botUsername: "PiScrow_bot",
+  notificationsEnabled: false,
 };
 
 const viewTabLabels: Record<ViewMode, string> = {
@@ -322,7 +332,7 @@ const appCopy: Record<
     rejectedBody:
       "You rejected the agreement on this browser. You can read the rules again and agree when you are ready.",
     consentBlockBody:
-      "Rejecting keeps the public ledger visible, but blocks Pi account login, seller posting, buyer interest, funding, and proof uploads.",
+      "Rejecting blocks Pi login and protected trading actions until you agree to the rules and consent terms.",
     agreeContinue: "Agree and continue",
     reject: "Reject",
     maintenanceNotice: "Maintenance notice",
@@ -435,7 +445,7 @@ const appCopy: Record<
     rejectedBody:
       "Rechazaste el acuerdo en este navegador. Puedes leer las reglas y aceptar cuando estes listo.",
     consentBlockBody:
-      "Rechazar mantiene visible el libro publico, pero bloquea login, publicaciones, interes, pagos y pruebas.",
+      "Rechazar bloquea el acceso Pi y las acciones protegidas de comercio hasta que aceptes las reglas y el consentimiento.",
     agreeContinue: "Aceptar y continuar",
     reject: "Rechazar",
     maintenanceNotice: "Aviso de mantenimiento",
@@ -520,7 +530,7 @@ const appCopy: Record<
     loginDisabled: "Connexion Pi desactivee.",
     agreeBeforeLogin: "Acceptez avant la connexion Pi.",
     rejectedBody: "Vous avez refuse l'accord. Vous pouvez relire les regles et accepter plus tard.",
-    consentBlockBody: "Refuser garde le registre public visible mais bloque connexion, offres, interet, paiement et preuves.",
+    consentBlockBody: "Refuser bloque la connexion Pi et les actions de trading protegees tant que vous n'avez pas accepte les regles et le consentement.",
     agreeContinue: "Accepter et continuer",
     reject: "Refuser",
     maintenanceNotice: "Avis de maintenance",
@@ -602,7 +612,7 @@ const appCopy: Record<
     loginDisabled: "Login Pi desativado.",
     agreeBeforeLogin: "Aceite antes do login Pi.",
     rejectedBody: "Voce rejeitou o acordo neste navegador. Pode ler as regras e aceitar quando quiser.",
-    consentBlockBody: "Rejeitar mantem o livro publico visivel, mas bloqueia login, ofertas, interesse, pagamentos e provas.",
+    consentBlockBody: "Rejeitar bloqueia o login Pi e as acoes protegidas de trading ate voce aceitar as regras e o consentimento.",
     agreeContinue: "Aceitar e continuar",
     reject: "Rejeitar",
     maintenanceNotice: "Aviso de manutencao",
@@ -684,7 +694,7 @@ const appCopy: Record<
     loginDisabled: "تسجيل Pi معطل.",
     agreeBeforeLogin: "وافق قبل تسجيل Pi.",
     rejectedBody: "رفضت الاتفاق في هذا المتصفح. يمكنك قراءة القواعد والموافقة لاحقا.",
-    consentBlockBody: "الرفض يبقي السجل العام مرئيا لكنه يمنع تسجيل الدخول والنشر والاهتمام والتمويل والإثباتات.",
+    consentBlockBody: "الرفض يمنع تسجيل Pi وإجراءات التداول المحمية حتى توافق على القواعد وشروط الموافقة.",
     agreeContinue: "موافقة ومتابعة",
     reject: "رفض",
     maintenanceNotice: "تنبيه صيانة",
@@ -766,7 +776,7 @@ const appCopy: Record<
     loginDisabled: "Pi login disabled hai.",
     agreeBeforeLogin: "Pi login se pehle agree karein.",
     rejectedBody: "Aapne agreement reject kiya. Ready hone par rules padhkar agree kar sakte hain.",
-    consentBlockBody: "Reject karne se public ledger visible rahega, par login, posting, interest, funding aur proofs block honge.",
+    consentBlockBody: "Reject karne se Pi login aur protected trading actions tab tak block rahenge jab tak aap rules aur consent accept nahi karte.",
     agreeContinue: "Agree aur continue",
     reject: "Reject",
     maintenanceNotice: "Maintenance notice",
@@ -848,7 +858,7 @@ const appCopy: Record<
     loginDisabled: "Login Pi dinonaktifkan.",
     agreeBeforeLogin: "Setujui sebelum login Pi.",
     rejectedBody: "Anda menolak persetujuan di browser ini. Anda dapat membaca aturan dan menyetujui saat siap.",
-    consentBlockBody: "Menolak tetap membuat ledger publik terlihat, tetapi memblokir login, posting, minat, pendanaan, dan bukti.",
+    consentBlockBody: "Menolak memblokir login Pi dan aksi trading yang dilindungi sampai Anda menyetujui aturan dan persetujuan.",
     agreeContinue: "Setuju dan lanjut",
     reject: "Tolak",
     maintenanceNotice: "Pemberitahuan pemeliharaan",
@@ -930,7 +940,7 @@ const appCopy: Record<
     loginDisabled: "Pi 登录已禁用。",
     agreeBeforeLogin: "登录 Pi 前请先同意。",
     rejectedBody: "你已在此浏览器拒绝协议。准备好后可重新阅读并同意。",
-    consentBlockBody: "拒绝后仍可查看公开账本，但会阻止 Pi 登录、发布、兴趣、支付和凭证上传。",
+    consentBlockBody: "拒绝后会阻止 Pi 登录和受保护的交易操作，直到你同意规则和同意条款。",
     agreeContinue: "同意并继续",
     reject: "拒绝",
     maintenanceNotice: "维护通知",
@@ -1031,6 +1041,7 @@ export function PiScrowApp({
   );
   const [chatLoadingTradeId, setChatLoadingTradeId] = useState("");
   const [chatSending, setChatSending] = useState(false);
+  const [activeChatTrade, setActiveChatTrade] = useState<Trade | null>(null);
   const [ledgerTrades, setLedgerTrades] = useState<Trade[]>(
     allowDemo ? demoTrades : [],
   );
@@ -1055,6 +1066,17 @@ export function PiScrowApp({
   const [profile, setProfile] = useState<UserReputation | null>(
     allowDemo ? buildDemoProfile(demoUser.username, demoTrades) : null,
   );
+  const [telegram, setTelegram] = useState<TelegramLinkStatus>(
+    allowDemo
+      ? {
+          configured: true,
+          linked: false,
+          botUsername: "PiScrow_bot",
+          notificationsEnabled: false,
+        }
+      : defaultTelegramStatus,
+  );
+  const [telegramAwaitingLink, setTelegramAwaitingLink] = useState(false);
   const [verificationRequests, setVerificationRequests] = useState<UserReputation[]>(
     allowDemo ? buildDemoVerificationRequests(demoTrades) : [],
   );
@@ -1063,6 +1085,7 @@ export function PiScrowApp({
   >(allowDemo ? buildDemoReviewRecommendations() : []);
   const [reviewLoadingTradeId, setReviewLoadingTradeId] = useState("");
   const [profileLoading, setProfileLoading] = useState(false);
+  const [telegramLoading, setTelegramLoading] = useState(false);
   const [verificationLoading, setVerificationLoading] = useState(false);
   const [feedbackSending, setFeedbackSending] = useState(false);
   const [feedbackStatus, setFeedbackStatus] = useState<FeedbackStatus>(null);
@@ -1089,6 +1112,10 @@ export function PiScrowApp({
   const unreadNoticeCount = notices.filter((notice) => notice.persistent).length;
   const toastNotices = notices.filter((notice) => !notice.persistent);
   const inboxNotices = notices.filter((notice) => notice.persistent);
+  const activeChatTradeRecord =
+    activeChatTrade == null
+      ? null
+      : trades.find((trade) => trade.id === activeChatTrade.id) ?? activeChatTrade;
 
   const selectedTrade =
     trades.find((trade) => trade.id === selectedTradeId) ??
@@ -1443,6 +1470,11 @@ export function PiScrowApp({
 
         if (profilePayload) {
           setProfile(profilePayload.profile);
+          const nextTelegram = profilePayload.telegram ?? defaultTelegramStatus;
+          setTelegram(nextTelegram);
+          if (nextTelegram.linked) {
+            setTelegramAwaitingLink(false);
+          }
         }
 
         if (verificationPayload) {
@@ -1524,6 +1556,9 @@ export function PiScrowApp({
     setUser(null);
     setPiConnected(false);
     setPiAccessToken("");
+    setTelegram(defaultTelegramStatus);
+    setTelegramAwaitingLink(false);
+    setActiveChatTrade(null);
     setAuthMessage({ key: "consentRejected" });
 
     try {
@@ -1580,8 +1615,11 @@ export function PiScrowApp({
         setLedgerTrades([]);
         setLedgerEvents([]);
         setProfile(null);
-      setVerificationRequests([]);
-      setReviewRecommendations([]);
+        setTelegram(defaultTelegramStatus);
+        setTelegramAwaitingLink(false);
+        setVerificationRequests([]);
+        setReviewRecommendations([]);
+        setActiveChatTrade(null);
         setSelectedTradeId("");
         setExpandedTradeId("");
         setPaymentState("No payment started.");
@@ -1605,8 +1643,16 @@ export function PiScrowApp({
       setLedgerTrades(demoTrades);
       setLedgerEvents(demoEvents);
       setProfile(buildDemoProfile(demoUser.username, demoTrades));
+      setTelegram({
+        configured: true,
+        linked: false,
+        botUsername: "PiScrow_bot",
+        notificationsEnabled: false,
+      });
+      setTelegramAwaitingLink(false);
       setVerificationRequests(buildDemoVerificationRequests(demoTrades));
       setReviewRecommendations(buildDemoReviewRecommendations());
+      setActiveChatTrade(null);
       setSelectedTradeId(demoTrades[0]?.id ?? "");
       setExpandedTradeId(demoTrades[0]?.id ?? "");
       setPaymentState("Demo mode is active. Test Pi payments are simulated.");
@@ -2002,6 +2048,8 @@ export function PiScrowApp({
 
       if (!accessToken) {
         setUser(null);
+        setTelegram(defaultTelegramStatus);
+        setActiveChatTrade(null);
         setAuthMessage({ text: copy.notices.connectedNoToken(piUser.username) });
         hideBlockingAction();
         return;
@@ -2034,6 +2082,17 @@ export function PiScrowApp({
       setPiConnected(false);
       setPiAccessToken("");
       setUser(allowDemo ? { ...demoUser, isAdmin: true } : null);
+      setTelegram(
+        allowDemo
+          ? {
+              configured: true,
+              linked: false,
+              botUsername: "PiScrow_bot",
+              notificationsEnabled: false,
+            }
+          : defaultTelegramStatus,
+      );
+      setActiveChatTrade(null);
       const message = resolvePiAuthMessage(error, copy.auth);
       setAuthMessage({ text: message });
       pushNotice(copy.notices.connectionFailedTitle, message, "warning");
@@ -2046,6 +2105,13 @@ export function PiScrowApp({
   async function refreshProfile(accessToken = piAccessToken) {
     if (allowDemo) {
       setProfile(buildDemoProfile(user?.username ?? demoUser.username, trades));
+      setTelegram({
+        configured: true,
+        linked: false,
+        botUsername: "PiScrow_bot",
+        notificationsEnabled: false,
+      });
+      setTelegramAwaitingLink(false);
       return;
     }
 
@@ -2058,12 +2124,222 @@ export function PiScrowApp({
     try {
       const payload = await apiRequest<ProfilePayload>("/api/profile", accessToken);
       setProfile(payload.profile);
+      const nextTelegram = payload.telegram ?? defaultTelegramStatus;
+      setTelegram(nextTelegram);
+      if (nextTelegram.linked) {
+        setTelegramAwaitingLink(false);
+      }
     } catch (error) {
       setFormError(error instanceof Error ? error.message : "Could not load profile.");
     } finally {
       setProfileLoading(false);
     }
   }
+
+  const refreshTelegramStatus = useCallback(
+    async (accessToken = piAccessToken, options?: { silent?: boolean }) => {
+      const silent = options?.silent ?? false;
+
+      if (allowDemo || !accessToken) {
+        return;
+      }
+
+      setTelegramLoading(true);
+
+      try {
+        const payload = await apiRequest<{ telegram?: TelegramLinkStatus }>(
+          "/api/telegram/status",
+          accessToken,
+        );
+        const nextTelegram = payload.telegram ?? defaultTelegramStatus;
+        const justLinked = nextTelegram.linked && !telegram.linked;
+
+        setTelegram(nextTelegram);
+
+        if (nextTelegram.linked) {
+          setTelegramAwaitingLink(false);
+        }
+
+        if (!silent) {
+          pushNotice(
+            nextTelegram.linked ? "Telegram active" : "Telegram not linked yet",
+            nextTelegram.linked
+              ? "PiScrow can now send trade and dispute updates to your Telegram bot chat."
+              : "Open the PiScrow bot in Telegram, press Start, then check again here.",
+            nextTelegram.linked ? "success" : "warning",
+          );
+        } else if (justLinked) {
+          pushNotice(
+            "Telegram linked",
+            "PiScrow will now keep your Telegram bot updated with trade activity.",
+            "success",
+          );
+        }
+      } catch (error) {
+        if (!silent) {
+          setFormError(
+            error instanceof Error ? error.message : "Could not refresh Telegram status.",
+          );
+        }
+      } finally {
+        setTelegramLoading(false);
+      }
+    },
+    [allowDemo, piAccessToken, telegram.linked],
+  );
+
+  async function linkTelegram() {
+    setFormError("");
+
+    if (allowDemo) {
+      setTelegram({
+        configured: true,
+        linked: true,
+        botUsername: "PiScrow_bot",
+        notificationsEnabled: true,
+        telegramUsername: "piscrow_demo",
+        linkedAt: new Date().toISOString(),
+      });
+      setTelegramAwaitingLink(false);
+      pushNotice(
+        "Telegram linked",
+        "Demo Telegram alerts are now connected to this profile.",
+        "success",
+      );
+      return;
+    }
+
+    if (!piAccessToken) {
+      setFormError("Connect your Pi account before linking Telegram.");
+      return;
+    }
+
+    if (telegram.linked && telegram.botUsername && typeof window !== "undefined") {
+      window.open(
+        `https://t.me/${telegram.botUsername.replace(/^@+/, "")}`,
+        "_blank",
+        "noopener,noreferrer",
+      );
+      pushNotice("Telegram opened", "Your PiScrow bot chat opened in a new tab.", "success");
+      return;
+    }
+
+    setTelegramLoading(true);
+
+    try {
+      const payload = await apiRequest<{
+        deepLink: string;
+        telegram?: TelegramLinkStatus;
+      }>("/api/telegram/link", piAccessToken, {
+        method: "POST",
+      });
+
+      setTelegram(payload.telegram ?? defaultTelegramStatus);
+      setTelegramAwaitingLink(true);
+
+      if (typeof window !== "undefined") {
+        window.open(payload.deepLink, "_blank", "noopener,noreferrer");
+      }
+
+      pushNotice(
+        "Telegram link ready",
+        "Open Telegram, press Start, then return to PiScrow. The profile can check the link status for you.",
+        "success",
+      );
+    } catch (error) {
+      setFormError(
+        error instanceof Error ? error.message : "Could not prepare Telegram link.",
+      );
+    } finally {
+      setTelegramLoading(false);
+    }
+  }
+
+  async function unlinkTelegram() {
+    setFormError("");
+
+    if (allowDemo) {
+      setTelegram({
+        configured: true,
+        linked: false,
+        botUsername: "PiScrow_bot",
+        notificationsEnabled: false,
+      });
+      setTelegramAwaitingLink(false);
+      pushNotice(
+        "Telegram disconnected",
+        "Demo Telegram alerts have been turned off.",
+        "warning",
+      );
+      return;
+    }
+
+    if (!piAccessToken) {
+      setFormError("Connect your Pi account before changing Telegram alerts.");
+      return;
+    }
+
+    setTelegramLoading(true);
+
+    try {
+      const payload = await apiRequest<{ telegram?: TelegramLinkStatus }>(
+        "/api/telegram/link",
+        piAccessToken,
+        {
+          method: "DELETE",
+        },
+      );
+      setTelegram(payload.telegram ?? defaultTelegramStatus);
+      setTelegramAwaitingLink(false);
+      pushNotice(
+        "Telegram disconnected",
+        "PiScrow will now keep your alerts inside the app only.",
+        "warning",
+      );
+    } catch (error) {
+      setFormError(
+        error instanceof Error ? error.message : "Could not disconnect Telegram.",
+      );
+    } finally {
+      setTelegramLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!telegramAwaitingLink || allowDemo || !signedIn || !piAccessToken) {
+      return;
+    }
+
+    const syncTelegram = () => {
+      if (document.visibilityState === "hidden") {
+        return;
+      }
+
+      void refreshTelegramStatus(piAccessToken, { silent: true });
+    };
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        syncTelegram();
+      }
+    };
+
+    const timer = window.setTimeout(syncTelegram, 2500);
+    window.addEventListener("focus", syncTelegram);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener("focus", syncTelegram);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [
+    allowDemo,
+    piAccessToken,
+    refreshTelegramStatus,
+    signedIn,
+    telegramAwaitingLink,
+  ]);
 
   async function requestVerifiedBadge() {
     setFormError("");
@@ -3301,6 +3577,7 @@ export function PiScrowApp({
 
   async function openTradeChat(trade: Trade) {
     setFormError("");
+    setActiveChatTrade(trade);
 
     if (allowDemo) {
       upsertDemoChatRoom(
@@ -3411,6 +3688,7 @@ export function PiScrowApp({
 
   async function claimTradeChat(trade: Trade) {
     setFormError("");
+    setActiveChatTrade(trade);
 
     if (!user?.isAdmin) {
       setFormError("Only admins can join dispute rooms.");
@@ -3693,11 +3971,6 @@ export function PiScrowApp({
           {!signedIn && (
             <div className="grid gap-3 pb-4">
               <WelcomeHero copy={copy} />
-              <LanguageSelector
-                copy={copy}
-                language={language}
-                onChange={changeLanguage}
-              />
               <SessionCard
                 authState={authState}
                 canConnect={canConnectPi}
@@ -3722,14 +3995,7 @@ export function PiScrowApp({
                   onConnect={connectPi}
                 />
               )}
-              <PublicLedger
-                trades={ledgerTrades}
-                events={ledgerEvents}
-                currentUsername=""
-                interests={[]}
-                loading={ledgerLoading}
-                onRefresh={refreshPublicLedger}
-              />
+              <AppFooter />
             </div>
           )}
 
@@ -3740,7 +4006,6 @@ export function PiScrowApp({
                   chatLoadingTradeId={chatLoadingTradeId}
                   chatMessages={chatMessages}
                   chatRooms={chatRooms}
-                  chatSending={chatSending}
                   trades={buyerTrades}
                   interests={interests}
                   events={events}
@@ -3753,7 +4018,6 @@ export function PiScrowApp({
                   onFund={fundTrade}
                   onOpenChat={openTradeChat}
                   onOpenDispute={openDispute}
-                  onSendChatMessage={sendTradeChatMessage}
                   onSubmitInterest={submitInterest}
                   onSubmitDisputeUpdate={submitDisputeUpdate}
                 />
@@ -3773,13 +4037,11 @@ export function PiScrowApp({
                       chatLoadingTradeId={chatLoadingTradeId}
                       chatMessages={chatMessages}
                       chatRooms={chatRooms}
-                      chatSending={chatSending}
                       trades={sellerTrades}
                       interests={interests}
                       events={events}
                       currentUserId={user?.id ?? user?.uid}
                       currentUsername={normalizedUsername}
-                      selectedTrade={selectedTrade}
                       onNewListing={() => {
                         if (requirePayoutReadiness("post seller offers")) {
                           setSellerComposerOpen(true);
@@ -3794,7 +4056,6 @@ export function PiScrowApp({
                       onOpenChat={openTradeChat}
                       onSubmitDelivery={submitDelivery}
                       onOpenDispute={openDispute}
-                      onSendChatMessage={sendTradeChatMessage}
                       onSubmitDisputeUpdate={submitDisputeUpdate}
                     />
                   )}
@@ -3822,12 +4083,24 @@ export function PiScrowApp({
                     loading={profileLoading}
                     payoutReadyLoading={payoutReadyLoading}
                     profile={profileStats}
+                    telegram={telegram}
+                    telegramLoading={telegramLoading}
+                    telegramPendingLink={telegramAwaitingLink}
                     trades={trades}
                     username={normalizedUsername}
                     onConfirmPayoutReadiness={() => void confirmPayoutReadiness()}
+                    onLinkTelegram={() => void linkTelegram()}
+                    onRefreshTelegram={() => void refreshTelegramStatus()}
                     onSubmitFeedback={submitFeedback}
                     onRefresh={() => void refreshProfile()}
                     onRequestVerifiedBadge={() => void requestVerifiedBadge()}
+                    onUnlinkTelegram={() => void unlinkTelegram()}
+                  />
+                  <LanguageSelector
+                    copy={copy}
+                    language={language}
+                    onChange={changeLanguage}
+                    variant="card"
                   />
                   <AppFooter />
                 </>
@@ -3838,9 +4111,7 @@ export function PiScrowApp({
                   chatLoadingTradeId={chatLoadingTradeId}
                   chatMessages={chatMessages}
                   chatRooms={chatRooms}
-                  chatSending={chatSending}
                   currentUserId={user?.id ?? user?.uid}
-                  currentUsername={normalizedUsername}
                   trades={adminTrades}
                   events={events}
                   reviewLoadingTradeId={reviewLoadingTradeId}
@@ -3853,13 +4124,31 @@ export function PiScrowApp({
                   onRefreshVerifications={() => void refreshVerificationRequests()}
                   onRequestFollowUp={adminRequestFollowUp}
                   onRunReview={runReviewRecommendation}
-                  onSendChatMessage={sendTradeChatMessage}
                   onResolve={adminResolve}
                 />
               )}
             </div>
           )}
         </div>
+
+        {signedIn && activeChatTradeRecord && (
+          <TradeChatModal
+            currentUserId={user?.id ?? user?.uid}
+            currentUsername={normalizedUsername}
+            isAdmin={Boolean(user?.isAdmin)}
+            loading={chatLoadingTradeId === activeChatTradeRecord.id}
+            messages={chatMessages.filter(
+              (message) => message.tradeId === activeChatTradeRecord.id,
+            )}
+            room={chatRooms.find((room) => room.tradeId === activeChatTradeRecord.id)}
+            sending={chatSending}
+            trade={activeChatTradeRecord}
+            onClaim={user?.isAdmin ? claimTradeChat : undefined}
+            onClose={() => setActiveChatTrade(null)}
+            onRefresh={openTradeChat}
+            onSend={sendTradeChatMessage}
+          />
+        )}
 
         {signedIn && (
           <BottomTabBar
@@ -4016,14 +4305,23 @@ function LanguageSelector({
   copy,
   language,
   onChange,
+  variant = "inline",
 }: {
   copy: AppCopy;
   language: LanguageCode;
   onChange: (language: LanguageCode) => void;
+  variant?: "inline" | "card";
 }) {
+  const containerClassName =
+    variant === "card"
+      ? "card mx-[14px] grid gap-1"
+      : "mx-[14px] grid gap-1";
+
   return (
-    <label className="mx-[14px] grid gap-1 text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--muted)]">
-      {copy.language}
+    <label className={containerClassName}>
+      <span className="text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--muted)]">
+        {copy.language}
+      </span>
       <select
         className="inp h-10 normal-case"
         value={language}
@@ -4107,22 +4405,27 @@ function SignInPanel({
   onConnect: () => void;
 }) {
   return (
-    <section className="card mx-[14px] grid gap-4">
-      <div>
-        <p className="lbl">
-          {copy.privateWorkspace}
-        </p>
-        <h2 className="mt-2 text-lg font-bold text-white">
-          {copy.signInTitle}
-        </h2>
-        <p className="mt-3 text-sm leading-6 text-slate-300">
-          {copy.signInBody}
-        </p>
-        <p className="mt-4 rounded-xl border border-white/8 bg-black/15 px-3 py-3 text-sm font-semibold leading-6 text-slate-200">
-          {authState}
-        </p>
+    <section className="card mx-[14px] grid gap-5 border-[rgba(245,166,35,0.14)] bg-[radial-gradient(circle_at_top_right,rgba(245,166,35,0.12),transparent_34%),linear-gradient(180deg,rgba(18,35,57,0.96),rgba(11,23,40,0.98))]">
+      <div className="grid gap-4 md:grid-cols-[auto,1fr] md:items-start">
+        <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/8 bg-[rgba(245,166,35,0.1)] text-[var(--gold)] shadow-[0_14px_40px_rgba(245,166,35,0.12)]">
+          <UserRoundCheck className="h-5 w-5" />
+        </div>
+        <div>
+          <p className="lbl">
+            {copy.privateWorkspace}
+          </p>
+          <h2 className="mt-2 text-lg font-bold text-white">
+            {copy.signInTitle}
+          </h2>
+          <p className="mt-3 text-sm leading-6 text-slate-300">
+            {copy.signInBody}
+          </p>
+        </div>
       </div>
-      <div className="grid gap-3">
+      <p className="rounded-2xl border border-white/8 bg-black/20 px-4 py-3 text-sm font-semibold leading-6 text-slate-200 shadow-[inset_0_1px_0_rgba(255,255,255,0.02)]">
+        {authState}
+      </p>
+      <div className="grid gap-3 sm:grid-cols-2">
         <button
           className="btn-g"
           type="button"
@@ -4210,32 +4513,35 @@ function ConsentGate({
   const checking = consentState === "checking";
 
   return (
-    <section className="card mx-[14px] grid gap-5">
-      <div>
-        <p className="lbl">
-          {copy.consentRequired}
-        </p>
-        <h2 className="mt-2 text-lg font-bold text-white">
-          {copy.consentTitle}
-        </h2>
-        <p className="mt-3 text-sm leading-6 text-slate-300">
-          {copy.consentBody}
-        </p>
-        <div className="mt-4 grid gap-2 text-sm font-semibold leading-6 text-slate-200">
-          {copy.consentCards.map((card) => (
-            <div key={card} className="rounded-xl border border-white/8 bg-black/15 p-3">
-              {card}
-            </div>
-          ))}
+    <section className="card mx-[14px] grid gap-5 border-[rgba(245,166,35,0.14)] bg-[radial-gradient(circle_at_top_left,rgba(91,37,159,0.16),transparent_36%),linear-gradient(180deg,rgba(15,27,45,0.98),rgba(11,23,40,0.98))]">
+      <div className="flex items-start gap-3">
+        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-white/8 bg-[rgba(91,37,159,0.14)] text-[#d7b8ff] shadow-[0_16px_36px_rgba(91,37,159,0.18)]">
+          <ShieldCheck className="h-5 w-5" />
         </div>
-        <Link
-          className="mt-4 inline-flex text-sm font-black text-[var(--gold)] underline underline-offset-4"
-          href="/rules"
-        >
-          {copy.readRules}
-        </Link>
+        <div className="min-w-0">
+          <p className="lbl">
+            {copy.consentRequired}
+          </p>
+          <h2 className="mt-2 text-lg font-bold text-white">
+            {copy.consentTitle}
+          </h2>
+          <p className="mt-3 text-sm leading-6 text-slate-300">
+            {copy.consentBody}
+          </p>
+        </div>
       </div>
-      <div className="grid gap-3 rounded-xl border border-[rgba(245,166,35,0.16)] bg-[rgba(245,166,35,0.08)] p-3">
+      <div className="grid gap-2 text-sm font-semibold leading-6 text-slate-200">
+        {copy.consentCards.map((card) => (
+          <div
+            key={card}
+            className="flex items-start gap-3 rounded-2xl border border-white/8 bg-black/20 px-4 py-3"
+          >
+            <span className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full bg-[var(--gold)] shadow-[0_0_0_3px_rgba(245,166,35,0.12)]" />
+            <span>{card}</span>
+          </div>
+        ))}
+      </div>
+      <div className="grid gap-3 rounded-2xl border border-[rgba(245,166,35,0.16)] bg-[rgba(245,166,35,0.08)] p-4">
         <div>
           <p className="text-sm font-black text-white">
             {checking
@@ -4248,7 +4554,7 @@ function ConsentGate({
             {rejected ? copy.rejectedBody : copy.consentBlockBody}
           </p>
         </div>
-        <div className="grid gap-2">
+        <div className="grid gap-2 sm:grid-cols-2">
           <button
             className="btn-g"
             disabled={checking}
@@ -4266,6 +4572,15 @@ function ConsentGate({
           >
             {copy.reject}
           </button>
+        </div>
+        <div className="grid gap-2 sm:grid-cols-2">
+          <Link
+            className="btn-gh"
+            href="/rules"
+          >
+            <ShieldCheck className="h-4 w-4" />
+            {copy.readRules}
+          </Link>
           <Link
             className="btn-gh"
             href="/?demo=1"
@@ -4283,16 +4598,30 @@ function WelcomeHero({ copy }: { copy: AppCopy }) {
   return (
     <section className="card mx-[14px] mt-3 grid gap-4">
       <div className="flex items-center gap-3">
-        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-[linear-gradient(135deg,var(--purple),var(--gold))] text-xl font-black text-white shadow-[0_8px_22px_rgba(91,37,159,0.35)]">
-          π
+        <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-[18px] border border-white/10 bg-[rgba(8,16,28,0.72)] shadow-[0_16px_36px_rgba(0,0,0,0.28)]">
+          <NextImage
+            alt="PiScrow app icon"
+            className="h-12 w-12"
+            height={48}
+            priority
+            src="/brand/piscrow-app-icon.svg"
+            width={48}
+          />
         </div>
-        <div>
+        <div className="min-w-0">
           <span className="bdg bv">
             <ShieldCheck className="h-3 w-3" />
             {copy.testnetBadge}
           </span>
-          <h1 className="mt-2 text-2xl font-black leading-none tracking-[-0.4px] text-white">
-            {copy.heroTitle}
+          <h1 className="mt-2">
+            <NextImage
+              alt={copy.heroTitle}
+              className="h-8 w-auto"
+              height={56}
+              priority
+              src="/brand/piscrow-wordmark.svg"
+              width={220}
+            />
           </h1>
         </div>
       </div>
@@ -4328,7 +4657,16 @@ function AppTopBar({
 
   return (
     <header className="hd">
-      <div className="hd-logo">PiScrow</div>
+      <div className="hd-logo" aria-label="PiScrow">
+        <NextImage
+          alt="PiScrow"
+          className="hd-logo-img"
+          height={40}
+          priority
+          src="/brand/piscrow-wordmark.svg"
+          width={156}
+        />
+      </div>
       <span className="hd-pill">{copy.testnet}</span>
       <span className="hd-bal" title={signedIn ? `@${username}` : authState}>
         {balanceLabel}

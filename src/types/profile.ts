@@ -12,3 +12,15 @@ export type UserReputation = {
   sellCount: number;
   trustScore: number;
 };
+
+export type TelegramLinkStatus = {
+  configured: boolean;
+  linked: boolean;
+  botUsername: string;
+  notificationsEnabled: boolean;
+  telegramUsername?: string;
+  maskedChatId?: string;
+  linkedAt?: string;
+  lastDeliveryAt?: string;
+  lastDeliveryError?: string;
+};

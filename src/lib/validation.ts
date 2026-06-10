@@ -71,6 +71,9 @@ export const createTradeInterestSchema = z.object({
     z
       .string()
       .max(600, "Keep the response under 600 characters."),
+  ).refine(
+    (value) => value.length === 0 || value.length >= 8,
+    "Optional note is too short. Add at least 8 characters or leave it blank.",
   ),
 });
 

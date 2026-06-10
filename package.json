@@ -11,6 +11,7 @@
     "test:security": "python src/tests/piscrow_security.py",
     "test:smoke": "python src/tests/piscrow_smoke.py",
     "test:full": "python src/tests/piscrow_full_site.py",
+    "brand:export": "node scripts/export-brand-assets.mjs",
     "supabase": "supabase",
     "supabase:link": "supabase link --project-ref yxyzdpolgodzbgqbxdcz",
     "supabase:push": "supabase db push",

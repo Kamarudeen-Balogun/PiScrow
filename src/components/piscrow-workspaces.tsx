@@ -45,7 +45,7 @@ import {
   selectionExpired,
 } from "@/lib/piscrow-ui-helpers";
 import { formatTestPi, tradeVisibilityLabels } from "@/lib/trade-state";
-import type { UserReputation } from "@/types/profile";
+import type { TelegramLinkStatus, UserReputation } from "@/types/profile";
 import type { TradeReviewRecommendation } from "@/types/review";
 import type {
   Trade,
@@ -585,7 +585,6 @@ export function BuyerDesk({
   chatLoadingTradeId,
   chatMessages,
   chatRooms,
-  chatSending,
   trades,
   interests,
   events,
@@ -598,14 +597,12 @@ export function BuyerDesk({
   onFund,
   onOpenChat,
   onOpenDispute,
-  onSendChatMessage,
   onSubmitInterest,
   onSubmitDisputeUpdate,
 }: {
   chatLoadingTradeId: string;
   chatMessages: TradeChatMessage[];
   chatRooms: TradeChatRoom[];
-  chatSending: boolean;
   trades: Trade[];
   interests: TradeInterest[];
   events: TradeEvent[];
@@ -618,7 +615,6 @@ export function BuyerDesk({
   onFund: (trade: Trade) => void;
   onOpenChat: (trade: Trade) => void;
   onOpenDispute: (event: FormEvent<HTMLFormElement>) => void;
-  onSendChatMessage: (trade: Trade, event: FormEvent<HTMLFormElement>) => void;
   onSubmitInterest: (trade: Trade, event: FormEvent<HTMLFormElement>) => void;
   onSubmitDisputeUpdate: (trade: Trade, event: FormEvent<HTMLFormElement>) => void;
 }) {
@@ -714,10 +710,7 @@ export function BuyerDesk({
                 key={trade.id}
                 loading={chatLoadingTradeId === trade.id}
                 trade={trade}
-                onChat={() => {
-                  onOpenChat(trade);
-                  setSelectedTrade(trade);
-                }}
+                onChat={() => onOpenChat(trade)}
                 onDetails={() => setSelectedTrade(trade)}
                 onFund={() => onFund(trade)}
               />
@@ -751,14 +744,12 @@ export function BuyerDesk({
             (message) => message.tradeId === selectedTrade.id,
           )}
           chatRoom={chatRooms.find((room) => room.tradeId === selectedTrade.id)}
-          chatSending={chatSending}
           onClose={() => setSelectedTrade(null)}
           onConfirm={onConfirm}
           onDeclinePrivate={onDeclinePrivate}
           onFund={onFund}
           onOpenChat={onOpenChat}
           onOpenDispute={onOpenDispute}
-          onSendChatMessage={onSendChatMessage}
           onSubmitInterest={onSubmitInterest}
           onSubmitDisputeUpdate={onSubmitDisputeUpdate}
         />
@@ -771,13 +762,11 @@ export function SellerDesk({
   chatLoadingTradeId,
   chatMessages,
   chatRooms,
-  chatSending,
   trades,
   interests,
   events,
   currentUsername,
   currentUserId,
-  selectedTrade,
   onNewListing,
   onSelect,
   onSelectInterest,
@@ -785,19 +774,16 @@ export function SellerDesk({
   onOpenChat,
   onSubmitDelivery,
   onOpenDispute,
-  onSendChatMessage,
   onSubmitDisputeUpdate,
 }: {
   chatLoadingTradeId: string;
   chatMessages: TradeChatMessage[];
   chatRooms: TradeChatRoom[];
-  chatSending: boolean;
   trades: Trade[];
   interests: TradeInterest[];
   events: TradeEvent[];
   currentUsername: string;
   currentUserId?: string;
-  selectedTrade?: Trade;
   onNewListing: () => void;
   onSelect: (tradeId: string) => void;
   onSelectInterest: (trade: Trade, interest: TradeInterest) => void;
@@ -805,11 +791,9 @@ export function SellerDesk({
   onOpenChat: (trade: Trade) => void;
   onSubmitDelivery: (event: FormEvent<HTMLFormElement>) => void;
   onOpenDispute: (event: FormEvent<HTMLFormElement>) => void;
-  onSendChatMessage: (trade: Trade, event: FormEvent<HTMLFormElement>) => void;
   onSubmitDisputeUpdate: (trade: Trade, event: FormEvent<HTMLFormElement>) => void;
 }) {
   const [detailsTrade, setDetailsTrade] = useState<Trade | null>(null);
-  void selectedTrade;
 
   function openTrade(trade: Trade) {
     onSelect(trade.id);
@@ -863,13 +847,11 @@ export function SellerDesk({
             (message) => message.tradeId === detailsTrade.id,
           )}
           chatRoom={chatRooms.find((room) => room.tradeId === detailsTrade.id)}
-          chatSending={chatSending}
           onClose={() => setDetailsTrade(null)}
           onDeleteOffer={onDeleteOffer}
           onOpenChat={onOpenChat}
           onOpenDispute={onOpenDispute}
           onSelectInterest={onSelectInterest}
-          onSendChatMessage={onSendChatMessage}
           onSubmitDelivery={onSubmitDelivery}
           onSubmitDisputeUpdate={onSubmitDisputeUpdate}
         />
@@ -1015,24 +997,36 @@ export function ProfileDesk({
   loading,
   profile,
   payoutReadyLoading,
+  telegram,
+  telegramLoading,
+  telegramPendingLink,
   trades,
   username,
   onConfirmPayoutReadiness,
+  onLinkTelegram,
+  onRefreshTelegram,
   onSubmitFeedback,
   onRefresh,
   onRequestVerifiedBadge,
+  onUnlinkTelegram,
 }: {
   feedbackSending: boolean;
   feedbackStatus: FeedbackStatus;
   loading: boolean;
   profile: UserReputation | null;
   payoutReadyLoading: boolean;
+  telegram: TelegramLinkStatus;
+  telegramLoading: boolean;
+  telegramPendingLink: boolean;
   trades: Trade[];
   username: string;
   onConfirmPayoutReadiness: () => void;
+  onLinkTelegram: () => void;
+  onRefreshTelegram: () => void;
   onSubmitFeedback: (event: FormEvent<HTMLFormElement>) => void;
   onRefresh: () => void;
   onRequestVerifiedBadge: () => void;
+  onUnlinkTelegram: () => void;
 }) {
   const [feedbackOpen, setFeedbackOpen] = useState(false);
 
@@ -1096,15 +1090,122 @@ export function ProfileDesk({
         </div>
       </section>
 
-      <section className={`${panelClass} flex items-center gap-3`}>
-        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-sky-400/20 bg-sky-500/10 text-sky-200">
-          <Bell className="h-5 w-5" />
+      <section className={`${panelClass} grid gap-3`}>
+        <div className="flex items-center gap-3">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-sky-400/20 bg-sky-500/10 text-sky-200">
+            <Bell className="h-5 w-5" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <h3 className="font-bold text-white">In-app Notifications</h3>
+            <p className="mt-1 text-xs text-slate-300">
+              Trade updates stay inside PiScrow through the notification drawer.
+            </p>
+          </div>
+          <span className="bdg bo">Active</span>
         </div>
-        <div className="min-w-0 flex-1">
-          <h3 className="font-bold text-white">In-app Notifications</h3>
-          <p className="mt-1 text-xs text-emerald-300">Linked & Active</p>
+        <div className="rounded-2xl border border-white/8 bg-black/14 p-3 text-sm leading-6 text-slate-300">
+          Important trade, dispute, payout, and chat events continue to appear in
+          app even when Telegram is not linked.
         </div>
-        <span className="bdg bo">Linked</span>
+      </section>
+
+      <section className={`${panelClass} grid gap-3`}>
+        <div className="flex items-start gap-3">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-violet-400/20 bg-violet-500/10 text-violet-200">
+            <MessageSquare className="h-5 w-5" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <h3 className="font-bold text-white">Telegram Alerts</h3>
+            <p className="mt-1 text-sm leading-6 text-slate-300">
+              Keep receiving PiScrow trade and dispute updates after leaving Pi Browser.
+            </p>
+          </div>
+          <span className={`bdg ${telegram.linked ? "bo" : "bq"}`}>
+            {telegram.linked ? "Linked" : "Optional"}
+          </span>
+        </div>
+        <div className="rounded-2xl border border-white/8 bg-black/14 p-3 text-sm leading-6 text-slate-300">
+          {telegram.linked ? (
+            <>
+              Telegram is linked
+              {telegram.telegramUsername ? ` to @${telegram.telegramUsername}` : ""}.
+              {telegram.maskedChatId && (
+                <span className="mt-1 block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                  Chat {telegram.maskedChatId}
+                </span>
+              )}
+              {telegram.linkedAt && (
+                <span className="mt-1 block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                  Linked {dateLabel(telegram.linkedAt)}
+                </span>
+              )}
+              {telegram.lastDeliveryError && (
+                <span className="mt-2 block rounded-xl border border-amber-400/20 bg-amber-400/10 px-3 py-2 text-xs font-semibold text-amber-100">
+                  Last delivery issue: {telegram.lastDeliveryError}
+                </span>
+              )}
+            </>
+          ) : telegramPendingLink ? (
+            <>
+              Finish linking inside Telegram by opening the bot and pressing Start.
+              <span className="mt-1 block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                Return here and tap Check status after Telegram confirms the link.
+              </span>
+            </>
+          ) : telegram.configured ? (
+            <>
+              Link @{telegram.botUsername || "PiScrow_bot"} from here so the bot can
+              notify you when buyers, sellers, or admins update your trade.
+            </>
+          ) : (
+            "Telegram alerts are not configured on this deployment yet."
+          )}
+        </div>
+        <div className="grid gap-2 sm:grid-cols-2">
+          <button
+            className={primaryButtonClass}
+            disabled={telegramLoading || !telegram.configured}
+            type="button"
+            onClick={onLinkTelegram}
+          >
+            {telegramLoading ? (
+              <LoaderCircle className="h-4 w-4 animate-spin" />
+            ) : (
+              <ExternalLink className="h-4 w-4" />
+            )}
+            {telegram.linked ? "Open bot" : "Link Telegram"}
+          </button>
+          {(telegram.linked || telegramPendingLink) && (
+            <button
+              className={secondaryButtonClass}
+              disabled={telegramLoading}
+              type="button"
+              onClick={onRefreshTelegram}
+            >
+              {telegramLoading ? (
+                <LoaderCircle className="h-4 w-4 animate-spin" />
+              ) : (
+                <RefreshCcw className="h-4 w-4" />
+              )}
+              Check status
+            </button>
+          )}
+          {telegram.linked && (
+            <button
+              className={secondaryButtonClass}
+              disabled={telegramLoading}
+              type="button"
+              onClick={onUnlinkTelegram}
+            >
+              {telegramLoading ? (
+                <LoaderCircle className="h-4 w-4 animate-spin" />
+              ) : (
+                <X className="h-4 w-4" />
+              )}
+              Disconnect
+            </button>
+          )}
+        </div>
       </section>
 
       <section className={`${panelClass} grid gap-3`}>
@@ -1166,7 +1267,6 @@ export function ProfileDesk({
 
       <section className={panelClass}>
         <SettingsRow icon={<Languages className="h-4 w-4" />} label="Language" />
-        <SettingsRow icon={<Bell className="h-4 w-4" />} label="Notification Preferences" />
         <SettingsRow
           href="/rules"
           icon={<ShieldCheck className="h-4 w-4" />}
@@ -1231,9 +1331,7 @@ export function AdminDesk({
   chatLoadingTradeId,
   chatMessages,
   chatRooms,
-  chatSending,
   currentUserId,
-  currentUsername,
   trades,
   events,
   reviewLoadingTradeId,
@@ -1246,15 +1344,12 @@ export function AdminDesk({
   onRefreshVerifications,
   onRequestFollowUp,
   onRunReview,
-  onSendChatMessage,
   onResolve,
 }: {
   chatLoadingTradeId: string;
   chatMessages: TradeChatMessage[];
   chatRooms: TradeChatRoom[];
-  chatSending: boolean;
   currentUserId?: string;
-  currentUsername: string;
   trades: Trade[];
   events: TradeEvent[];
   reviewLoadingTradeId: string;
@@ -1271,7 +1366,6 @@ export function AdminDesk({
     event: FormEvent<HTMLFormElement>,
   ) => void;
   onRunReview: (trade: Trade) => void;
-  onSendChatMessage: (trade: Trade, event: FormEvent<HTMLFormElement>) => void;
   onResolve: (trade: Trade, status: "Completed" | "Cancelled") => void;
 }) {
   const [selectedTrade, setSelectedTrade] = useState<Trade | null>(null);
@@ -1317,7 +1411,6 @@ export function AdminDesk({
                 className="btn-p mt-4"
                 type="button"
                 onClick={() => {
-                  onOpenChat(trade);
                   setSelectedTrade(trade);
                 }}
               >
@@ -1339,7 +1432,6 @@ export function AdminDesk({
       {selectedTrade && (
         <AdminTradeSheet
           currentUserId={currentUserId}
-          currentUsername={currentUsername}
           loading={reviewLoadingTradeId === selectedTrade.id}
           recommendation={reviewRecommendations.find(
             (item) => item.tradeId === selectedTrade.id,
@@ -1350,14 +1442,12 @@ export function AdminDesk({
             (message) => message.tradeId === selectedTrade.id,
           )}
           chatRoom={chatRooms.find((room) => room.tradeId === selectedTrade.id)}
-          chatSending={chatSending}
           onClose={() => setSelectedTrade(null)}
           onClaimChat={onClaimChat}
           onOpenChat={onOpenChat}
           onRequestFollowUp={onRequestFollowUp}
           onResolve={onResolve}
           onRunReview={onRunReview}
-          onSendChatMessage={onSendChatMessage}
         />
       )}
     </section>
@@ -1529,7 +1619,6 @@ function TradeDetailSheet({
   chatLoading,
   chatMessages,
   chatRoom,
-  chatSending,
   currentUsername,
   currentUserId,
   events,
@@ -1542,14 +1631,12 @@ function TradeDetailSheet({
   onFund,
   onOpenChat,
   onOpenDispute,
-  onSendChatMessage,
   onSubmitInterest,
   onSubmitDisputeUpdate,
 }: {
   chatLoading: boolean;
   chatMessages: TradeChatMessage[];
   chatRoom?: TradeChatRoom;
-  chatSending: boolean;
   currentUsername: string;
   currentUserId?: string;
   events: TradeEvent[];
@@ -1562,7 +1649,6 @@ function TradeDetailSheet({
   onFund: (trade: Trade) => void;
   onOpenChat: (trade: Trade) => void;
   onOpenDispute: (event: FormEvent<HTMLFormElement>) => void;
-  onSendChatMessage: (trade: Trade, event: FormEvent<HTMLFormElement>) => void;
   onSubmitInterest: (trade: Trade, event: FormEvent<HTMLFormElement>) => void;
   onSubmitDisputeUpdate: (trade: Trade, event: FormEvent<HTMLFormElement>) => void;
 }) {
@@ -1638,14 +1724,11 @@ function TradeDetailSheet({
 
       <TradeChatPanel
         currentUserId={currentUserId}
-        currentUsername={currentUsername}
         loading={chatLoading}
         messages={chatMessages}
         room={chatRoom}
-        sending={chatSending}
         trade={trade}
         onOpen={onOpenChat}
-        onSend={onSendChatMessage}
       />
 
       {canReportTrade(trade, currentUsername) && (
@@ -1671,7 +1754,6 @@ function SellerTradeSheet({
   chatLoading,
   chatMessages,
   chatRoom,
-  chatSending,
   currentUsername,
   currentUserId,
   events,
@@ -1682,14 +1764,12 @@ function SellerTradeSheet({
   onOpenChat,
   onOpenDispute,
   onSelectInterest,
-  onSendChatMessage,
   onSubmitDelivery,
   onSubmitDisputeUpdate,
 }: {
   chatLoading: boolean;
   chatMessages: TradeChatMessage[];
   chatRoom?: TradeChatRoom;
-  chatSending: boolean;
   currentUsername: string;
   currentUserId?: string;
   events: TradeEvent[];
@@ -1700,7 +1780,6 @@ function SellerTradeSheet({
   onOpenChat: (trade: Trade) => void;
   onOpenDispute: (event: FormEvent<HTMLFormElement>) => void;
   onSelectInterest: (trade: Trade, interest: TradeInterest) => void;
-  onSendChatMessage: (trade: Trade, event: FormEvent<HTMLFormElement>) => void;
   onSubmitDelivery: (event: FormEvent<HTMLFormElement>) => void;
   onSubmitDisputeUpdate: (trade: Trade, event: FormEvent<HTMLFormElement>) => void;
 }) {
@@ -1791,14 +1870,11 @@ function SellerTradeSheet({
 
       <TradeChatPanel
         currentUserId={currentUserId}
-        currentUsername={currentUsername}
         loading={chatLoading}
         messages={chatMessages}
         room={chatRoom}
-        sending={chatSending}
         trade={trade}
         onOpen={onOpenChat}
-        onSend={onSendChatMessage}
       />
 
       {canReportTrade(trade, currentUsername) && (
@@ -1818,9 +1894,7 @@ function AdminTradeSheet({
   chatLoading,
   chatMessages,
   chatRoom,
-  chatSending,
   currentUserId,
-  currentUsername,
   loading,
   recommendation,
   trade,
@@ -1830,14 +1904,11 @@ function AdminTradeSheet({
   onRequestFollowUp,
   onResolve,
   onRunReview,
-  onSendChatMessage,
 }: {
   chatLoading: boolean;
   chatMessages: TradeChatMessage[];
   chatRoom?: TradeChatRoom;
-  chatSending: boolean;
   currentUserId?: string;
-  currentUsername: string;
   loading: boolean;
   recommendation?: TradeReviewRecommendation;
   trade: Trade;
@@ -1851,7 +1922,6 @@ function AdminTradeSheet({
   ) => void;
   onResolve: (trade: Trade, status: "Completed" | "Cancelled") => void;
   onRunReview: (trade: Trade) => void;
-  onSendChatMessage: (trade: Trade, event: FormEvent<HTMLFormElement>) => void;
 }) {
   return (
     <BottomSheet onClose={onClose}>
@@ -1867,15 +1937,12 @@ function AdminTradeSheet({
       <TradeChatPanel
         adminMode
         currentUserId={currentUserId}
-        currentUsername={currentUsername}
         loading={chatLoading}
         messages={chatMessages}
         room={chatRoom}
-        sending={chatSending}
         trade={trade}
         onClaim={onClaimChat}
         onOpen={onOpenChat}
-        onSend={onSendChatMessage}
       />
       <div className="grid gap-3">
         <AdminFollowUpForm
@@ -2045,27 +2112,21 @@ function EscrowTrackerCard({
 function TradeChatPanel({
   adminMode = false,
   currentUserId,
-  currentUsername,
   loading,
   messages,
   room,
-  sending,
   trade,
   onClaim,
   onOpen,
-  onSend,
 }: {
   adminMode?: boolean;
   currentUserId?: string;
-  currentUsername: string;
   loading: boolean;
   messages: TradeChatMessage[];
   room?: TradeChatRoom;
-  sending: boolean;
   trade: Trade;
   onClaim?: (trade: Trade) => void;
   onOpen: (trade: Trade) => void;
-  onSend: (trade: Trade, event: FormEvent<HTMLFormElement>) => void;
 }) {
   const chatAvailable = [
     "Funded",
@@ -2100,6 +2161,36 @@ function TradeChatPanel({
           ? "Dispute active. Keep all delivery proof, receipt proof, and admin decisions in this room."
           : "Use this room for delivery updates, proof, and buyer-seller coordination."}
       </InfoBox>
+      <div className="grid gap-2 rounded-2xl border border-white/10 bg-black/16 p-3">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="text-sm font-black text-white">
+              {room ? "Secure room is ready" : "Secure room will open on demand"}
+            </p>
+            <p className="mt-1 text-xs leading-5 text-slate-400">
+              {messages.length > 0
+                ? `${messages.length} messages recorded for this trade.`
+                : "No messages yet. Open the full chat when you need it."}
+            </p>
+          </div>
+          <span className={`bdg ${trade.status === "Disputed" ? "bd2" : "bv"}`}>
+            {trade.status === "Disputed" ? "Dispute room" : "Trade room"}
+          </span>
+        </div>
+        {messages.length > 0 && (
+          <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-3 text-sm leading-6 text-slate-300">
+            <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-500">
+              Latest update
+            </p>
+            <p className="mt-2 font-semibold text-white">
+              @{messages[messages.length - 1]?.senderPiUsername}
+            </p>
+            <p className="mt-1 text-slate-300">
+              {messages[messages.length - 1]?.body || "Proof image uploaded in chat."}
+            </p>
+          </div>
+        )}
+      </div>
       {adminMode && room && (
         <div className="rounded-2xl border border-white/10 bg-black/16 p-3 text-sm leading-6 text-slate-300">
           {room.claimedAdminPiUsername
@@ -2115,7 +2206,7 @@ function TradeChatPanel({
           onClick={() => onOpen(trade)}
         >
           {loading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <RefreshCcw className="h-4 w-4" />}
-          {room ? "Refresh chat" : "Open chat"}
+          {room ? "Open full conversation" : "Open secure chat"}
         </button>
         {adminMode && !claimedByMe && !claimedByOther && onClaim && (
           <button className={primaryButtonClass} disabled={loading} type="button" onClick={() => onClaim(trade)}>
@@ -2129,67 +2220,12 @@ function TradeChatPanel({
           Another admin is handling this dispute room. You can still review the trade timeline.
         </InfoBox>
       )}
-      <div className="chat-list">
-        {messages.length === 0 ? (
-          <p className="text-sm text-slate-500">Open the room to load messages.</p>
-        ) : (
-          messages.map((message) => (
-            <ChatBubble
-              key={message.id}
-              currentUsername={currentUsername}
-              message={message}
-            />
-          ))
-        )}
-      </div>
-      {canSend && (
-        <form className="grid gap-2" onSubmit={(event) => onSend(trade, event)}>
-          <textarea
-            className={textareaClass}
-            maxLength={1000}
-            name="body"
-            placeholder="Message, delivery update, or dispute note"
-          />
-          <ProofFileInput label="Chat proof image" name="attachment" />
-          <button className={primaryButtonClass} disabled={sending} type="submit">
-            {sending ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-            {sending ? "Sending" : "Send message"}
-          </button>
-        </form>
-      )}
+      <p className="text-sm leading-6 text-slate-500">
+        {canSend
+          ? "Open the full-screen chat to read the whole conversation, send proof, and reply."
+          : "This room becomes read-only after the trade is completed or cancelled."}
+      </p>
     </ActionPanel>
-  );
-}
-
-function ChatBubble({
-  currentUsername,
-  message,
-}: {
-  currentUsername: string;
-  message: TradeChatMessage;
-}) {
-  const ownMessage =
-    normalizeUsername(message.senderPiUsername) === currentUsername &&
-    message.senderRole !== "system";
-  const systemMessage = message.senderRole === "system" || message.senderRole === "admin";
-
-  return (
-    <div
-      className={`chat-bubble ${
-        systemMessage ? "system" : ownMessage ? "own" : "other"
-      }`}
-    >
-      <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">
-        {message.senderRole === "system" ? "PiScrow" : `@${message.senderPiUsername}`}
-      </p>
-      {message.body && <p className="mt-1 text-sm leading-6">{message.body}</p>}
-      {message.attachmentUrl && (
-        <ProofLink label="Chat proof" url={message.attachmentUrl} />
-      )}
-      <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-600">
-        {dateLabel(message.createdAt)}
-      </p>
-    </div>
   );
 }
 
