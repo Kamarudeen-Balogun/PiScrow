@@ -3,28 +3,64 @@ import type { PiPaymentDTO, PiUser } from "@/types/pi";
 const piApiBase =
   process.env.PI_PLATFORM_API_BASE?.replace(/\/$/, "") ?? "https://api.minepi.com";
 
-function normalizePiWalletPrivateSeed(seed: string | null | undefined) {
+const piWalletSeedBase32Pattern = /^S[A-Z2-7]{55}$/;
+const piWalletSeedNoisePattern = /[`"'“”‘’<>()\[\]{}.,;:|\\/_-]+/g;
+
+function stripPiWalletPrivateSeedWrappers(seed: string | null | undefined) {
   return (seed ?? "")
     .normalize("NFKC")
     .trim()
-    .replace(/^['"]+|['"]+$/g, "")
-    .replace(/[\s\u200B-\u200D\u2060\uFEFF]+/g, "")
+    .replace(/^['"`]+|['"`]+$/g, "")
+    .replace(/[“”‘’]/g, "")
+    .replace(/\\[rnt]/gi, "")
+    .replace(/[\s\u200B-\u200D\u2060\uFEFF]+/g, "");
+}
+
+function isValidPiWalletPrivateSeed(seed: string) {
+  return piWalletSeedBase32Pattern.test(seed);
+}
+
+function normalizePiWalletPrivateSeed(seed: string | null | undefined) {
+  const strippedSeed = stripPiWalletPrivateSeedWrappers(seed);
+  const normalizedSeed = strippedSeed.toUpperCase();
+
+  if (isValidPiWalletPrivateSeed(normalizedSeed)) {
+    return normalizedSeed;
+  }
+
+  const separatorStrippedSeed = strippedSeed
+    .replace(piWalletSeedNoisePattern, "")
     .toUpperCase();
+
+  if (isValidPiWalletPrivateSeed(separatorStrippedSeed)) {
+    return separatorStrippedSeed;
+  }
+
+  const extractedSeedMatch = separatorStrippedSeed.match(/S[A-Z2-7]{55}/);
+  return extractedSeedMatch?.[0] ?? normalizedSeed;
 }
 
 function readPiWalletPrivateSeedDiagnostics(seed: string | null | undefined) {
   const normalizedSeed = normalizePiWalletPrivateSeed(seed);
+  const strippedSeed = stripPiWalletPrivateSeedWrappers(seed).toUpperCase();
+  const invalidCharacters = Array.from(
+    new Set(
+      strippedSeed
+        .replace(piWalletSeedNoisePattern, "")
+        .replace(/[A-Z2-7]/g, "")
+        .split("")
+        .filter(Boolean),
+    ),
+  );
 
   return {
     normalizedSeed,
     hasValue: normalizedSeed.length > 0,
     startsWithS: normalizedSeed.startsWith("S"),
     hasOnlyBase32Chars: /^[A-Z2-7]+$/.test(normalizedSeed),
+    invalidCharacters,
     normalizedLength: normalizedSeed.length,
-    isValid:
-      normalizedSeed.length === 56 &&
-      normalizedSeed.startsWith("S") &&
-      /^[A-Z2-7]+$/.test(normalizedSeed),
+    isValid: isValidPiWalletPrivateSeed(normalizedSeed),
   };
 }
 
@@ -44,10 +80,12 @@ function piWalletPrivateSeedErrorMessage(seed: string | null | undefined) {
       : `its normalized length is ${diagnostics.normalizedLength}, not 56`,
     diagnostics.hasOnlyBase32Chars
       ? null
-      : "it contains characters outside the Pi/Stellar base32 alphabet",
+      : diagnostics.invalidCharacters.length > 0
+        ? `it contains characters outside the Pi/Stellar base32 alphabet (${diagnostics.invalidCharacters.join(", ")})`
+        : "it contains characters outside the Pi/Stellar base32 alphabet",
   ].filter(Boolean);
 
-  return `PI_WALLET_PRIVATE_SEED is invalid after trimming quotes, whitespace, and invisible characters: ${issues.join(
+  return `PI_WALLET_PRIVATE_SEED is invalid after trimming quotes, whitespace, invisible characters, and common separators: ${issues.join(
     "; ",
   )}.`;
 }

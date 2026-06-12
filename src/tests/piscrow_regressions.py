@@ -118,8 +118,11 @@ def assert_payment_amount_and_window_guards() -> None:
     assert "PI_WALLET_PRIVATE_SEED" in pi_platform
     assert ".normalize(\"NFKC\")" in pi_platform
     assert "invisible characters" in pi_platform
+    assert "common separators" in pi_platform
     assert "normalized length is" in pi_platform
     assert "hasOnlyBase32Chars" in pi_platform
+    assert "piWalletSeedNoisePattern" in pi_platform
+    assert "invalidCharacters" in pi_platform
     assert "released_to_seller" in escrow_release
     assert "refunded_to_buyer" in escrow_release
 
