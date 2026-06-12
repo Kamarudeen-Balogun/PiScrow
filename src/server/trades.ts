@@ -51,6 +51,9 @@ export type TradeRow = {
   buyer_receipt_note: string | null;
   buyer_receipt_proof_url: string | null;
   completed_at: string | null;
+  cancelled_at: string | null;
+  buyer_deleted_at: string | null;
+  seller_deleted_at: string | null;
   disputed_at: string | null;
   created_at: string;
   updated_at: string;
@@ -238,13 +241,20 @@ export function mapInterest(
   };
 }
 
-export function mapEvent(row: TradeEventRow, users: Map<string, string>): TradeEvent {
+export function mapEvent(
+  row: TradeEventRow,
+  users: Map<string, string>,
+  reputations = new Map<string, UserReputation>(),
+): TradeEvent {
   return {
     id: row.id,
     tradeId: row.trade_id,
     actor: row.actor_user_id
       ? users.get(row.actor_user_id) ?? "unknown_actor"
       : "system",
+    actorProfile: row.actor_user_id
+      ? reputations.get(row.actor_user_id)
+      : undefined,
     eventType: row.event_type,
     notes: row.notes ?? "",
     createdAt: row.created_at,
@@ -482,14 +492,34 @@ export async function listTradesForUser(user: AppUser) {
 
   const rows = (data ?? []) as TradeRow[];
   const normalizedUsername = normalizePiUsername(user.username);
-  const visibleRows = rows.filter(
-    (trade) =>
-      user.isAdmin ||
+  const visibleRows = rows.filter((trade) => {
+    const matchesSeller =
       trade.seller_user_id === user.id ||
-      trade.buyer_user_id === user.id ||
+      normalizePiUsername(trade.seller_pi_username) === normalizedUsername;
+    const matchesBuyer = trade.buyer_user_id === user.id;
+    const canSee =
+      user.isAdmin ||
+      matchesSeller ||
+      matchesBuyer ||
       trade.visibility === "public" ||
-      trade.target_buyer_pi_usernames?.includes(normalizedUsername),
-  );
+      trade.target_buyer_pi_usernames?.includes(normalizedUsername);
+
+    if (!canSee) {
+      return false;
+    }
+
+    if (!user.isAdmin) {
+      if (matchesSeller && trade.seller_deleted_at) {
+        return false;
+      }
+
+      if (matchesBuyer && trade.buyer_deleted_at) {
+        return false;
+      }
+    }
+
+    return true;
+  });
   const tradeIds = visibleRows.map((trade) => trade.id);
 
   const { data: interestRows, error: interestsError } = tradeIds.length
@@ -573,7 +603,7 @@ export async function listTradesForUser(user: AppUser) {
     ),
     interests: interests.map((interest) => mapInterest(interest, reputations)),
     events: ((eventRows ?? []) as TradeEventRow[]).map((event) =>
-      mapEvent(event, users),
+      mapEvent(event, users, reputations),
     ),
   };
 }
@@ -642,7 +672,7 @@ export async function listPublicLedger() {
       buyerReceiptProofUrl: undefined,
     })),
     events: ((eventRows ?? []) as TradeEventRow[]).map((event) =>
-      mapEvent(event, users),
+      mapEvent(event, users, reputations),
     ),
   };
 }

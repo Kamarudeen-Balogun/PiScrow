@@ -1,6 +1,7 @@
 import type { UserReputation } from "@/types/profile";
 import type { TradeReviewRecommendation } from "@/types/review";
 import type { Trade, TradeEvent, TradeStatus } from "@/types/trade";
+import { canRequestVerifiedBadge } from "@/lib/reputation";
 
 export function createEvent(
   tradeId: string,
@@ -150,7 +151,7 @@ export function buildDemoVerificationRequests(tradeRows: Trade[]) {
       verifiedBadge: false,
       verificationRequestedAt: "2026-06-06T19:30:00.000Z",
     },
-  ];
+  ].filter((profile) => canRequestVerifiedBadge(profile));
 }
 
 export function buildDemoReviewRecommendations(): TradeReviewRecommendation[] {

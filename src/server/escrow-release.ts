@@ -1,6 +1,7 @@
 import PiNetwork from "pi-backend";
 
 import {
+  getPiWalletPrivateSeed,
   hasPiNetworkApiKey,
   hasPiWalletPrivateSeed,
   piTransactionLink,
@@ -35,16 +36,10 @@ export function hasAutomaticPiReleaseConfig() {
 
 function getPiNetworkServer() {
   const apiKey = process.env.PI_NETWORK_API_KEY;
-  const walletSeed = process.env.PI_WALLET_PRIVATE_SEED;
+  const walletSeed = getPiWalletPrivateSeed();
 
   if (!apiKey) {
     throw new Error("PI_NETWORK_API_KEY is not configured.");
-  }
-
-  if (!walletSeed) {
-    throw new Error(
-      "PI_WALLET_PRIVATE_SEED is not configured. Add the app wallet private seed on the server before automatic Test Pi release/refund.",
-    );
   }
 
   return new PiNetwork(apiKey, walletSeed, {
@@ -58,8 +53,8 @@ function roundTestPi(amount: number) {
 
 function releaseMemo(tradeId: string, releaseType: EscrowReleaseType) {
   return releaseType === "seller_release"
-    ? `PiScrow seller release for trade ${tradeId}`
-    : `PiScrow buyer refund for trade ${tradeId}`;
+    ? "PiScrow seller payout"
+    : "PiScrow buyer refund";
 }
 
 function assertDbOk(error: { message?: string } | null | undefined) {

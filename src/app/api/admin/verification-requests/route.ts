@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { canRequestVerifiedBadge, VERIFIED_BADGE_MIN_COMPLETED_TRADES } from "@/lib/reputation";
 import { jsonError, requireAppUser } from "@/server/auth";
 import { createNotification } from "@/server/notifications";
 import { rateLimit, rateLimitProfiles, readJsonBody, secureJson } from "@/server/security";
@@ -43,6 +44,18 @@ export async function POST(request: Request) {
 
     if (!parsed.success) {
       throw new Error(parsed.error.issues[0]?.message ?? "Invalid verification request.");
+    }
+
+    const profile = (await getUserReputations([parsed.data.userId])).get(parsed.data.userId);
+
+    if (!profile) {
+      throw new Error("Could not load the requested profile.");
+    }
+
+    if (!canRequestVerifiedBadge(profile)) {
+      throw new Error(
+        `User must complete ${VERIFIED_BADGE_MIN_COMPLETED_TRADES} successful trades before approval.`,
+      );
     }
 
     const supabase = getServiceClientOrThrow();
@@ -89,5 +102,7 @@ async function listVerificationRequests() {
   }
 
   const ids = ((data ?? []) as { id: string }[]).map((request) => request.id);
-  return [...(await getUserReputations(ids)).values()];
+  return [...(await getUserReputations(ids)).values()].filter((profile) =>
+    canRequestVerifiedBadge(profile),
+  );
 }

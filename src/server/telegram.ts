@@ -418,18 +418,170 @@ export async function linkTelegramChatFromToken(params: {
   return getTelegramStatusForUser(payload.userId);
 }
 
+function telegramCommandLines() {
+  return [
+    "Commands:",
+    "/start - Wake up PiScrow in this chat",
+    "/link - Learn how to securely link this Telegram chat",
+    "/status - Check whether this chat is linked to PiScrow",
+    "/unlink - Disconnect this Telegram chat from PiScrow",
+    "/help - See what this bot can do",
+  ];
+}
+
+function telegramOpenAppLine() {
+  const url = appUrl();
+
+  return url ? `Open PiScrow: ${url}` : "Open PiScrow and go to Profile.";
+}
+
+function telegramProjectIntroText() {
+  const bot = telegramBotUsername() || "PiScrow_bot";
+  return [
+    `PiScrow assistant is ready in @${bot}.`,
+    "",
+    "This bot sends PiScrow updates when buyers, sellers, or admins move your trade forward.",
+    "Expect alerts for funding, proof, disputes, payout requests, and admin decisions.",
+    "",
+    "Link your Telegram chat from PiScrow Profile to activate notifications.",
+    telegramOpenAppLine(),
+    "",
+    ...telegramCommandLines(),
+  ].join("\n");
+}
+
 function telegramHelpText() {
   const bot = telegramBotUsername() || "PiScrow_bot";
   return [
-    `Welcome to @${bot}.`,
+    `PiScrow help for @${bot}`,
     "",
-    "Commands:",
-    "/start - Start PiScrow notifications",
-    "/help - See help and support info",
-    "/link - Connect Telegram from the PiScrow profile",
-    "/unlink - Remove Telegram connection",
-    "/status - View your PiScrow Telegram link status",
+    "Use this bot to receive trade activity updates without leaving Telegram.",
+    "The secure link starts inside your PiScrow profile, then Telegram confirms the connection here.",
+    "",
+    ...telegramCommandLines(),
+    "",
+    telegramOpenAppLine(),
   ].join("\n");
+}
+
+function telegramLinkInstructionsText(linkedRow?: TelegramLinkRow | null) {
+  if (linkedRow) {
+    return [
+      "This Telegram chat is already linked to PiScrow.",
+      `Linked PiScrow account: @${linkedRow.pi_username}`,
+      "",
+      "If you want to reconnect or switch accounts, open PiScrow Profile and tap Link Telegram again.",
+      telegramOpenAppLine(),
+    ].join("\n");
+  }
+
+  return [
+    "PiScrow linking starts inside the app so we can protect your account.",
+    "Open PiScrow, go to Profile, tap Link Telegram, then press Start on the secure bot link.",
+    "",
+    "Sending /link here will not finish the connection without that secure app link.",
+    telegramOpenAppLine(),
+  ].join("\n");
+}
+
+function telegramLinkedConfirmationText(params: {
+  piUsername?: string | null;
+  telegramUsername?: string;
+}) {
+  const accountLine = params.piUsername
+    ? `Linked PiScrow account: @${params.piUsername}`
+    : "This Telegram chat is now linked to PiScrow.";
+  const telegramLine = params.telegramUsername
+    ? `Telegram username: @${params.telegramUsername.replace(/^@+/, "")}`
+    : "Telegram username saved for this chat.";
+
+  return [
+    "PiScrow Telegram link confirmed.",
+    accountLine,
+    telegramLine,
+    "",
+    "You will now receive updates for trade funding, proof, disputes, releases, and admin decisions here.",
+    "Return to PiScrow Profile and tap Check status if the app has not refreshed yet.",
+  ].join("\n");
+}
+
+function telegramLinkErrorText(error: unknown) {
+  if (error instanceof Error) {
+    const message = error.message.toLowerCase();
+
+    if (message.includes("expired")) {
+      return [
+        "This PiScrow Telegram link has expired.",
+        "Open PiScrow Profile, tap Link Telegram again, and use the fresh secure bot link.",
+        telegramOpenAppLine(),
+      ].join("\n");
+    }
+
+    if (message.includes("malformed") || message.includes("invalid")) {
+      return [
+        "PiScrow could not verify this Telegram link.",
+        "Open PiScrow Profile and generate a fresh secure bot link before trying again.",
+        telegramOpenAppLine(),
+      ].join("\n");
+    }
+
+    if (message.includes("not configured")) {
+      return "PiScrow Telegram linking is not configured for this deployment yet.";
+    }
+  }
+
+  return [
+    "PiScrow could not complete this Telegram link.",
+    "Open PiScrow Profile, create a fresh secure bot link, then press Start again.",
+    telegramOpenAppLine(),
+  ].join("\n");
+}
+
+function telegramUnlinkedText(linkedRow?: TelegramLinkRow | null) {
+  if (!linkedRow) {
+    return [
+      "No active PiScrow link was found for this Telegram chat.",
+      "This chat is already disconnected.",
+      telegramOpenAppLine(),
+    ].join("\n");
+  }
+
+  return [
+    "PiScrow Telegram link removed.",
+    `This chat will no longer receive trade updates for @${linkedRow.pi_username}.`,
+    "",
+    "You can reconnect any time from PiScrow Profile.",
+    telegramOpenAppLine(),
+  ].join("\n");
+}
+
+function telegramStatusText(linkedRow?: TelegramLinkRow | null) {
+  if (!linkedRow) {
+    return [
+      "PiScrow status: not linked",
+      "This Telegram chat is not connected to any PiScrow profile yet.",
+      "",
+      "To start receiving trade updates, open PiScrow Profile and tap Link Telegram.",
+      telegramOpenAppLine(),
+    ].join("\n");
+  }
+
+  const lines = [
+    "PiScrow status: linked",
+    `PiScrow account: @${linkedRow.pi_username}`,
+    linkedRow.telegram_username
+      ? `Telegram username: @${linkedRow.telegram_username}`
+      : "Telegram username: not shared by Telegram for this chat",
+    "Notifications: active for trade funding, proof, disputes, releases, and admin decisions.",
+  ];
+
+  if (linkedRow.linked_at) {
+    lines.push(`Linked at: ${linkedRow.linked_at}`);
+  }
+
+  lines.push("", telegramOpenAppLine());
+
+  return lines.join("\n");
 }
 
 export async function handleTelegramWebhook(update: TelegramUpdate) {
@@ -457,54 +609,51 @@ export async function handleTelegramWebhook(update: TelegramUpdate) {
             chatId,
             telegramUsername,
           });
+          const linkedRow = await getTelegramLinkRowByChatId(chatId);
           await sendTelegramText(
             chatId,
-            "PiScrow Telegram alerts are now linked. You will receive trade, dispute, payout, and chat updates here.",
+            telegramLinkedConfirmationText({
+              piUsername: linkedRow?.pi_username,
+              telegramUsername,
+            }),
           );
         } catch (error) {
-          await sendTelegramText(
-            chatId,
-            error instanceof Error
-              ? error.message
-              : "PiScrow could not complete this Telegram link.",
-          );
+          await sendTelegramText(chatId, telegramLinkErrorText(error));
         }
         return { ok: true };
       }
 
-      await sendTelegramText(chatId, telegramHelpText());
+      const linkedRow = await getTelegramLinkRowByChatId(chatId);
+      await sendTelegramText(
+        chatId,
+        linkedRow
+          ? [telegramProjectIntroText(), "", telegramStatusText(linkedRow)].join("\n")
+          : telegramProjectIntroText(),
+      );
       return { ok: true };
 
     case "/help":
       await sendTelegramText(chatId, telegramHelpText());
       return { ok: true };
 
-    case "/link":
+    case "/link": {
+      const linkedRow = await getTelegramLinkRowByChatId(chatId);
       await sendTelegramText(
         chatId,
-        "Open PiScrow, go to Profile, and tap Link Telegram to generate your secure bot link.",
+        telegramLinkInstructionsText(linkedRow),
       );
       return { ok: true };
+    }
 
     case "/unlink": {
       const unlinked = await unlinkTelegramForChat(chatId);
-      await sendTelegramText(
-        chatId,
-        unlinked
-          ? "PiScrow Telegram alerts have been disconnected for this chat."
-          : "No active PiScrow Telegram link was found for this chat.",
-      );
+      await sendTelegramText(chatId, telegramUnlinkedText(unlinked));
       return { ok: true };
     }
 
     case "/status": {
       const row = await getTelegramLinkRowByChatId(chatId);
-      await sendTelegramText(
-        chatId,
-        row
-          ? `Linked to @${row.pi_username}. PiScrow alerts are active for this Telegram chat.`
-          : "This Telegram chat is not linked yet. Open PiScrow and use Profile -> Link Telegram.",
-      );
+      await sendTelegramText(chatId, telegramStatusText(row));
       return { ok: true };
     }
 

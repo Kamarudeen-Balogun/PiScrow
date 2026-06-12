@@ -1,5 +1,9 @@
 import { calculateBuyerTotal, calculatePlatformFee } from "@/lib/fees";
-import { piEscrowMemo, piscrowPaymentProduct } from "@/lib/pi-payment-product";
+import {
+  piEscrowLegacyMemo,
+  piEscrowMemo,
+  piscrowPaymentProduct,
+} from "@/lib/pi-payment-product";
 import { normalizePiUsername, type AppUser } from "@/server/auth";
 import {
   assertBuyer,
@@ -92,7 +96,10 @@ export function validatePiEscrowPayment({
     throw new Error("Pi payment product does not match PiScrow escrow funding.");
   }
 
-  if (payment.memo !== piEscrowMemo(trade.id)) {
+  if (
+    payment.memo !== piEscrowMemo(trade.id) &&
+    payment.memo !== piEscrowLegacyMemo(trade.id)
+  ) {
     throw new Error("Pi payment memo does not match PiScrow escrow funding.");
   }
 

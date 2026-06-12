@@ -116,6 +116,7 @@ export type TradeEvent = {
   id: string;
   tradeId: string;
   actor: string;
+  actorProfile?: UserReputation;
   eventType: string;
   notes: string;
   createdAt: string;
@@ -160,6 +161,7 @@ export type TradeChatMessage = {
   tradeId: string;
   senderUserId?: string;
   senderPiUsername: string;
+  senderProfile?: UserReputation;
   senderRole: "buyer" | "seller" | "admin" | "system";
   messageType: "text" | "proof" | "system";
   body: string;

@@ -63,6 +63,8 @@ create table public.trades (
   selection_expires_at timestamptz,
   completed_at timestamptz,
   cancelled_at timestamptz,
+  buyer_deleted_at timestamptz,
+  seller_deleted_at timestamptz,
   disputed_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()

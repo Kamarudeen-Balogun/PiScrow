@@ -1,6 +1,11 @@
 import { normalizePiUsername, type AppUser } from "@/server/auth";
 import { signProofUrl } from "@/server/proof-storage";
-import { getServiceClientOrThrow, type TradeRow } from "@/server/trades";
+import {
+  getServiceClientOrThrow,
+  getUserReputations,
+  type TradeRow,
+} from "@/server/trades";
+import type { UserReputation } from "@/types/profile";
 import type { TradeChatMessage, TradeChatRoom } from "@/types/trade";
 
 type TradeChatRoomRow = {
@@ -27,6 +32,17 @@ type TradeChatMessageRow = {
   created_at: string;
 };
 
+const TRADE_CHAT_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
+
+export type TradeChatEvidence = {
+  hasSellerProof: boolean;
+  hasBuyerProof: boolean;
+  sellerProofText?: string;
+  buyerProofText?: string;
+  sellerProofUrl?: string;
+  buyerProofUrl?: string;
+};
+
 function mapChatRoom(row: TradeChatRoomRow): TradeChatRoom {
   return {
     id: row.id,
@@ -40,19 +56,75 @@ function mapChatRoom(row: TradeChatRoomRow): TradeChatRoom {
   };
 }
 
-async function mapChatMessage(row: TradeChatMessageRow): Promise<TradeChatMessage> {
+async function mapChatMessage(
+  row: TradeChatMessageRow,
+  reputations = new Map<string, UserReputation>(),
+): Promise<TradeChatMessage> {
   return {
     id: row.id,
     roomId: row.room_id,
     tradeId: row.trade_id,
     senderUserId: row.sender_user_id ?? undefined,
     senderPiUsername: row.sender_pi_username,
+    senderProfile: row.sender_user_id
+      ? reputations.get(row.sender_user_id)
+      : undefined,
     senderRole: row.sender_role,
     messageType: row.message_type,
     body: row.body,
     attachmentUrl: await signProofUrl(row.attachment_url ?? undefined),
     createdAt: row.created_at,
   };
+}
+
+function tradeChatRoomStatus(
+  trade: TradeRow,
+): "active" | "closed" | "disputed" {
+  if (trade.status === "Disputed") {
+    return "disputed";
+  }
+
+  if (["Completed", "Cancelled"].includes(trade.status)) {
+    return "closed";
+  }
+
+  return "active";
+}
+
+function tradeChatClosedAt(trade: TradeRow) {
+  if (trade.status === "Completed") {
+    return trade.completed_at;
+  }
+
+  if (trade.status === "Cancelled") {
+    return trade.cancelled_at;
+  }
+
+  return null;
+}
+
+async function purgeExpiredTradeChat(trade: TradeRow) {
+  const closedAt = tradeChatClosedAt(trade);
+
+  if (!closedAt) {
+    return false;
+  }
+
+  if (Date.now() - new Date(closedAt).getTime() < TRADE_CHAT_RETENTION_MS) {
+    return false;
+  }
+
+  const supabase = getServiceClientOrThrow();
+  const { error } = await supabase
+    .from("trade_chat_rooms")
+    .delete()
+    .eq("trade_id", trade.id);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return true;
 }
 
 export function userIsTradeSeller(trade: TradeRow, user: AppUser) {
@@ -71,7 +143,7 @@ function assertCanViewTradeChat(trade: TradeRow, user: AppUser) {
     return;
   }
 
-  if (user.isAdmin && trade.status === "Disputed") {
+  if (user.isAdmin && ["Disputed", "AwaitingRelease"].includes(trade.status)) {
     return;
   }
 
@@ -90,7 +162,7 @@ export function tradeChatSenderRole(
     return "seller";
   }
 
-  if (user.isAdmin && trade.status === "Disputed") {
+  if (user.isAdmin && ["Disputed", "AwaitingRelease"].includes(trade.status)) {
     return "admin";
   }
 
@@ -120,12 +192,16 @@ function assertCanSendTradeChat(
     return role;
   }
 
-  if (room.status !== "disputed" || trade.status !== "Disputed") {
-    throw new Error("Admins can only message disputed trade chats.");
+  if (!["disputed", "active"].includes(room.status)) {
+    throw new Error("This trade chat is not available for admin messaging.");
+  }
+
+  if (!["Disputed", "AwaitingRelease"].includes(trade.status)) {
+    throw new Error("Admins can only message disputed or release-review trade chats.");
   }
 
   if (room.claimed_admin_user_id !== user.id) {
-    throw new Error("Join this dispute room before sending admin messages.");
+    throw new Error("Join this review room before sending admin messages.");
   }
 
   return role;
@@ -154,7 +230,7 @@ async function insertSystemMessage(
 
 export async function ensureTradeChatRoom(
   trade: TradeRow,
-  nextStatus: "active" | "disputed" = trade.status === "Disputed" ? "disputed" : "active",
+  nextStatus: "active" | "closed" | "disputed" = tradeChatRoomStatus(trade),
 ) {
   const supabase = getServiceClientOrThrow();
   const { data: existing, error: lookupError } = await supabase
@@ -170,7 +246,7 @@ export async function ensureTradeChatRoom(
   if (existing) {
     const row = existing as TradeChatRoomRow;
 
-    if (nextStatus !== row.status && row.status !== "closed") {
+    if (nextStatus !== row.status) {
       const { data: updated, error: updateError } = await supabase
         .from("trade_chat_rooms")
         .update({ status: nextStatus, updated_at: new Date().toISOString() })
@@ -225,7 +301,7 @@ export async function markTradeChatRoomDisputed(
 
 export async function closeTradeChatRoom(trade: TradeRow, notes: string) {
   const supabase = getServiceClientOrThrow();
-  const room = await ensureTradeChatRoom(trade, "active");
+  const room = await ensureTradeChatRoom(trade, "closed");
   const { data, error } = await supabase
     .from("trade_chat_rooms")
     .update({ status: "closed", updated_at: new Date().toISOString() })
@@ -243,14 +319,17 @@ export async function closeTradeChatRoom(trade: TradeRow, notes: string) {
 
 export async function claimTradeChatRoom(trade: TradeRow, user: AppUser) {
   if (!user.isAdmin) {
-    throw new Error("Only admins can join dispute rooms.");
+    throw new Error("Only admins can join review rooms.");
   }
 
-  if (trade.status !== "Disputed") {
-    throw new Error("Admins can only join disputed trade rooms.");
+  if (!["Disputed", "AwaitingRelease"].includes(trade.status)) {
+    throw new Error("Admins can only join disputed or release-review trade rooms.");
   }
 
-  const room = await ensureTradeChatRoom(trade, "disputed");
+  const room = await ensureTradeChatRoom(
+    trade,
+    trade.status === "Disputed" ? "disputed" : "active",
+  );
 
   if (room.claimed_admin_user_id === user.id) {
     return room;
@@ -268,7 +347,7 @@ export async function claimTradeChatRoom(trade: TradeRow, user: AppUser) {
       claimed_admin_user_id: user.id,
       claimed_admin_pi_username: normalizePiUsername(user.username),
       claimed_at: now,
-      status: "disputed",
+      status: trade.status === "Disputed" ? "disputed" : "active",
       updated_at: now,
     })
     .eq("id", room.id)
@@ -287,10 +366,46 @@ export async function claimTradeChatRoom(trade: TradeRow, user: AppUser) {
   const claimedRoom = data as TradeChatRoomRow;
   await insertSystemMessage(
     claimedRoom,
-    `Admin @${normalizePiUsername(user.username)} joined this dispute room.`,
+    trade.status === "AwaitingRelease"
+      ? `Admin @${normalizePiUsername(user.username)} joined this release review room.`
+      : `Admin @${normalizePiUsername(user.username)} joined this dispute room.`,
   );
 
   return claimedRoom;
+}
+
+export async function getTradeChatEvidence(tradeId: string) {
+  const supabase = getServiceClientOrThrow();
+  const { data, error } = await supabase
+    .from("trade_chat_messages")
+    .select("sender_role, message_type, body, attachment_url, created_at")
+    .eq("trade_id", tradeId)
+    .eq("message_type", "proof")
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const rows = (data ??
+    []) as Array<Pick<TradeChatMessageRow, "sender_role" | "message_type" | "body" | "attachment_url" | "created_at">>;
+  const latestSeller = rows.find((row) => row.sender_role === "seller");
+  const latestBuyer = rows.find((row) => row.sender_role === "buyer");
+
+  return {
+    hasSellerProof: Boolean(
+      latestSeller &&
+        ((latestSeller.body?.trim().length ?? 0) >= 8 || latestSeller.attachment_url),
+    ),
+    hasBuyerProof: Boolean(
+      latestBuyer &&
+        ((latestBuyer.body?.trim().length ?? 0) >= 8 || latestBuyer.attachment_url),
+    ),
+    sellerProofText: latestSeller?.body?.trim() || undefined,
+    buyerProofText: latestBuyer?.body?.trim() || undefined,
+    sellerProofUrl: latestSeller?.attachment_url || undefined,
+    buyerProofUrl: latestBuyer?.attachment_url || undefined,
+  } satisfies TradeChatEvidence;
 }
 
 export async function listTradeChatMessages(roomId: string) {
@@ -306,7 +421,13 @@ export async function listTradeChatMessages(roomId: string) {
     throw new Error(error.message);
   }
 
-  return Promise.all(((data ?? []) as TradeChatMessageRow[]).map(mapChatMessage));
+  const rows = (data ?? []) as TradeChatMessageRow[];
+  const senderIds = rows
+    .map((row) => row.sender_user_id)
+    .filter((userId): userId is string => Boolean(userId));
+  const reputations = await getUserReputations(senderIds);
+
+  return Promise.all(rows.map((row) => mapChatMessage(row, reputations)));
 }
 
 export async function loadTradeChatForUser(trade: TradeRow, user: AppUser) {
@@ -350,10 +471,11 @@ export async function getTradeChatRoomForUser(trade: TradeRow, user: AppUser) {
     throw new Error("Trade chat opens after buyer funding is verified.");
   }
 
-  return ensureTradeChatRoom(
-    trade,
-    trade.status === "Disputed" ? "disputed" : "active",
-  );
+  if (await purgeExpiredTradeChat(trade)) {
+    throw new Error("This trade chat expired 7 days after the trade closed.");
+  }
+
+  return ensureTradeChatRoom(trade, tradeChatRoomStatus(trade));
 }
 
 export async function insertTradeChatMessage({

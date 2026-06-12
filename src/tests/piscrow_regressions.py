@@ -87,6 +87,7 @@ def assert_payment_amount_and_window_guards() -> None:
     incomplete_route = read("src/app/api/pi/incomplete/route.ts")
     confirm_route = read("src/app/api/trades/[tradeId]/confirm/route.ts")
     escrow_release = read("src/server/escrow-release.ts")
+    pi_platform = read("src/lib/pi-platform.ts")
 
     assert "Pi payment amount does not match the trade total." in payments
     assert "calculateBuyerTotal(sellerAmount)" in payments
@@ -102,7 +103,12 @@ def assert_payment_amount_and_window_guards() -> None:
     assert 'release_status: "NotStarted"' in complete_route
     assert 'escrow_status: "held_in_app"' in incomplete_route
     assert 'status: "AwaitingRelease"' in confirm_route
-    assert "PI_WALLET_PRIVATE_SEED" in escrow_release
+    assert "getPiWalletPrivateSeed" in escrow_release
+    assert "PI_WALLET_PRIVATE_SEED" in pi_platform
+    assert ".normalize(\"NFKC\")" in pi_platform
+    assert "invisible characters" in pi_platform
+    assert "normalized length is" in pi_platform
+    assert "hasOnlyBase32Chars" in pi_platform
     assert "released_to_seller" in escrow_release
     assert "refunded_to_buyer" in escrow_release
 
@@ -119,7 +125,7 @@ def assert_trade_chat_guards() -> None:
     assert "trade_chat_messages" in migration
     assert "trade chat rooms direct access denied" in migration
     assert "trade chat messages direct access denied" in migration
-    assert "Join this dispute room before sending admin messages." in chat_server
+    assert "Join this review room before sending admin messages." in chat_server
     assert "This dispute room is already claimed by another admin." in chat_server
     assert "uploadTradeProofImage" in chat_route
     assert "claimTradeChatRoom" in claim_route

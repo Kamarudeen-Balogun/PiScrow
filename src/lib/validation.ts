@@ -133,6 +133,16 @@ export const confirmReceiptSchema = z.object({
   buyerReceiptImagePath: sanitizedString().optional().or(z.literal("")),
 });
 
+export const requestReleaseSchema = z.object({
+  tradeId: z.string().min(1),
+  sellerReleaseNote: sanitizedString(
+    z
+      .string()
+      .min(8, "Add a short seller release note.")
+      .max(600, "Keep release notes under 600 characters."),
+  ),
+});
+
 export const tradeChatMessageSchema = z.object({
   tradeId: z.string().min(1),
   body: sanitizedString(
@@ -163,5 +173,6 @@ export type DeliveryProofInput = z.infer<typeof deliveryProofSchema>;
 export type DisputeInput = z.infer<typeof disputeSchema>;
 export type DisputeFollowUpInput = z.infer<typeof disputeFollowUpSchema>;
 export type ConfirmReceiptInput = z.infer<typeof confirmReceiptSchema>;
+export type RequestReleaseInput = z.infer<typeof requestReleaseSchema>;
 export type TradeChatMessageInput = z.infer<typeof tradeChatMessageSchema>;
 export type FeedbackInput = z.infer<typeof feedbackSchema>;

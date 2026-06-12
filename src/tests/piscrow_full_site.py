@@ -217,7 +217,7 @@ def main() -> None:
         page.route("**/api/feedback", capture_feedback)
         page.get_by_role("button", name="Profile", exact=True).click()
         expect(page.get_by_text("Payout Readiness")).to_be_visible()
-        expect(page.get_by_text("In-app Notifications")).to_be_visible()
+        expect(page.get_by_text("Telegram Alerts")).to_be_visible()
         expect(page.get_by_text("Verified badge active")).to_be_visible()
         page.get_by_role("button", name="Give feedback").click()
         expect(page.get_by_role("heading", name="Give feedback")).to_be_visible()

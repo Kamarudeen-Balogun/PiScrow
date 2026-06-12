@@ -1,4 +1,5 @@
 import { createNotification } from "@/server/notifications";
+import { getTradeChatEvidence } from "@/server/trade-chat";
 import {
   getServiceClientOrThrow,
   insertTradeEvent,
@@ -28,6 +29,10 @@ type RecommendationInput = {
   trade: TradeRow;
   payments: PaymentRow[];
   disputes: DisputeRow[];
+  chatEvidence?: {
+    hasSellerProof: boolean;
+    hasBuyerProof: boolean;
+  };
 };
 
 type RecommendationDraft = {
@@ -105,6 +110,7 @@ export function buildReviewRecommendation({
   trade,
   payments,
   disputes,
+  chatEvidence,
 }: RecommendationInput): RecommendationDraft {
   const missingEvidence: string[] = [];
   const riskFlags: string[] = [];
@@ -113,9 +119,14 @@ export function buildReviewRecommendation({
   const hasCompletedPayment = payments.some((payment) => payment.status === "Completed");
   const sellerProofText = trade.delivery_proof_note?.trim() ?? "";
   const buyerReceiptText = trade.buyer_receipt_note?.trim() ?? "";
-  const hasSellerProof = sellerProofText.length >= 8 || Boolean(trade.delivery_proof_url);
+  const hasSellerProof =
+    sellerProofText.length >= 8 ||
+    Boolean(trade.delivery_proof_url) ||
+    Boolean(chatEvidence?.hasSellerProof);
   const hasBuyerReceipt =
-    buyerReceiptText.length >= 8 || Boolean(trade.buyer_receipt_proof_url);
+    buyerReceiptText.length >= 8 ||
+    Boolean(trade.buyer_receipt_proof_url) ||
+    Boolean(chatEvidence?.hasBuyerProof);
   const hasOpenDispute = trade.status === "Disputed" || disputes.length > 0;
   const awaitingRelease = trade.status === "AwaitingRelease";
 
@@ -257,6 +268,7 @@ export async function runReviewCopilot(tradeId: string, admin: AppUser) {
     trade: tradeRow,
     payments: (payments ?? []) as PaymentRow[],
     disputes: (disputes ?? []) as DisputeRow[],
+    chatEvidence: await getTradeChatEvidence(tradeId),
   });
 
   const { data: created, error: insertError } = await supabase

@@ -12,12 +12,18 @@ import {
 } from "@/server/security";
 import {
   getTradeChatRoomForUser,
+  getTradeChatEvidence,
   insertTradeChatMessage,
   listTradeChatMessages,
   loadTradeChatForUser,
   tradeChatSenderRole,
 } from "@/server/trade-chat";
-import { getTradeForAction } from "@/server/trades";
+import {
+  getServiceClientOrThrow,
+  getTradeForAction,
+  insertTradeEvent,
+  listTradesForUser,
+} from "@/server/trades";
 
 export async function GET(
   request: Request,
@@ -66,7 +72,7 @@ export async function POST(
     }
 
     if (senderRole === "admin" && room.claimed_admin_user_id !== user.id) {
-      throw new Error("Join this dispute room before sending admin messages.");
+      throw new Error("Join this review room before sending admin messages.");
     }
 
     const attachmentUrl =
@@ -87,6 +93,63 @@ export async function POST(
       trade,
       user,
     });
+
+    if (attachmentUrl && ["seller", "buyer"].includes(senderRole)) {
+      const evidence = await getTradeChatEvidence(tradeId);
+      const supabase = getServiceClientOrThrow();
+      const now = new Date().toISOString();
+
+      if (senderRole === "seller" && trade.status === "Funded" && evidence.hasSellerProof) {
+        const { error: updateError } = await supabase
+          .from("trades")
+          .update({
+            status: "DeliverySubmitted",
+            delivery_proof_note:
+              trade.delivery_proof_note ?? evidence.sellerProofText ?? "Seller proof uploaded in trade chat.",
+            delivery_proof_url: trade.delivery_proof_url ?? evidence.sellerProofUrl ?? null,
+            updated_at: now,
+          })
+          .eq("id", tradeId);
+
+        if (updateError) {
+          throw new Error(updateError.message);
+        }
+        await insertTradeEvent(
+          tradeId,
+          user.id,
+          "Delivery submitted",
+          evidence.sellerProofText ?? "Seller proof uploaded in trade chat.",
+          { source: "trade_chat" },
+        );
+      }
+
+      if (senderRole === "buyer" && trade.status === "DeliverySubmitted" && evidence.hasBuyerProof) {
+        const { error: updateError } = await supabase
+          .from("trades")
+          .update({
+            status: "AwaitingRelease",
+            buyer_receipt_note:
+              trade.buyer_receipt_note ?? evidence.buyerProofText ?? "Buyer receipt proof uploaded in trade chat.",
+            buyer_receipt_proof_url:
+              trade.buyer_receipt_proof_url ?? evidence.buyerProofUrl ?? null,
+            updated_at: now,
+          })
+          .eq("id", tradeId);
+
+        if (updateError) {
+          throw new Error(updateError.message);
+        }
+        await insertTradeEvent(
+          tradeId,
+          user.id,
+          "Receipt confirmed",
+          `${
+            evidence.buyerProofText ?? "Buyer receipt proof uploaded in trade chat."
+          } Seller payout is waiting for admin release.`,
+          { source: "trade_chat" },
+        );
+      }
+    }
 
     const title =
       senderRole === "admin" ? "Admin added dispute update" : "New trade chat message";
@@ -115,7 +178,10 @@ export async function POST(
         : Promise.resolve(),
     ]);
 
+    const tradePayload = await listTradesForUser(user);
+
     return secureJson({
+      ...tradePayload,
       room: {
         id: room.id,
         tradeId: room.trade_id,

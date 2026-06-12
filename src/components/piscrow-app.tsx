@@ -32,6 +32,7 @@ import {
   SellerPostPanel,
 } from "@/components/piscrow-workspaces";
 import { TradeChatModal } from "@/components/trade-chat-modal";
+import { VerifiedUsername } from "@/components/verified-username";
 import {
   demoChatMessages,
   demoChatRooms,
@@ -44,6 +45,7 @@ import {
   calculateBuyerTotal,
   calculatePlatformFee,
 } from "@/lib/fees";
+import { supportedLanguages, type LanguageCode } from "@/lib/language";
 import {
   piEscrowMemo,
   piscrowPaymentProduct,
@@ -66,14 +68,16 @@ import {
   reviewActionLabel,
   toneFromNotificationType,
 } from "@/lib/piscrow-ui-helpers";
+import {
+  canRequestVerifiedBadge,
+  VERIFIED_BADGE_MIN_COMPLETED_TRADES,
+} from "@/lib/reputation";
 import { createBrowserSupabaseClient } from "@/lib/supabase";
 import { formatTestPi } from "@/lib/trade-state";
 import {
   createTradeInterestSchema,
   createTradeSchema,
   confirmReceiptSchema,
-  deliveryProofSchema,
-  disputeFollowUpSchema,
   disputeSchema,
   feedbackSchema,
   tradeChatMessageSchema,
@@ -117,6 +121,9 @@ type ReviewRecommendationsPayload = {
 };
 
 type ChatPayload = {
+  trades?: Trade[];
+  interests?: TradeInterest[];
+  events?: TradeEvent[];
   room: TradeChatRoom;
   messages: TradeChatMessage[];
 };
@@ -127,6 +134,7 @@ type AppNotice = {
   body: string;
   tone: "info" | "success" | "warning";
   persistent?: boolean;
+  expiresAt?: number;
 };
 
 type BlockingAction = {
@@ -143,7 +151,6 @@ type ConfirmAction = {
 };
 
 type ConsentState = "checking" | "pending" | "accepted" | "rejected";
-type LanguageCode = "en" | "es" | "fr" | "pt" | "ar" | "hi" | "id" | "zh";
 type AuthMessageKey =
   | "initial"
   | "demo"
@@ -174,8 +181,6 @@ type SavedNotification = {
   createdAt: string;
 };
 
-type AdminFollowUpAction = "request_buyer_followup" | "request_seller_followup";
-
 const nextPublicSandbox =
   process.env.NEXT_PUBLIC_PI_SANDBOX === undefined
     ? true
@@ -183,6 +188,8 @@ const nextPublicSandbox =
 
 const consentStorageKey = "piscrow-consent-v1";
 const languageStorageKey = "piscrow-language-v1";
+const piSessionStorageKey = "piscrow-pi-session-v1";
+const telegramLinkStateStorageKey = "piscrow-telegram-link-v1";
 const consentVersion = "2026-06-07";
 const nextPublicMaintenanceEnabled =
   process.env.NEXT_PUBLIC_PISCROW_MAINTENANCE_ENABLED === "true";
@@ -190,6 +197,7 @@ const nextPublicMaintenanceMessage =
   process.env.NEXT_PUBLIC_PISCROW_MAINTENANCE_MESSAGE?.trim() ||
   "PiScrow is receiving updates. The app remains online, but some actions may be slower than usual.";
 const workspaceFallbackSyncIntervalMs = 60_000;
+const activeChatRefreshIntervalMs = 5_000;
 const realtimeSyncChannelName = "piscrow-app-sync";
 
 const viewIcons: Record<ViewMode, typeof Home> = {
@@ -207,13 +215,76 @@ const defaultTelegramStatus: TelegramLinkStatus = {
   notificationsEnabled: false,
 };
 
-const viewTabLabels: Record<ViewMode, string> = {
-  ledger: "Explore",
-  market: "Buy",
-  sell: "Sell",
-  profile: "Profile",
-  admin: "Admin",
+type StoredPiSession = {
+  accessToken: string;
+  user: SessionUser;
+  savedAt: string;
 };
+
+type StoredTelegramLinkState = {
+  awaitingLink: boolean;
+  savedAt: string;
+};
+
+function readStoredJson<T>(key: string) {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  try {
+    const raw = window.localStorage.getItem(key);
+
+    if (!raw) {
+      return null;
+    }
+
+    return JSON.parse(raw) as T;
+  } catch {
+    return null;
+  }
+}
+
+function writeStoredJson(key: string, value: unknown) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  try {
+    window.localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // Ignore local storage failures in strict browser modes.
+  }
+}
+
+function removeStoredJson(key: string) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  try {
+    window.localStorage.removeItem(key);
+  } catch {
+    // Ignore local storage failures in strict browser modes.
+  }
+}
+
+function readStoredPiSession() {
+  const stored = readStoredJson<StoredPiSession>(piSessionStorageKey);
+
+  if (!stored?.accessToken || !stored.user?.username || !stored.user?.uid) {
+    return null;
+  }
+
+  return stored;
+}
+
+function readStoredTelegramLinkState() {
+  const stored = readStoredJson<StoredTelegramLinkState>(
+    telegramLinkStateStorageKey,
+  );
+
+  return stored?.awaitingLink ? stored : null;
+}
 
 function formatHeaderPi(amount: number) {
   return `π ${amount.toLocaleString("en-US", {
@@ -221,17 +292,6 @@ function formatHeaderPi(amount: number) {
     minimumFractionDigits: 2,
   })}`;
 }
-
-const supportedLanguages: { code: LanguageCode; label: string; shortLabel: string }[] = [
-  { code: "en", label: "English", shortLabel: "EN" },
-  { code: "es", label: "Espanol", shortLabel: "ES" },
-  { code: "fr", label: "Francais", shortLabel: "FR" },
-  { code: "pt", label: "Portugues", shortLabel: "PT" },
-  { code: "ar", label: "العربية", shortLabel: "AR" },
-  { code: "hi", label: "हिन्दी", shortLabel: "HI" },
-  { code: "id", label: "Bahasa Indonesia", shortLabel: "ID" },
-  { code: "zh", label: "中文", shortLabel: "ZH" },
-];
 
 const appCopy: Record<
   LanguageCode,
@@ -992,8 +1052,120 @@ const appCopy: Record<
       connectedNoToken: (username) => `已连接为 @${username}，但没有有效令牌。`,
     },
   },
+  pcm: {
+    language: "Language",
+    testnetBadge: "Pi Testnet / Sandbox",
+    heroTitle: "PiScrow",
+    heroBody:
+      "Sellers fit post public or private Pi testnet offers, buyers go show interest, and the buyer wey seller choose go fund escrow-style trade with clear platform fee.",
+    session: "Session",
+    notConnected: "No connect",
+    connect: "Connect",
+    connected: "Connected",
+    connecting: "Connecting",
+    connectPiAccount: "Connect Pi account",
+    privateWorkspace: "Private Pi workspace",
+    signInTitle: "Sign in with Pi Browser to post offers or show buyer interest.",
+    signInBody:
+      "Public listings and activity still dey show for transparency. Admin review tools go show only for approved developer usernames.",
+    loginDemo: "Enter with demo data",
+    consentRequired: "Consent needed",
+    consentTitle: "Read PiScrow rules before you connect your Pi account.",
+    consentBody:
+      "PiScrow uses your Pi username, Pi UID, trade details, location labels, proof uploads, notifications, and dispute activity to run transparent Pi Testnet escrow-style workflow.",
+    consentCards: [
+      "Na testnet only. PiScrow no dey hold Mainnet Pi.",
+      "Seller, buyer, and admin fit review proof images.",
+      "Public ledger activity dey show for marketplace transparency.",
+      "Admins fit review disputed trades before release or cancellation.",
+    ],
+    readRules: "Read full rules, privacy, and agreement",
+    checkingConsent: "Dey check saved consent...",
+    loginDisabled: "Pi login don disable.",
+    agreeBeforeLogin: "Agree before Pi login.",
+    rejectedBody:
+      "You reject the agreement for this browser. You fit read the rules again and agree when you ready.",
+    consentBlockBody:
+      "If you reject, Pi login and protected trading actions go block until you agree to the rules and consent terms.",
+    agreeContinue: "Agree and continue",
+    reject: "Reject",
+    maintenanceNotice: "Maintenance notice",
+    appStaysOnline: "App still dey online",
+    demoWorkspace: "Demo workspace",
+    demoBody:
+      "Demo data dey run local for this browser. E no connect to Pi Browser, Supabase writes, or real testnet payments.",
+    exitDemo: "Exit demo",
+    footerDisclaimer:
+      "PiScrow na Pi Testnet/Sandbox app and e no dey hold Mainnet Pi.",
+    rulesLink: "Rules, privacy, and consent",
+    workspace: "Workspace",
+    menu: "Menu",
+    workspaceMenu: "Workspace menu",
+    closeWorkspaceMenu: "Close workspace menu",
+    current: "Current",
+    network: "Network",
+    testnet: "Testnet",
+    metrics: {
+      openOffers: "Open offers",
+      activeValue: "Active value",
+      disputes: "Disputes",
+    },
+    views: {
+      market: {
+        label: "Buy",
+        description: "Check seller offers, show interest, and fund selected trades.",
+      },
+      sell: {
+        label: "Sell",
+        description: "Post offers, compare buyer responses, and manage delivery.",
+      },
+      ledger: {
+        label: "Explore",
+        description: "Transparent trade activity across PiScrow testnet.",
+      },
+      profile: {
+        label: "Profile",
+        description: "Track trust score, trade history, and badge status.",
+      },
+      admin: {
+        label: "Admin",
+        description: "Resolve disputed trades from approved Pi usernames.",
+      },
+    },
+    auth: {
+      initial: "Connect with Pi Browser to start using PiScrow.",
+      demo: "Local demo mode dey active. Use Pi Browser for real-user testing.",
+      consentAccepted: "Consent accepted. Connect with Pi Browser to continue.",
+      consentRejected: "Consent rejected. Pi login go stay disabled until you agree.",
+      checkingConsent: "PiScrow still dey check your consent status.",
+      acceptConsentRequired:
+        "Accept PiScrow rules and privacy consent before you connect Pi account.",
+      preparing: "Dey prepare Pi Browser login...",
+      sdkReady: "Pi SDK dey available. Approve the Pi Browser sign-in request to continue.",
+      piSdkUnavailable:
+        "Pi SDK never show for this page yet. If you dey inside Pi Browser, refresh PiScrow from the app page and try again. For other browsers, use demo data.",
+      loginTimeout:
+        "Pi login no finish. Stay inside Pi Browser, approve the request, and try again.",
+      accessTokenMissing:
+        "Pi Browser connect your username but no return valid access token. Try again.",
+    },
+    notices: {
+      consentAcceptedTitle: "Consent accepted",
+      consentAcceptedBody: "PiScrow login now dey enabled for this browser.",
+      loginBlockedTitle: "Login blocked",
+      loginBlockedBody:
+        "You need to accept PiScrow rules and privacy consent before connecting Pi account.",
+      consentRequiredTitle: "Consent needed",
+      piSdkTitle: "Pi SDK no available",
+      connectionFailedTitle: "Connection fail",
+      connectedTitle: "Pi account connected",
+      connectedBody: "Your PiScrow workspace don ready.",
+      signedIn: (username) => `Signed in as @${username}.`,
+      connectedNoToken: (username) =>
+        `Connected as @${username}, but Pi Browser no return access token.`,
+    },
+  },
 };
-
 type AppCopy = (typeof appCopy)[LanguageCode];
 
 function isLanguageCode(value: string | null): value is LanguageCode {
@@ -1056,6 +1228,7 @@ export function PiScrowApp({
   );
   const [formError, setFormError] = useState("");
   const [paymentState, setPaymentState] = useState("No payment started.");
+  const [appRefreshing, setAppRefreshing] = useState(false);
   const [ledgerLoading, setLedgerLoading] = useState(false);
   const [notices, setNotices] = useState<AppNotice[]>([]);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
@@ -1095,7 +1268,9 @@ export function PiScrowApp({
     allowDemo ? "accepted" : "checking",
   );
   const demoSessionRef = useRef(allowDemo);
+  const restoredPiSessionRef = useRef(false);
   const workspaceRefreshInFlightRef = useRef(false);
+  const tradeChatRefreshInFlightRef = useRef<string | null>(null);
   const seenSavedNotificationIdsRef = useRef<Set<string>>(new Set());
 
   const signedIn = Boolean(user);
@@ -1173,6 +1348,50 @@ export function PiScrowApp({
     [profile, trades, user],
   );
 
+  const clearStoredPiSession = useCallback(() => {
+    removeStoredJson(piSessionStorageKey);
+  }, []);
+
+  const clearStoredTelegramLinkState = useCallback(() => {
+    removeStoredJson(telegramLinkStateStorageKey);
+  }, []);
+
+  const persistPiSession = useCallback(
+    (nextUser: SessionUser, accessToken: string) => {
+      if (!accessToken) {
+        clearStoredPiSession();
+        return;
+      }
+
+      writeStoredJson(piSessionStorageKey, {
+        accessToken,
+        user: nextUser,
+        savedAt: new Date().toISOString(),
+      } satisfies StoredPiSession);
+    },
+    [clearStoredPiSession],
+  );
+
+  const clearPersistedAuthState = useCallback(() => {
+    clearStoredPiSession();
+    clearStoredTelegramLinkState();
+  }, [clearStoredPiSession, clearStoredTelegramLinkState]);
+
+  const persistTelegramAwaitingLink = useCallback(
+    (awaitingLink: boolean) => {
+      if (!awaitingLink) {
+        clearStoredTelegramLinkState();
+        return;
+      }
+
+      writeStoredJson(telegramLinkStateStorageKey, {
+        awaitingLink: true,
+        savedAt: new Date().toISOString(),
+      } satisfies StoredTelegramLinkState);
+    },
+    [clearStoredTelegramLinkState],
+  );
+
   function showBlockingAction(title: string, body: string) {
     setBlockingAction({ title, body });
   }
@@ -1244,32 +1463,42 @@ export function PiScrowApp({
     }
   }
 
-  function refreshCurrentView() {
+  async function refreshCurrentView() {
     setNotificationsOpen(false);
+    setAppRefreshing(true);
 
-    if (!signedIn) {
-      void refreshPublicLedger();
-      return;
-    }
+    try {
+      if (!signedIn) {
+        await refreshPublicLedger();
+        return;
+      }
 
-    if (activeMode === "ledger") {
-      void refreshPublicLedger();
-      return;
-    }
+      await refreshAuthenticatedWorkspace({
+        includeProfile: activeMode === "profile",
+        includeAdmin: activeMode === "admin" && Boolean(user?.isAdmin),
+        silent: false,
+      });
 
-    void refreshAuthenticatedWorkspace({
-      includeProfile: activeMode === "profile",
-      includeAdmin: activeMode === "admin" && Boolean(user?.isAdmin),
-      silent: false,
-    });
+      if (activeChatTradeRecord) {
+        await refreshTradeChat(activeChatTradeRecord, { keepOpen: true });
+      }
 
-    if (activeMode === "profile") {
-      void refreshProfile();
-    }
+      if (activeMode === "ledger") {
+        await refreshPublicLedger();
+      }
 
-    if (activeMode === "admin") {
-      void refreshVerificationRequests();
-      void refreshReviewRecommendations();
+      if (activeMode === "profile") {
+        await refreshProfile();
+      }
+
+      if (activeMode === "admin") {
+        await Promise.all([
+          refreshVerificationRequests(),
+          refreshReviewRecommendations(),
+        ]);
+      }
+    } finally {
+      setAppRefreshing(false);
     }
   }
 
@@ -1295,6 +1524,15 @@ export function PiScrowApp({
   }
 
   function applyChatPayload(payload: ChatPayload) {
+    if (payload.trades) {
+      setTrades(payload.trades);
+    }
+    if (payload.interests) {
+      setInterests(payload.interests);
+    }
+    if (payload.events) {
+      setEvents(payload.events);
+    }
     setChatRooms((current) => [
       payload.room,
       ...current.filter((room) => room.tradeId !== payload.room.tradeId),
@@ -1305,10 +1543,10 @@ export function PiScrowApp({
     ]);
   }
 
-  function upsertDemoChatRoom(
+  const upsertDemoChatRoom = useCallback((
     trade: Trade,
     status: TradeChatRoom["status"] = trade.status === "Disputed" ? "disputed" : "active",
-  ) {
+  ) => {
     const existing = chatRooms.find((room) => room.tradeId === trade.id);
     const now = new Date().toISOString();
     const room: TradeChatRoom = existing
@@ -1343,7 +1581,7 @@ export function PiScrowApp({
     }
 
     return room;
-  }
+  }, [chatRooms]);
 
   function appendDemoChatMessage(
     trade: Trade,
@@ -1363,23 +1601,25 @@ export function PiScrowApp({
     ]);
   }
 
-  function pushNotice(
+  const pushNotice = useCallback((
     title: string,
     body: string,
     tone: AppNotice["tone"] = "info",
     options: { persistent?: boolean } = {},
-  ) {
+  ) => {
+    const persistent = options.persistent ?? false;
     setNotices((current) => [
       {
         id: `notice-${crypto.randomUUID()}`,
         title,
         body,
         tone,
-        persistent: options.persistent ?? false,
+        persistent,
+        expiresAt: persistent ? undefined : Date.now() + 6500,
       },
       ...current,
     ].slice(0, 6));
-  }
+  }, []);
 
   const broadcastRealtimeSync = useCallback(async (
     event:
@@ -1413,16 +1653,23 @@ export function PiScrowApp({
   const refreshAuthenticatedWorkspace = useCallback(
     async ({
       accessToken = piAccessToken,
-      includeProfile = activeMode === "profile",
-      includeAdmin = activeMode === "admin" && Boolean(user?.isAdmin),
+      includeProfile,
+      includeAdmin,
       silent = true,
+      sessionUser,
     }: {
       accessToken?: string;
       includeProfile?: boolean;
       includeAdmin?: boolean;
       silent?: boolean;
+      sessionUser?: SessionUser | null;
     } = {}) => {
-      if (allowDemo || !accessToken || !user) {
+      const activeUser = sessionUser ?? user;
+      const shouldIncludeProfile = includeProfile ?? activeMode === "profile";
+      const shouldIncludeAdmin =
+        includeAdmin ?? (activeMode === "admin" && Boolean(activeUser?.isAdmin));
+
+      if (allowDemo || !accessToken || !activeUser) {
         return;
       }
 
@@ -1433,16 +1680,16 @@ export function PiScrowApp({
       workspaceRefreshInFlightRef.current = true;
 
       try {
-        const profilePromise = includeProfile
+        const profilePromise = shouldIncludeProfile
           ? apiRequest<ProfilePayload>("/api/profile", accessToken)
           : Promise.resolve(null);
-        const verificationPromise = includeAdmin
+        const verificationPromise = shouldIncludeAdmin
           ? apiRequest<VerificationQueuePayload>(
               "/api/admin/verification-requests",
               accessToken,
             )
           : Promise.resolve(null);
-        const reviewPromise = includeAdmin
+        const reviewPromise = shouldIncludeAdmin
           ? apiRequest<ReviewRecommendationsPayload>(
               "/api/admin/review-recommendations",
               accessToken,
@@ -1556,6 +1803,7 @@ export function PiScrowApp({
     setUser(null);
     setPiConnected(false);
     setPiAccessToken("");
+    clearPersistedAuthState();
     setTelegram(defaultTelegramStatus);
     setTelegramAwaitingLink(false);
     setActiveChatTrade(null);
@@ -1597,6 +1845,14 @@ export function PiScrowApp({
   }
 
   useEffect(() => {
+    if (allowDemo || consentState !== "accepted" || !restoredPiSessionRef.current) {
+      return;
+    }
+
+    persistTelegramAwaitingLink(telegramAwaitingLink);
+  }, [allowDemo, consentState, persistTelegramAwaitingLink, telegramAwaitingLink]);
+
+  useEffect(() => {
     const timer = window.setTimeout(() => {
       if (!allowDemo) {
         if (!demoSessionRef.current) {
@@ -1607,6 +1863,7 @@ export function PiScrowApp({
         setUser(null);
         setPiConnected(false);
         setPiAccessToken("");
+        clearPersistedAuthState();
         setAuthMessage({ key: "initial" });
         setMode("ledger");
         setTrades([]);
@@ -1634,6 +1891,7 @@ export function PiScrowApp({
       setUser({ ...demoUser, isAdmin: true });
       setPiConnected(false);
       setPiAccessToken("");
+      clearPersistedAuthState();
       setAuthMessage({ key: "demo" });
       setConsentState("accepted");
       setMode("ledger");
@@ -1661,7 +1919,7 @@ export function PiScrowApp({
     }, 0);
 
     return () => window.clearTimeout(timer);
-  }, [allowDemo]);
+  }, [allowDemo, clearPersistedAuthState]);
 
   useEffect(() => {
     if (allowDemo) {
@@ -1703,19 +1961,80 @@ export function PiScrowApp({
     }
 
     const timers = notices
-      .filter((notice) => !notice.persistent)
+      .filter((notice) => !notice.persistent && typeof notice.expiresAt === "number")
       .map((notice) =>
         window.setTimeout(() => {
           setNotices((current) =>
             current.filter((item) => item.id !== notice.id),
           );
-        }, 6500),
+        }, Math.max(0, (notice.expiresAt ?? Date.now()) - Date.now())),
       );
 
     return () => {
       timers.forEach(window.clearTimeout);
     };
   }, [notices]);
+
+  const refreshTradeChat = useCallback(async (
+    trade: Trade,
+    options: {
+      keepOpen?: boolean;
+      silent?: boolean;
+    } = {},
+  ) => {
+    const { keepOpen = true, silent = false } = options;
+
+    if (!silent) {
+      setFormError("");
+    }
+
+    if (keepOpen) {
+      setActiveChatTrade(trade);
+    }
+
+    if (allowDemo) {
+      upsertDemoChatRoom(
+        trade,
+        trade.status === "Disputed" ? "disputed" : "active",
+      );
+      return;
+    }
+
+    if (!piAccessToken) {
+      if (!silent) {
+        setFormError("Connect your Pi account before opening trade chat.");
+      }
+      return;
+    }
+
+    if (tradeChatRefreshInFlightRef.current == trade.id) {
+      return;
+    }
+
+    tradeChatRefreshInFlightRef.current = trade.id;
+
+    if (!silent) {
+      setChatLoadingTradeId(trade.id);
+    }
+
+    try {
+      const payload = await apiRequest<ChatPayload>(
+        `/api/trades/${trade.id}/chat`,
+        piAccessToken,
+      );
+      applyChatPayload(payload);
+    } catch (error) {
+      if (!silent) {
+        setFormError(error instanceof Error ? error.message : "Could not open chat.");
+      }
+    } finally {
+      tradeChatRefreshInFlightRef.current = null;
+
+      if (!silent) {
+        setChatLoadingTradeId("");
+      }
+    }
+  }, [allowDemo, piAccessToken, upsertDemoChatRoom]);
 
   useEffect(() => {
     if (allowDemo) {
@@ -1730,6 +2049,13 @@ export function PiScrowApp({
     const syncWorkspace = () => {
       if (user && piAccessToken) {
         void refreshAuthenticatedWorkspace({ silent: true });
+      }
+
+      if (activeChatTradeRecord) {
+        void refreshTradeChat(activeChatTradeRecord, {
+          keepOpen: true,
+          silent: true,
+        });
       }
 
       if (activeMode === "ledger") {
@@ -1759,6 +2085,14 @@ export function PiScrowApp({
       syncWorkspace,
       workspaceFallbackSyncIntervalMs,
     );
+    const chatInterval = activeChatTradeRecord
+      ? window.setInterval(() => {
+          void refreshTradeChat(activeChatTradeRecord, {
+            keepOpen: true,
+            silent: true,
+          });
+        }, activeChatRefreshIntervalMs)
+      : null;
     window.addEventListener("focus", handleWorkspaceVisibilityRefresh);
     document.addEventListener("visibilitychange", handleWorkspaceVisibilityRefresh);
 
@@ -1800,6 +2134,9 @@ export function PiScrowApp({
 
     return () => {
       window.clearInterval(interval);
+      if (chatInterval != null) {
+        window.clearInterval(chatInterval);
+      }
       window.removeEventListener("focus", handleWorkspaceVisibilityRefresh);
       document.removeEventListener(
         "visibilitychange",
@@ -1809,9 +2146,11 @@ export function PiScrowApp({
     };
   }, [
     activeMode,
+    activeChatTradeRecord,
     allowDemo,
     piAccessToken,
     refreshAuthenticatedWorkspace,
+    refreshTradeChat,
     refreshPublicLedger,
     user,
   ]);
@@ -1936,6 +2275,7 @@ export function PiScrowApp({
           body: notice.body,
           tone: toneFromNotificationType(notice.type),
           persistent: true,
+          expiresAt: undefined,
         }));
 
       incoming.forEach((notice) => {
@@ -2047,6 +2387,7 @@ export function PiScrowApp({
       setPiConnected(Boolean(accessToken));
 
       if (!accessToken) {
+        clearPersistedAuthState();
         setUser(null);
         setTelegram(defaultTelegramStatus);
         setActiveChatTrade(null);
@@ -2063,6 +2404,7 @@ export function PiScrowApp({
         method: "POST",
       });
       setUser(session.user);
+      persistPiSession(session.user, accessToken);
       setMode("ledger");
       setAuthMessage({ text: copy.notices.signedIn(session.user.username) });
 
@@ -2079,6 +2421,7 @@ export function PiScrowApp({
         "success",
       );
     } catch (error) {
+      clearPersistedAuthState();
       setPiConnected(false);
       setPiAccessToken("");
       setUser(allowDemo ? { ...demoUser, isAdmin: true } : null);
@@ -2185,8 +2528,100 @@ export function PiScrowApp({
         setTelegramLoading(false);
       }
     },
-    [allowDemo, piAccessToken, telegram.linked],
+    [allowDemo, piAccessToken, pushNotice, telegram.linked],
   );
+
+  useEffect(() => {
+    if (allowDemo) {
+      clearPersistedAuthState();
+      restoredPiSessionRef.current = true;
+      return;
+    }
+
+    if (restoredPiSessionRef.current || consentState !== "accepted") {
+      return;
+    }
+
+    restoredPiSessionRef.current = true;
+    const storedSession = readStoredPiSession();
+    const storedTelegramLink = readStoredTelegramLinkState();
+
+    if (!storedSession) {
+      if (storedTelegramLink) {
+        clearStoredTelegramLinkState();
+      }
+      return;
+    }
+
+    let cancelled = false;
+
+    const restoreSession = async () => {
+      try {
+        if (storedTelegramLink?.awaitingLink) {
+          setTelegramAwaitingLink(true);
+        }
+
+        setPiAccessToken(storedSession.accessToken);
+        setPiConnected(true);
+        setUser(storedSession.user);
+        setAuthMessage({ key: "preparing" });
+
+        const session = await apiRequest<{ user: SessionUser }>(
+          "/api/auth/pi",
+          storedSession.accessToken,
+          { method: "POST" },
+        );
+
+        if (cancelled) {
+          return;
+        }
+
+        setUser(session.user);
+        setPiConnected(true);
+        setAuthMessage({ text: copy.notices.signedIn(session.user.username) });
+        persistPiSession(session.user, storedSession.accessToken);
+
+        await refreshAuthenticatedWorkspace({
+          accessToken: storedSession.accessToken,
+          includeProfile: true,
+          includeAdmin: Boolean(session.user.isAdmin),
+          silent: true,
+          sessionUser: session.user,
+        });
+
+        if (storedTelegramLink?.awaitingLink) {
+          await refreshTelegramStatus(storedSession.accessToken, { silent: true });
+        }
+      } catch {
+        if (cancelled) {
+          return;
+        }
+
+        clearPersistedAuthState();
+        setPiConnected(false);
+        setPiAccessToken("");
+        setUser(null);
+        setTelegram(defaultTelegramStatus);
+        setTelegramAwaitingLink(false);
+        setAuthMessage({ key: "initial" });
+      }
+    };
+
+    void restoreSession();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    allowDemo,
+    clearPersistedAuthState,
+    clearStoredTelegramLinkState,
+    consentState,
+    copy.notices,
+    persistPiSession,
+    refreshAuthenticatedWorkspace,
+    refreshTelegramStatus,
+  ]);
 
   async function linkTelegram() {
     setFormError("");
@@ -2236,6 +2671,7 @@ export function PiScrowApp({
 
       setTelegram(payload.telegram ?? defaultTelegramStatus);
       setTelegramAwaitingLink(true);
+      persistTelegramAwaitingLink(true);
 
       if (typeof window !== "undefined") {
         window.open(payload.deepLink, "_blank", "noopener,noreferrer");
@@ -2291,6 +2727,7 @@ export function PiScrowApp({
       );
       setTelegram(payload.telegram ?? defaultTelegramStatus);
       setTelegramAwaitingLink(false);
+      clearStoredTelegramLinkState();
       pushNotice(
         "Telegram disconnected",
         "PiScrow will now keep your alerts inside the app only.",
@@ -2343,15 +2780,42 @@ export function PiScrowApp({
 
   async function requestVerifiedBadge() {
     setFormError("");
+    const currentProfile =
+      profile ?? (user ? buildDemoProfile(user.username, trades) : null);
+
+    if (!currentProfile) {
+      setFormError("Could not load profile.");
+      return;
+    }
+
+    if (currentProfile.verifiedBadge) {
+      setFormError("Your account is already verified.");
+      return;
+    }
+
+    if (currentProfile.verificationRequestedAt) {
+      setFormError("Your verification request is already waiting for admin review.");
+      return;
+    }
+
+    if (!canRequestVerifiedBadge(currentProfile)) {
+      setFormError(
+        `Complete ${VERIFIED_BADGE_MIN_COMPLETED_TRADES} successful trades before requesting verification.`,
+      );
+      return;
+    }
 
     if (allowDemo) {
-      setProfile((current) => {
-        const next = current ?? buildDemoProfile(user?.username ?? demoUser.username, trades);
-        return {
-          ...next,
-          verifiedBadge: false,
-          verificationRequestedAt: new Date().toISOString(),
-        };
+      const requestedAt = new Date().toISOString();
+      const nextProfile = {
+        ...currentProfile,
+        verifiedBadge: false,
+        verificationRequestedAt: requestedAt,
+      };
+      setProfile(nextProfile);
+      setVerificationRequests((current) => {
+        const remaining = current.filter((item) => item.userId !== nextProfile.userId);
+        return [...remaining, nextProfile];
       });
       pushNotice(
         "Verification requested",
@@ -2515,6 +2979,13 @@ export function PiScrowApp({
 
   async function approveVerifiedBadgeConfirmed(request: UserReputation) {
     setFormError("");
+
+    if (!canRequestVerifiedBadge(request)) {
+      setFormError(
+        `@${request.piUsername} must complete ${VERIFIED_BADGE_MIN_COMPLETED_TRADES} successful trades before approval.`,
+      );
+      return;
+    }
 
     if (allowDemo) {
       setVerificationRequests((current) =>
@@ -2966,10 +3437,13 @@ export function PiScrowApp({
   }
 
   function deleteOffer(trade: Trade) {
+    const isDraftOffer = trade.status === "Draft";
     askConfirmation({
-      title: "Delete this offer?",
-      body: "This removes the open seller offer before a buyer is selected.",
-      confirmLabel: "Delete offer",
+      title: isDraftOffer ? "Delete this offer?" : "Delete this trade from your account?",
+      body: isDraftOffer
+        ? "This removes the open seller offer before a buyer is selected."
+        : "This hides the closed trade from your workspace only. The other participant keeps their own copy until they delete it too.",
+      confirmLabel: isDraftOffer ? "Delete offer" : "Delete trade",
       tone: "danger",
       onConfirm: () => deleteOfferConfirmed(trade),
     });
@@ -2977,6 +3451,7 @@ export function PiScrowApp({
 
   function deleteOfferConfirmed(trade: Trade) {
     setFormError("");
+    const isDraftOffer = trade.status === "Draft";
 
     if (piConnected && piAccessToken) {
       void apiRequest<TradePayload>(
@@ -2986,23 +3461,47 @@ export function PiScrowApp({
       )
         .then(applyTradePayload)
         .then(() => {
-          pushNotice("Offer deleted", "The open seller offer was removed.", "warning");
+          pushNotice(
+            isDraftOffer ? "Offer deleted" : "Trade deleted",
+            isDraftOffer
+              ? "The open seller offer was removed."
+              : "The closed trade was removed from your workspace.",
+            "warning",
+          );
         })
         .catch((error) => {
           setFormError(
-            error instanceof Error ? error.message : "Could not delete offer.",
+            error instanceof Error
+              ? error.message
+              : isDraftOffer
+                ? "Could not delete offer."
+                : "Could not delete trade.",
           );
         });
       return;
     }
 
-    updateTrade(trade.id, "Cancelled");
-    appendEvent(
-      trade.id,
-      "Offer deleted",
-      "Seller removed the open offer before selecting a buyer.",
-    );
-    pushNotice("Offer deleted", "The open seller offer was removed.", "warning");
+    if (isDraftOffer) {
+      updateTrade(trade.id, "Cancelled");
+      appendEvent(
+        trade.id,
+        "Offer deleted",
+        "Seller removed the open offer before selecting a buyer.",
+      );
+      pushNotice("Offer deleted", "The open seller offer was removed.", "warning");
+      return;
+    }
+
+    setTrades((current) => current.filter((item) => item.id !== trade.id));
+    setInterests((current) => current.filter((item) => item.tradeId !== trade.id));
+    setEvents((current) => current.filter((item) => item.tradeId !== trade.id));
+    setLedgerTrades((current) => current.filter((item) => item.id !== trade.id));
+    setLedgerEvents((current) => current.filter((item) => item.tradeId !== trade.id));
+    setChatRooms((current) => current.filter((room) => room.tradeId !== trade.id));
+    setChatMessages((current) => current.filter((message) => message.tradeId !== trade.id));
+    setSelectedTradeId((current) => (current === trade.id ? "" : current));
+    setExpandedTradeId((current) => (current === trade.id ? "" : current));
+    pushNotice("Trade deleted", "The closed trade was removed from your workspace.", "warning");
   }
 
   function fundTrade(trade: Trade) {
@@ -3249,81 +3748,6 @@ export function PiScrowApp({
     }
   }
 
-  function submitDelivery(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setFormError("");
-
-    if (!selectedTrade) {
-      return;
-    }
-
-    const form = event.currentTarget;
-    const formData = new FormData(form);
-    const parsed = deliveryProofSchema.safeParse({
-      tradeId: selectedTrade.id,
-      deliveryProofNote: formData.get("deliveryProofNote"),
-      deliveryProofUrl: formData.get("deliveryProofUrl"),
-      deliveryProofImagePath: "",
-    });
-
-    if (!parsed.success) {
-      setFormError(parsed.error.issues[0]?.message ?? "Delivery proof failed.");
-      return;
-    }
-
-    if (piConnected && piAccessToken) {
-      void (async () => {
-        try {
-          showBlockingAction(
-            "Submitting seller proof",
-            "PiScrow is uploading seller proof and notifying the buyer.",
-          );
-          await optimizeImageInFormData(formData, "deliveryProofImage");
-          const payload = await apiRequest<TradePayload>(
-            `/api/trades/${selectedTrade.id}/delivery`,
-            piAccessToken,
-            {
-              method: "POST",
-              body: formData,
-            },
-          );
-          applyTradePayload(payload);
-          form.reset();
-          pushNotice(
-            "Package proof submitted",
-            "The buyer can now review and confirm receipt.",
-            "success",
-          );
-        } catch (error) {
-          setFormError(
-            error instanceof Error ? error.message : "Could not submit proof.",
-          );
-        } finally {
-          hideBlockingAction();
-        }
-      })();
-      return;
-    }
-
-    updateTrade(selectedTrade.id, "DeliverySubmitted", {
-      deliveryProofNote: parsed.data.deliveryProofNote,
-      deliveryProofUrl: parsed.data.deliveryProofUrl || undefined,
-      payment: {
-        ...ensureDemoPaymentSummary(selectedTrade),
-        escrowStatus: "held_in_app",
-        releaseStatus: "NotStarted",
-        updatedAt: new Date().toISOString(),
-      },
-    });
-    appendEvent(selectedTrade.id, "Delivery submitted", parsed.data.deliveryProofNote);
-    pushNotice(
-      "Package proof submitted",
-      "The buyer can now review and confirm receipt.",
-      "success",
-    );
-    form.reset();
-  }
-
   function confirmReceipt(trade: Trade, event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setFormError("");
@@ -3504,63 +3928,78 @@ export function PiScrowApp({
     form.reset();
   }
 
-  function submitDisputeUpdate(
-    trade: Trade,
-    event: FormEvent<HTMLFormElement>,
-  ) {
-    event.preventDefault();
-    setFormError("");
+  function requestSellerRelease(trade: Trade, note: string) {
+    const trimmedNote = note.trim();
 
-    const form = event.currentTarget;
-    const formData = new FormData(form);
-    const parsed = disputeFollowUpSchema.safeParse({
-      tradeId: trade.id,
-      followUpNote: formData.get("followUpNote"),
-    });
-
-    if (!parsed.success) {
-      setFormError(parsed.error.issues[0]?.message ?? "Dispute update failed.");
+    if (trimmedNote.length < 8) {
+      setFormError("Add a short seller release note before requesting payout.");
       return;
     }
 
+    askConfirmation({
+      title: "Request seller payout release?",
+      body: "This moves the trade to admin release review so PiScrow can verify the proof before payout.",
+      confirmLabel: "Request release",
+      onConfirm: () => requestSellerReleaseConfirmed(trade, trimmedNote),
+    });
+  }
+
+  function requestSellerReleaseConfirmed(trade: Trade, sellerReleaseNote: string) {
     if (piConnected && piAccessToken) {
-      void apiRequest<TradePayload>(
-        `/api/trades/${trade.id}/dispute-update`,
-        piAccessToken,
-        {
-          method: "POST",
-          body: JSON.stringify(parsed.data),
-        },
-      )
-        .then(applyTradePayload)
-        .then(() => {
-          form.reset();
+      void (async () => {
+        try {
+          showBlockingAction(
+            "Requesting payout release",
+            "PiScrow is sending this trade to admin release review.",
+          );
+          const payload = await apiRequest<TradePayload>(
+            `/api/trades/${trade.id}/request-release`,
+            piAccessToken,
+            {
+              method: "POST",
+              body: JSON.stringify({
+                tradeId: trade.id,
+                sellerReleaseNote,
+              }),
+            },
+          );
+          applyTradePayload(payload);
           pushNotice(
-            "Dispute update sent",
-            "Your response was added to the trade timeline.",
+            "Release requested",
+            "The trade is now waiting for admin release review.",
             "success",
           );
-        })
-        .catch((error) => {
+        } catch (error) {
           setFormError(
-            error instanceof Error ? error.message : "Could not add dispute update.",
+            error instanceof Error ? error.message : "Could not request payout release.",
           );
-        });
+        } finally {
+          hideBlockingAction();
+        }
+      })();
       return;
     }
 
+    updateTrade(trade.id, "AwaitingRelease", {
+      payment: {
+        ...ensureDemoPaymentSummary(trade),
+        escrowStatus: "held_in_app",
+        releaseType: "seller_release",
+        releaseStatus: "NotStarted",
+        releaseRequestedAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+    });
     appendEvent(
       trade.id,
-      "Dispute update",
-      parsed.data.followUpNote,
-      user?.username ?? "demo_actor",
+      "Seller requested release",
+      `${sellerReleaseNote} Admin review is now required before seller payout.`,
     );
     pushNotice(
-      "Dispute update sent",
-      "Your response was added to the trade timeline.",
+      "Release requested",
+      "The trade is now waiting for admin release review.",
       "success",
     );
-    form.reset();
   }
 
   function chatSenderRoleFor(trade: Trade): TradeChatMessage["senderRole"] {
@@ -3575,37 +4014,75 @@ export function PiScrowApp({
     return "admin";
   }
 
-  async function openTradeChat(trade: Trade) {
-    setFormError("");
-    setActiveChatTrade(trade);
+  function syncDemoTradeFromChat(
+    trade: Trade,
+    senderRole: TradeChatMessage["senderRole"],
+    body: string,
+    attachmentUrl?: string,
+  ) {
+    if (!attachmentUrl || (senderRole !== "seller" && senderRole !== "buyer")) {
+      return;
+    }
 
-    if (allowDemo) {
-      upsertDemoChatRoom(
-        trade,
-        trade.status === "Disputed" ? "disputed" : "active",
+    if (senderRole === "seller" && trade.status === "Funded") {
+      updateTrade(trade.id, "DeliverySubmitted", {
+        deliveryProofNote: trade.deliveryProofNote || body || "Seller proof uploaded in trade chat.",
+        deliveryProofUrl: trade.deliveryProofUrl || attachmentUrl,
+        payment: {
+          ...ensureDemoPaymentSummary(trade),
+          escrowStatus: "held_in_app",
+          releaseStatus: "NotStarted",
+          updatedAt: new Date().toISOString(),
+        },
+      });
+      appendEvent(
+        trade.id,
+        "Delivery submitted",
+        body || "Seller proof uploaded in trade chat.",
       );
       return;
     }
 
-    if (!piAccessToken) {
-      setFormError("Connect your Pi account before opening trade chat.");
-      return;
-    }
-
-    setChatLoadingTradeId(trade.id);
-
-    try {
-      const payload = await apiRequest<ChatPayload>(
-        `/api/trades/${trade.id}/chat`,
-        piAccessToken,
+    if (senderRole === "buyer" && trade.status === "DeliverySubmitted") {
+      updateTrade(trade.id, "AwaitingRelease", {
+        buyerReceiptNote: trade.buyerReceiptNote || body || "Buyer receipt proof uploaded in trade chat.",
+        buyerReceiptProofUrl: trade.buyerReceiptProofUrl || attachmentUrl,
+        payment: {
+          ...ensureDemoPaymentSummary(trade),
+          escrowStatus: "held_in_app",
+          releaseStatus: "NotStarted",
+          updatedAt: new Date().toISOString(),
+        },
+      });
+      appendEvent(
+        trade.id,
+        "Receipt confirmed",
+        `${
+          body || "Buyer receipt proof uploaded in trade chat."
+        } Seller payout is waiting for admin release.`,
       );
-      applyChatPayload(payload);
-    } catch (error) {
-      setFormError(error instanceof Error ? error.message : "Could not open chat.");
-    } finally {
-      setChatLoadingTradeId("");
     }
   }
+
+  const openTradeChat = useCallback(async (trade: Trade) => {
+    if (
+      ![
+        "Funded",
+        "DeliverySubmitted",
+        "AwaitingRelease",
+        "Disputed",
+        "Completed",
+        "Cancelled",
+      ].includes(trade.status)
+    ) {
+      const message = "Trade chat opens after buyer funding is verified.";
+      setFormError(message);
+      pushNotice("Chat unavailable", message, "warning");
+      return;
+    }
+
+    await refreshTradeChat(trade, { keepOpen: true });
+  }, [pushNotice, refreshTradeChat]);
 
   async function sendTradeChatMessage(
     trade: Trade,
@@ -3642,18 +4119,20 @@ export function PiScrowApp({
 
     if (allowDemo) {
       const attachmentUrl = attachment ? URL.createObjectURL(attachment) : undefined;
+      const senderRole = chatSenderRoleFor(trade);
       appendDemoChatMessage(
         trade,
         {
           senderUserId: user.uid,
           senderPiUsername: normalizedUsername,
-          senderRole: chatSenderRoleFor(trade),
+          senderRole,
           messageType: attachmentUrl ? "proof" : "text",
           body: parsed.data.body ?? "",
           attachmentUrl,
         },
         trade.status === "Disputed" ? "disputed" : "active",
       );
+      syncDemoTradeFromChat(trade, senderRole, parsed.data.body ?? "", attachmentUrl);
       form.reset();
       setChatSending(false);
       pushNotice("Message sent", "The trade chat was updated.", "success");
@@ -3696,7 +4175,10 @@ export function PiScrowApp({
     }
 
     if (allowDemo) {
-      const room = upsertDemoChatRoom(trade, "disputed");
+      const room = upsertDemoChatRoom(
+        trade,
+        trade.status === "Disputed" ? "disputed" : "active",
+      );
       const now = new Date().toISOString();
       setChatRooms((current) =>
         current.map((item) =>
@@ -3720,11 +4202,20 @@ export function PiScrowApp({
           senderPiUsername: "system",
           senderRole: "system",
           messageType: "system",
-          body: `Admin @${normalizedUsername} joined this dispute room.`,
+          body:
+            trade.status === "AwaitingRelease"
+              ? `Admin @${normalizedUsername} joined this release review room.`
+              : `Admin @${normalizedUsername} joined this dispute room.`,
           createdAt: now,
         },
       ]);
-      pushNotice("Dispute room joined", "You can now message this dispute room.", "success");
+      pushNotice(
+        trade.status === "AwaitingRelease" ? "Review room joined" : "Dispute room joined",
+        trade.status === "AwaitingRelease"
+          ? "You can now message this release review room."
+          : "You can now message this dispute room.",
+        "success",
+      );
       return;
     }
 
@@ -3750,76 +4241,6 @@ export function PiScrowApp({
     } finally {
       setChatLoadingTradeId("");
     }
-  }
-
-  function adminRequestFollowUp(
-    trade: Trade,
-    action: AdminFollowUpAction,
-    event: FormEvent<HTMLFormElement>,
-  ) {
-    event.preventDefault();
-    setFormError("");
-
-    const form = event.currentTarget;
-    const formData = new FormData(form);
-    const note = String(formData.get("notes") ?? "").trim();
-    const targetRole = action === "request_buyer_followup" ? "buyer" : "seller";
-
-    if (note.length < 8) {
-      setFormError(`Add a short ${targetRole} follow-up request before sending.`);
-      return;
-    }
-
-    if (piConnected && piAccessToken) {
-      showBlockingAction(
-        "Sending follow-up request",
-        `PiScrow is notifying the ${targetRole} and recording the request for admin review.`,
-      );
-      void apiRequest<TradePayload>(
-        `/api/trades/${trade.id}/admin-resolve`,
-        piAccessToken,
-        {
-          method: "POST",
-          body: JSON.stringify({
-            action,
-            notes: note,
-          }),
-        },
-      )
-        .then(applyTradePayload)
-        .then(() => {
-          form.reset();
-          pushNotice(
-            "Follow-up requested",
-            `The ${targetRole} was notified and the request is on the ledger.`,
-            "info",
-          );
-        })
-        .catch((error) => {
-          setFormError(
-            error instanceof Error ? error.message : "Could not request follow-up.",
-          );
-        })
-        .finally(() => {
-          hideBlockingAction();
-        });
-      return;
-    }
-
-    appendEvent(
-      trade.id,
-      action === "request_buyer_followup"
-        ? "Admin requested buyer follow-up"
-        : "Admin requested seller follow-up",
-      note,
-      user?.username ?? "admin",
-    );
-    pushNotice(
-      "Follow-up requested",
-      `The ${targetRole} request is on the demo timeline.`,
-      "info",
-    );
-    form.reset();
   }
 
   function adminResolve(trade: Trade, status: "Completed" | "Cancelled") {
@@ -3945,7 +4366,8 @@ export function PiScrowApp({
           authState={authState}
           copy={copy}
           notificationsOpen={notificationsOpen}
-          refreshDisabled={ledgerLoading || connectingPi}
+          refreshing={appRefreshing}
+          refreshDisabled={appRefreshing || ledgerLoading || connectingPi}
           signedIn={signedIn}
           unreadCount={unreadNoticeCount}
           username={normalizedUsername}
@@ -3976,6 +4398,7 @@ export function PiScrowApp({
                 canConnect={canConnectPi}
                 connecting={connectingPi}
                 copy={copy}
+                profile={profileStats}
                 user={user}
                 onConnect={connectPi}
               />
@@ -4006,20 +4429,20 @@ export function PiScrowApp({
                   chatLoadingTradeId={chatLoadingTradeId}
                   chatMessages={chatMessages}
                   chatRooms={chatRooms}
+                  language={language}
                   trades={buyerTrades}
                   interests={interests}
-                  events={events}
                   currentUserId={user?.id ?? user?.uid}
                   currentUsername={normalizedUsername}
                   activeValue={activeValue}
                   paymentState={paymentState}
                   onConfirm={confirmReceipt}
+                  onDeleteTrade={deleteOffer}
                   onDeclinePrivate={declinePrivateOffer}
                   onFund={fundTrade}
                   onOpenChat={openTradeChat}
                   onOpenDispute={openDispute}
                   onSubmitInterest={submitInterest}
-                  onSubmitDisputeUpdate={submitDisputeUpdate}
                 />
               )}
 
@@ -4028,6 +4451,7 @@ export function PiScrowApp({
                   {sellerComposerOpen ? (
                     <SellerPostPanel
                       key={sellerFormResetKey}
+                      profile={profileStats}
                       username={normalizedUsername}
                       onCancel={() => setSellerComposerOpen(false)}
                       onCreateTrade={createTrade}
@@ -4037,9 +4461,9 @@ export function PiScrowApp({
                       chatLoadingTradeId={chatLoadingTradeId}
                       chatMessages={chatMessages}
                       chatRooms={chatRooms}
+                      language={language}
                       trades={sellerTrades}
                       interests={interests}
-                      events={events}
                       currentUserId={user?.id ?? user?.uid}
                       currentUsername={normalizedUsername}
                       onNewListing={() => {
@@ -4054,9 +4478,8 @@ export function PiScrowApp({
                       onSelectInterest={selectInterest}
                       onDeleteOffer={deleteOffer}
                       onOpenChat={openTradeChat}
-                      onSubmitDelivery={submitDelivery}
+                      onRequestRelease={requestSellerRelease}
                       onOpenDispute={openDispute}
-                      onSubmitDisputeUpdate={submitDisputeUpdate}
                     />
                   )}
                 </section>
@@ -4064,6 +4487,7 @@ export function PiScrowApp({
 
               {activeMode === "ledger" && (
                 <PublicLedger
+                  language={language}
                   trades={ledgerTrades}
                   events={ledgerEvents}
                   currentUsername={normalizedUsername}
@@ -4080,6 +4504,7 @@ export function PiScrowApp({
                   <ProfileDesk
                     feedbackSending={feedbackSending}
                     feedbackStatus={feedbackStatus}
+                    language={language}
                     loading={profileLoading}
                     payoutReadyLoading={payoutReadyLoading}
                     profile={profileStats}
@@ -4112,6 +4537,7 @@ export function PiScrowApp({
                   chatMessages={chatMessages}
                   chatRooms={chatRooms}
                   currentUserId={user?.id ?? user?.uid}
+                  language={language}
                   trades={adminTrades}
                   events={events}
                   reviewLoadingTradeId={reviewLoadingTradeId}
@@ -4122,7 +4548,6 @@ export function PiScrowApp({
                   onClaimChat={claimTradeChat}
                   onOpenChat={openTradeChat}
                   onRefreshVerifications={() => void refreshVerificationRequests()}
-                  onRequestFollowUp={adminRequestFollowUp}
                   onRunReview={runReviewRecommendation}
                   onResolve={adminResolve}
                 />
@@ -4152,6 +4577,7 @@ export function PiScrowApp({
 
         {signedIn && (
           <BottomTabBar
+            copy={copy}
             mode={activeMode}
             navItems={navItems}
             onModeChange={changeMode}
@@ -4347,6 +4773,7 @@ function SessionCard({
   canConnect,
   connecting,
   copy,
+  profile,
   user,
   onConnect,
 }: {
@@ -4354,6 +4781,7 @@ function SessionCard({
   canConnect: boolean;
   connecting: boolean;
   copy: AppCopy;
+  profile?: UserReputation | null;
   user: SessionUser | null;
   onConnect: () => void;
 }) {
@@ -4364,9 +4792,17 @@ function SessionCard({
           <p className="lbl">
             {copy.session}
           </p>
-          <p className="mt-1 text-base font-bold text-white">
-            {user ? `@${user.username}` : copy.notConnected}
-          </p>
+          <div className="mt-1 text-base font-bold text-white">
+            {user ? (
+              <VerifiedUsername
+                className="text-white"
+                profile={profile ?? undefined}
+                username={user.username}
+              />
+            ) : (
+              copy.notConnected
+            )}
+          </div>
         </div>
         <button
           className="btn-gh shrink-0 border-[rgba(245,166,35,0.22)] bg-[rgba(245,166,35,0.12)] text-[var(--gold)]"
@@ -4635,6 +5071,7 @@ function AppTopBar({
   authState,
   copy,
   notificationsOpen,
+  refreshing,
   refreshDisabled,
   signedIn,
   unreadCount,
@@ -4646,6 +5083,7 @@ function AppTopBar({
   authState: string;
   copy: AppCopy;
   notificationsOpen: boolean;
+  refreshing: boolean;
   refreshDisabled: boolean;
   signedIn: boolean;
   unreadCount: number;
@@ -4678,7 +5116,7 @@ function AppTopBar({
         type="button"
         onClick={onRefresh}
       >
-        <RefreshCcw className="h-4 w-4" />
+        <RefreshCcw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
       </button>
       <button
         aria-expanded={notificationsOpen}
@@ -4688,7 +5126,9 @@ function AppTopBar({
         onClick={onToggleNotifications}
       >
         <Bell className="h-4 w-4" />
-        {unreadCount > 0 && <span className="hd-dot" />}
+        {unreadCount > 0 && (
+          <span className="hd-count">{unreadCount > 99 ? "99+" : unreadCount}</span>
+        )}
       </button>
     </header>
   );
@@ -4754,10 +5194,12 @@ function NotificationDrawer({
 }
 
 function BottomTabBar({
+  copy,
   mode,
   navItems,
   onModeChange,
 }: {
+  copy: AppCopy;
   mode: ViewMode;
   navItems: ViewMode[];
   onModeChange: (mode: ViewMode) => void;
@@ -4771,14 +5213,14 @@ function BottomTabBar({
         return (
           <button
             key={item}
-            aria-label={viewTabLabels[item]}
+            aria-label={copy.views[item].label}
             aria-pressed={selected}
             className={`nb${selected ? " on" : ""}`}
             type="button"
             onClick={() => onModeChange(item)}
           >
             <Icon className="h-4 w-4" />
-            <span className="nb-l">{viewTabLabels[item]}</span>
+            <span className="nb-l">{copy.views[item].label}</span>
           </button>
         );
       })}

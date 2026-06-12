@@ -3,7 +3,6 @@ import { z } from "zod";
 import { jsonError, requireAppUser } from "@/server/auth";
 import {
   executeEscrowRelease,
-  hasAutomaticPiReleaseConfig,
   markEscrowReleaseFailed,
 } from "@/server/escrow-release";
 import { createNotification } from "@/server/notifications";
@@ -102,12 +101,6 @@ export async function POST(
         : "Admin refunded the buyer after reviewing the dispute and party evidence.");
     const releaseType: EscrowReleaseType =
       parsed.data.status === "Completed" ? "seller_release" : "buyer_refund";
-
-    if (!hasAutomaticPiReleaseConfig()) {
-      throw new Error(
-        "Automatic Test Pi release is not configured. Add PI_WALLET_PRIVATE_SEED on the server before resolving escrow funds.",
-      );
-    }
 
     let releaseResult: Awaited<ReturnType<typeof executeEscrowRelease>>;
 

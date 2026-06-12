@@ -34,41 +34,42 @@ def main() -> None:
 
         desktop.goto(f"{BASE_URL}/rules", wait_until="domcontentloaded")
         desktop.wait_for_load_state("networkidle")
-        expect(desktop.get_by_role("heading", name="Rules, Privacy, And User Agreement")).to_be_visible()
+        expect(desktop.get_by_role("heading", name="PiScrow User Agreement")).to_be_visible()
+        expect(desktop.get_by_text("Rules, Privacy, And Consent")).to_be_visible()
         expect(desktop.get_by_text("Testnet Disclaimer")).to_be_visible()
         expect(desktop.get_by_text("Feedback And Support")).to_be_visible()
 
         desktop.goto(DEMO_URL, wait_until="domcontentloaded")
         desktop.wait_for_load_state("networkidle")
-        expect(desktop.get_by_role("button", name="Explore", exact=True)).to_be_visible()
+        expect(desktop.get_by_role("button", name="Buyer", exact=True)).to_be_visible()
         expect(desktop.get_by_text("Used Android phone barter").first).to_be_visible()
         desktop.screenshot(
             path=str(ARTIFACT_DIR / "02-marketplace.png"),
             full_page=True,
         )
 
-        desktop.get_by_role("button", name="Sell", exact=True).click()
+        desktop.get_by_role("button", name="Seller", exact=True).click()
         expect(desktop.get_by_text("My Listings")).to_be_visible()
         desktop.get_by_text("Funded camera lens handoff").first.click()
-        expect(desktop.get_by_text("Package Sent Proof")).to_be_visible()
+        expect(desktop.get_by_text("Buyer Responses")).to_be_visible()
         desktop.screenshot(
             path=str(ARTIFACT_DIR / "03-seller-desk.png"),
             full_page=True,
         )
         desktop.get_by_role("button", name="Close", exact=True).click()
 
-        desktop.get_by_role("button", name="Explore", exact=True).click()
+        desktop.get_by_role("button", name="Ledger", exact=True).click()
         desktop.get_by_role("button", name="Activity").click()
         expect(desktop.get_by_role("heading", name="Live Activity")).to_be_visible()
         desktop.screenshot(
             path=str(ARTIFACT_DIR / "04-public-ledger.png"),
             full_page=True,
         )
-        desktop.get_by_role("button", name="Ledger").click()
+        desktop.get_by_role("button", name="Ledger", exact=True).click()
 
         desktop.get_by_role("button", name="Profile", exact=True).click()
         expect(desktop.get_by_text("Payout Readiness")).to_be_visible()
-        expect(desktop.get_by_text("In-app Notifications")).to_be_visible()
+        expect(desktop.get_by_text("Telegram Alerts")).to_be_visible()
         desktop.screenshot(
             path=str(ARTIFACT_DIR / "05-profile.png"),
             full_page=True,
@@ -87,7 +88,7 @@ def main() -> None:
         mobile = browser.new_page(viewport={"width": 390, "height": 900})
         mobile.goto(DEMO_URL, wait_until="domcontentloaded")
         mobile.wait_for_load_state("networkidle")
-        expect(mobile.get_by_role("button", name="Explore", exact=True)).to_be_visible()
+        expect(mobile.get_by_role("button", name="Buyer", exact=True)).to_be_visible()
         mobile.get_by_role("button", name="Activity").click()
         expect(mobile.get_by_role("heading", name="Live Activity")).to_be_visible()
         mobile.screenshot(
