@@ -5,84 +5,84 @@ import { ArrowLeft, ShieldCheck } from "lucide-react";
 export const metadata: Metadata = {
   title: "PiScrow Rules, Privacy, And Consent",
   description:
-    "PiScrow testnet rules, privacy notice, consent terms, and user agreement.",
+    "Rules, privacy notice, consent terms, and user agreement for PiScrow Testnet.",
 };
 
 const sections = [
   {
     title: "Testnet Disclaimer",
     body: [
-      "PiScrow is built for Pi Testnet and Pi Sandbox testing. It is not a Mainnet Pi escrow service and does not custody Mainnet Pi.",
-      "Testnet payments, balances, listings, disputes, and platform fees are for product validation, hackathon review, and beta testing only.",
+      "PiScrow runs on Pi Testnet and Pi Sandbox. It is not a Mainnet escrow service and it does not hold Mainnet Pi.",
+      "Testnet payments, balances, listings, disputes, and fees exist for product validation, hackathon review, and beta testing only.",
     ],
   },
   {
     title: "Account And Login Consent",
     body: [
-      "To use seller, buyer, funding, proof upload, notification, and dispute features, users must connect through Pi Browser and agree to these rules.",
-      "PiScrow may store the Pi username, Pi UID, app session state, role activity, and admin status needed to operate the app.",
-      "Rejecting the agreement blocks Pi login and private app actions until the user accepts the rules and consent terms.",
+      "To use seller, buyer, funding, proof upload, notification, and dispute features, you must sign in through Pi Browser and accept these rules.",
+      "PiScrow may store the Pi username, Pi UID, app session state, role activity, and admin status needed to run the app.",
+      "If you reject the agreement, PiScrow blocks Pi login and private app actions until you accept the rules and consent terms.",
     ],
   },
   {
     title: "Trade Rules",
     body: [
-      "Sellers create public offers or private offers targeted to one Pi username. Buyers can show interest only in eligible offers.",
-      "A seller cannot participate as a buyer in the same offer they created.",
-      "The seller reviews buyer responses and selects the buyer they want to trade with. The selected buyer is expected to fund the testnet payment before delivery continues.",
-      "Trade locations, pickup zones, delivery terms, and confirmation rules should be clear enough for both parties and admins to understand the agreement.",
+      "Sellers can create public offers or private offers aimed at one Pi username. Buyers can show interest only in offers they are allowed to join.",
+      "A seller cannot join their own offer as a buyer.",
+      "The seller reviews buyer responses and picks one buyer. That buyer must fund the testnet payment before delivery moves forward.",
+      "Trade locations, pickup zones, delivery terms, and confirmation rules should be clear enough for both parties and admins to understand the deal.",
     ],
   },
   {
     title: "Proof Upload Consent",
     body: [
-      "Users may upload package, delivery, receipt, or dispute proof images. Uploaded proof may be reviewed by the seller, selected buyer, and approved PiScrow admins.",
-      "Users should not upload private documents, payment secrets, wallet seed phrases, identity documents, or images unrelated to the trade.",
-      "Proof images are stored for trade review and dispute resolution. Access may be limited, but users should treat uploaded trade evidence as visible to the parties involved in that trade.",
+      "You may upload package, delivery, receipt, or dispute proof images. The seller, selected buyer, and approved PiScrow admins may review that proof.",
+      "Do not upload private documents, payment secrets, wallet seed phrases, identity documents, or images that do not belong to the trade.",
+      "PiScrow stores proof images for trade review and dispute resolution. Access may be limited, but you should treat trade evidence as visible to the people involved in that trade.",
     ],
   },
   {
     title: "Public Activity And Transparency",
     body: [
-      "PiScrow may display public trade activity, public listing details, trade states, dispute states, and completion activity so the marketplace remains transparent.",
-      "Private offer targeting and protected proof links are not intended for the public activity feed, but trade activity may still appear in a redacted form.",
+      "PiScrow may show public trade activity, public listing details, trade states, dispute states, and completion activity so the marketplace stays transparent.",
+      "Private offer targeting and protected proof links should not appear in the public activity feed, but trade activity may still appear in redacted form.",
     ],
   },
   {
     title: "Platform Fees",
     body: [
-      "PiScrow can calculate and display the fee for an individual testnet transaction before funding.",
-      "Platform fee totals are internal operating information and do not need to be shown publicly inside the app.",
+      "PiScrow can calculate and show the fee for a testnet transaction before funding.",
+      "Platform fee totals are internal operating data and do not need to appear publicly inside the app.",
     ],
   },
   {
     title: "Notifications",
     body: [
       "PiScrow may show in-app notifications for login, private requests, buyer interest, seller selection, payment status, proof uploads, disputes, admin actions, and completed trades.",
-      "Future realtime and Telegram notifications may use the same trade and account data to keep users informed about their own activity.",
+      "Realtime and Telegram notifications may use the same trade and account data to keep you informed about your own activity.",
     ],
   },
   {
     title: "Feedback And Support",
     body: [
-      "Users may submit feedback, suggestions, issues, and optional contact email through the PiScrow feedback form.",
-      "Feedback is stored for developer review and may be forwarded to a configured automation webhook or notification channel so the developer can receive and respond to reports.",
-      "Users should not include wallet seed phrases, private keys, payment secrets, identity documents, or unrelated personal information in feedback messages.",
+      "You may submit feedback, suggestions, issues, and an optional contact email through the PiScrow feedback form.",
+      "PiScrow stores feedback for developer review and may forward it to a configured webhook or notification channel so the developer can respond.",
+      "Do not include wallet seed phrases, private keys, payment secrets, identity documents, or unrelated personal information in feedback messages.",
     ],
   },
   {
     title: "Admin Review And Disputes",
     body: [
       "Approved PiScrow admins can review disputed trades, proof uploads, event logs, and party activity before marking a trade completed or cancelled.",
-      "Admin review is designed to support fair testnet marketplace testing. It is not legal arbitration or a regulated escrow service.",
+      "Admin review supports fair testnet marketplace testing. It is not legal arbitration or a regulated escrow service.",
     ],
   },
   {
     title: "Privacy And Data Use",
     body: [
-      "PiScrow collects only app data needed to authenticate Pi users, operate listings, handle interests, process testnet payment flows, store proof, show notifications, maintain activity logs, receive feedback, and support admin review.",
-      "PiScrow should not request wallet seed phrases, Mainnet wallet credentials, private keys, or unnecessary personal identity documents.",
-      "Users can request support or deletion review through coodeflowx1@gmail.com or the developer Pi username @villari002.",
+      "PiScrow collects only the app data needed to authenticate Pi users, run listings, handle interests, process testnet payments, store proof, show notifications, keep activity logs, receive feedback, and support admin review.",
+      "PiScrow should not ask for wallet seed phrases, Mainnet wallet credentials, private keys, or unnecessary identity documents.",
+      "You can request support or deletion review through coodeflowx1@gmail.com or the developer Pi username @villari002.",
     ],
   },
 ];
@@ -112,9 +112,9 @@ export default function RulesPage() {
                 PiScrow User Agreement
               </h1>
               <p className="mt-4 max-w-3xl text-sm leading-7 text-slate-300">
-                Last updated June 10, 2026. This page is the official rules,
-                privacy, and acknowledgement reference for PiScrow Testnet and
-                Sandbox users.
+                Last updated June 10, 2026. This page is the main rules,
+                privacy, and consent reference for PiScrow Testnet and Sandbox
+                users.
               </p>
             </div>
           </div>
@@ -125,11 +125,11 @@ export default function RulesPage() {
             Consent Summary
           </p>
           <p className="mt-3 text-sm leading-7 text-amber-50/90">
-            By clicking agree in PiScrow, you confirm that you understand this
+            If you click agree in PiScrow, you confirm that you understand this
             is a Pi Testnet and Sandbox app, you consent to the app storing the
-            data needed to run trades and notifications, and you agree that
-            uploaded trade proof may be reviewed by the relevant trade parties
-            and approved admins.
+            data needed to run trades and notifications, and you accept that
+            the relevant trade parties and approved admins may review uploaded
+            trade proof.
           </p>
         </section>
 

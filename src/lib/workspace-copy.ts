@@ -143,13 +143,13 @@ const en: WorkspaceCopy = {
     myInterests: "My Interests",
     activeEscrows: "Active Escrows",
     noBuyerInterests:
-      "No buyer interests or private requests yet. Open an Explore listing to submit one.",
+      "No interests yet. Open a listing from Explore and send one.",
     noEscrows: "No funded or selected escrows yet.",
   },
   sellerDesk: {
     myListings: "My Listings",
     newListing: "New Listing",
-    noSellerOffers: "No seller offers yet. Create a listing to begin.",
+    noSellerOffers: "No listings yet. Create one to start trading.",
   },
   publicLedger: {
     liveActivity: "Live Activity",
@@ -216,16 +216,16 @@ const en: WorkspaceCopy = {
     chat: "Chat",
     reviewProof: "Review proof",
     inProgress: "In progress",
-    chatAfterFunding: "Trade chat opens after buyer funding is verified.",
+    chatAfterFunding: "Trade chat opens after buyer funding clears.",
     escrowTotal: "escrow total",
     fund: (amount) => `Fund ${amount}`,
   },
   chat: {
     title: "Trade Chat",
     disputeActive:
-      "Dispute active. Keep all dispute replies, delivery proof, receipt proof, and admin decisions in this single room.",
+      "Dispute is open. Keep replies, proof, and admin decisions in this room.",
     tradeRoomInfo:
-      "Use this single trade room for delivery updates, proof, and buyer-seller coordination.",
+      "Use this room for delivery updates, proof, and buyer-seller coordination.",
     secureRoomReady: "Secure room is ready",
     secureRoomOnDemand: "Secure room will open on demand",
     messagesRecorded: (count) => `${count} messages recorded for this trade.`,
@@ -241,11 +241,11 @@ const en: WorkspaceCopy = {
     openSecureChat: "Open secure chat",
     joinRoom: "Join room",
     anotherAdminRelease:
-      "Another admin is handling this release review room. You can still review the trade timeline.",
+      "Another admin has this release review room. You can still read the timeline.",
     anotherAdminDispute:
-      "Another admin is handling this dispute room. You can still review the trade timeline.",
+      "Another admin has this dispute room. You can still read the timeline.",
     openFullScreenHelp:
-      "Open the full-screen chat to read the whole conversation, send proof, and reply.",
+      "Open the full-screen chat to read the full conversation, send proof, and reply.",
     readOnlyHelp: "This room becomes read-only after the trade is completed or cancelled.",
   },
   profile: {
@@ -274,8 +274,8 @@ const en: WorkspaceCopy = {
     approveBadge: "Approve badge",
   },
   review: {
-    title: "Review assistant",
-    body: "Confidence-scored recommendation for admin review. It never releases funds or resolves a trade automatically.",
+    title: "Review copilot",
+    body: "This recommendation helps admins review a trade. It cannot release funds or close a trade on its own.",
     review: "Review",
     confidence: (confidence) => `${confidence}% confidence`,
     missingEvidence: "Missing evidence",
@@ -291,13 +291,13 @@ const pcm: WorkspaceCopy = {
     myInterests: "My interests",
     activeEscrows: "Active escrows",
     noBuyerInterests:
-      "No buyer interest or private request yet. Open one Explore listing make you fit submit your own.",
+      "No interest yet. Open one listing for Explore make you send your own.",
     noEscrows: "No funded or selected escrow yet.",
   },
   sellerDesk: {
     myListings: "My listings",
     newListing: "New listing",
-    noSellerOffers: "No seller offer yet. Create one listing to start.",
+    noSellerOffers: "No listing yet. Create one make trade start.",
   },
   publicLedger: {
     liveActivity: "Live activity",
@@ -364,16 +364,16 @@ const pcm: WorkspaceCopy = {
     chat: "Chat",
     reviewProof: "Review proof",
     inProgress: "In progress",
-    chatAfterFunding: "Trade chat go open after buyer funding don verify.",
+    chatAfterFunding: "Trade chat go open after buyer funding clear.",
     escrowTotal: "escrow total",
     fund: (amount) => `Fund ${amount}`,
   },
   chat: {
     title: "Trade chat",
     disputeActive:
-      "Dispute don open. Keep all dispute reply, delivery proof, receipt proof, and admin decision inside this one room.",
+      "Dispute don open. Keep reply, proof, and admin decision inside this room.",
     tradeRoomInfo:
-      "Use this one trade room for delivery update, proof, and buyer-seller coordination.",
+      "Use this room for delivery update, proof, and buyer-seller coordination.",
     secureRoomReady: "Secure room don ready",
     secureRoomOnDemand: "Secure room go open when you need am",
     messagesRecorded: (count) => `${count} message don record for this trade.`,
@@ -389,11 +389,11 @@ const pcm: WorkspaceCopy = {
     openSecureChat: "Open secure chat",
     joinRoom: "Join room",
     anotherAdminRelease:
-      "Another admin dey handle this release review room. You still fit review the trade timeline.",
+      "Another admin don take this release review room. You still fit read the timeline.",
     anotherAdminDispute:
-      "Another admin dey handle this dispute room. You still fit review the trade timeline.",
+      "Another admin don take this dispute room. You still fit read the timeline.",
     openFullScreenHelp:
-      "Open the full-screen chat make you read the full conversation, send proof, and reply.",
+      "Open full-screen chat make you read full conversation, send proof, and reply.",
     readOnlyHelp: "This room go turn read-only after the trade complete or cancel.",
   },
   profile: {
@@ -422,8 +422,8 @@ const pcm: WorkspaceCopy = {
     approveBadge: "Approve badge",
   },
   review: {
-    title: "Review assistant",
-    body: "Confidence-scored recommendation for admin review. E no fit release funds or resolve trade by itself.",
+    title: "Review copilot",
+    body: "This recommendation help admin review trade. E no fit release funds or close trade by itself.",
     review: "Review",
     confidence: (confidence) => `${confidence}% confidence`,
     missingEvidence: "Missing evidence",

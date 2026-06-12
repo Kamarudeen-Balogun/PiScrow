@@ -78,7 +78,7 @@ def main() -> None:
         desktop.get_by_role("button", name="Admin", exact=True).click()
         expect(desktop.get_by_text("Dispute Queue")).to_be_visible()
         desktop.get_by_role("button", name="Enter Dispute Room").first.click()
-        expect(desktop.get_by_text("Review assistant")).to_be_visible()
+        expect(desktop.get_by_text("Review copilot")).to_be_visible()
         desktop.screenshot(
             path=str(ARTIFACT_DIR / "06-admin-review.png"),
             full_page=True,

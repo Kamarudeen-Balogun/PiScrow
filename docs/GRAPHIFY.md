@@ -326,6 +326,23 @@ These would make the project easier to resume later:
 - `docs/notes/trade-chat-and-dispute-flow.md`
 - `docs/notes/telegram-linking.md`
 
+## Writing workflow for this project
+
+When you rewrite docs or user-facing copy in this repo:
+
+1. Use `stop-slop-main` to cut filler, canned contrast patterns, and vague AI-sounding phrasing.
+2. Use `humanizer-main` to make the final text sound direct and natural without changing meaning.
+3. If you want a role-based pass, use one of the installed Agency entries:
+   - `agency-technical-writer`
+   - `agency-product-manager`
+   - `agency-ui-designer`
+   - `agency-ux-researcher`
+   - `agency-code-reviewer`
+
+The full Agency pack is also installed as Codex custom agents in:
+
+- `C:\Users\HELLO\.codex\agents`
+
 ## Known repo behavior
 
 - `graphify-out/` is local generated output and can become large

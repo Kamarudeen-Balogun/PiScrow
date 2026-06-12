@@ -351,20 +351,20 @@ function recommendationSummary({
   riskFlags: string[];
 }) {
   if (recommendedAction === "release") {
-    return "Payment, seller proof, and buyer receipt are all present. Admin can consider the seller release path after final review.";
+    return "Payment, seller proof, and buyer receipt are all present. Admin can move to final seller release review.";
   }
 
   if (recommendedAction === "refund") {
-    return "Payment exists, but the dispute evidence points toward unresolved delivery proof risk. Admin can consider the buyer refund path after final review.";
+    return "Payment exists, but the dispute record still points to unresolved delivery proof risk. Admin can move to final buyer refund review.";
   }
 
   if (recommendedAction === "request_more_info") {
-    return `More evidence is needed before release or refund. Missing: ${
+    return `The record is not complete yet. Missing: ${
       missingEvidence.length ? missingEvidence.join(", ") : "clear party agreement"
     }. Risk flags: ${riskFlags.length ? riskFlags.join(", ") : "none"}.`;
   }
 
-  return `Admin review remains required. Payment verified: ${hasCompletedPayment ? "yes" : "no"}. Seller proof: ${
+  return `Admin review is still required. Payment verified: ${hasCompletedPayment ? "yes" : "no"}. Seller proof: ${
     hasSellerProof ? "yes" : "no"
   }. Buyer receipt: ${hasBuyerReceipt ? "yes" : "no"}. Dispute active: ${
     hasOpenDispute ? "yes" : "no"

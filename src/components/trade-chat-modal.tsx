@@ -218,8 +218,8 @@ export function TradeChatModal({
             {adminNeedsClaim && claimedByOther && (
               <div className="mb-4 rounded-2xl border border-amber-400/20 bg-amber-400/10 p-3 text-sm leading-6 text-amber-100">
                 {trade.status === "AwaitingRelease"
-                  ? "Another admin already claimed this release review room. You can review the conversation, but only that admin can reply here."
-                  : "Another admin already claimed this dispute room. You can review the conversation, but only that admin can reply here."}
+                  ? "Another admin has this release review room. You can read the conversation, but only that admin can reply here."
+                  : "Another admin has this dispute room. You can read the conversation, but only that admin can reply here."}
               </div>
             )}
 
@@ -227,7 +227,7 @@ export function TradeChatModal({
               <div className="grid min-h-[180px] place-items-center">
                 <div className="flex items-center gap-2 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm font-semibold text-slate-300">
                   <LoaderCircle className="h-4 w-4 animate-spin" />
-                  Opening secure chat...
+                  Opening chat...
                 </div>
               </div>
             )}
@@ -235,7 +235,7 @@ export function TradeChatModal({
             {!loading && messages.length === 0 && (
               <div className="grid min-h-[180px] place-items-center">
                 <div className="max-w-[260px] rounded-3xl border border-dashed border-white/10 bg-white/[0.03] px-5 py-4 text-center text-sm leading-6 text-slate-400">
-                  The secure trade room is ready. Use this single room for delivery updates, proofs, and dispute evidence.
+                  The trade room is ready. Use it for delivery updates, proof, and dispute evidence.
                 </div>
               </div>
             )}
@@ -347,8 +347,8 @@ export function TradeChatModal({
                 {trade.status === "Completed" || trade.status === "Cancelled"
                   ? "This trade chat is now read-only."
                   : trade.status === "AwaitingRelease"
-                    ? "Join the release review room before replying here."
-                    : "Join the dispute room before replying here."}
+                    ? "Join the release review room before you reply."
+                    : "Join the dispute room before you reply."}
               </div>
             ) : (
               <form className="grid gap-2" onSubmit={(event) => onSend(trade, event)}>
@@ -356,7 +356,7 @@ export function TradeChatModal({
                   className="ta min-h-[88px]"
                   maxLength={1000}
                   name="body"
-                  placeholder="Write a message, delivery update, or dispute note..."
+                  placeholder="Write a message, delivery update, or dispute note"
                 />
                 <label className="flex items-center justify-between gap-3 rounded-2xl border border-dashed border-white/12 bg-white/[0.03] px-3 py-3 text-sm text-slate-300">
                   <span className="inline-flex items-center gap-2 font-semibold">

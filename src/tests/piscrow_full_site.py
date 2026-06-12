@@ -245,7 +245,7 @@ def main() -> None:
         page.get_by_role("button", name="Enter Dispute Room").first.click()
         admin_sheet = page.get_by_role("dialog").last
         expect(admin_sheet.get_by_role("heading", name="Laptop repair deposit")).to_be_visible()
-        expect(admin_sheet.get_by_text("Review assistant")).to_be_visible()
+        expect(admin_sheet.get_by_text("Review copilot")).to_be_visible()
         expect(admin_sheet.get_by_text("Request buyer update", exact=True)).to_be_visible()
         expect(admin_sheet.get_by_text("Request seller update", exact=True)).to_be_visible()
         if admin_sheet.get_by_role("button", name="Join room").count() > 0:

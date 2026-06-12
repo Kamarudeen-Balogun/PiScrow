@@ -4409,7 +4409,7 @@ export function PiScrowApp({
         "Cancelled",
       ].includes(trade.status)
     ) {
-      const message = "Trade chat opens after buyer funding is verified.";
+      const message = "Trade chat opens after buyer funding clears.";
       setFormError(message);
       pushNotice("Chat unavailable", message, "warning");
       return;

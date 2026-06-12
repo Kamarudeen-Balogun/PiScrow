@@ -203,7 +203,7 @@ export function buildDemoReviewRecommendations(): TradeReviewRecommendation[] {
       recommendedAction: "request_more_info",
       confidence: 64,
       summary:
-        "More evidence is needed before release or refund. The buyer raised a serial-number mismatch and the seller proof needs clearer part photos.",
+        "The record is not complete yet. The buyer reported a serial-number mismatch, and the seller proof needs clearer part photos.",
       missingEvidence: [
         "clear seller delivery proof",
         "buyer receipt confirmation proof",
@@ -246,8 +246,8 @@ export function buildDemoReviewForTrade(
     confidence: recommendedAction === "release" ? 82 : 63,
     summary:
       recommendedAction === "release"
-        ? "Payment, seller proof, and buyer receipt are present. Admin can consider the seller release path after final review."
-        : `More evidence is needed before release or refund. Missing: ${
+        ? "Payment, seller proof, and buyer receipt are present. Admin can move to final release review."
+        : `The record is not complete yet. Missing: ${
             missingEvidence.length
               ? missingEvidence.join(", ")
               : "clear party agreement"

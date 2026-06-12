@@ -186,7 +186,7 @@ function assertCanSendTradeChat(
         trade.status,
       )
     ) {
-      throw new Error("Trade chat opens after buyer funding is verified.");
+      throw new Error("Trade chat opens after buyer funding clears.");
     }
 
     return role;
@@ -443,7 +443,7 @@ export async function loadTradeChatForUser(trade: TradeRow, user: AppUser) {
       "Cancelled",
     ].includes(trade.status)
   ) {
-    throw new Error("Trade chat opens after buyer funding is verified.");
+    throw new Error("Trade chat opens after buyer funding clears.");
   }
 
   const room = await getTradeChatRoomForUser(trade, user);
@@ -468,7 +468,7 @@ export async function getTradeChatRoomForUser(trade: TradeRow, user: AppUser) {
       "Cancelled",
     ].includes(trade.status)
   ) {
-    throw new Error("Trade chat opens after buyer funding is verified.");
+    throw new Error("Trade chat opens after buyer funding clears.");
   }
 
   if (await purgeExpiredTradeChat(trade)) {
