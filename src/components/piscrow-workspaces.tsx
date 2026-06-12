@@ -454,29 +454,27 @@ function awaitingReleaseNotice(trade: Trade, emphasis: "admin" | "buyer" | "sell
 const piTestnetExplorerBase = "https://blockexplorer.minepi.com/testnet2";
 
 function transactionExplorerLink(link?: string, txid?: string) {
-  if (txid?.trim()) {
-    return `${piTestnetExplorerBase}/tx/${encodeURIComponent(txid.trim())}`;
-  }
-
   const trimmedLink = link?.trim();
 
-  if (!trimmedLink) {
-    return undefined;
-  }
-
-  if (trimmedLink.includes("blockexplorer.minepi.com")) {
+  if (trimmedLink?.includes("blockexplorer.minepi.com")) {
     return trimmedLink;
   }
 
-  try {
-    const parsed = new URL(trimmedLink);
-    const transactionPathMatch = parsed.pathname.match(/\/transactions\/([^/?#]+)/i);
+  if (trimmedLink) {
+    try {
+      const parsed = new URL(trimmedLink);
+      const transactionPathMatch = parsed.pathname.match(/\/transactions\/([^/?#]+)/i);
 
-    if (transactionPathMatch?.[1]) {
-      return `${piTestnetExplorerBase}/tx/${encodeURIComponent(transactionPathMatch[1])}`;
+      if (transactionPathMatch?.[1]) {
+        return `${piTestnetExplorerBase}/tx/${encodeURIComponent(transactionPathMatch[1])}`;
+      }
+    } catch {
+      // Fall through to txid fallback when the stored link is not a valid URL.
     }
-  } catch {
-    // Fall through to the original value when the link is not a valid URL.
+  }
+
+  if (txid?.trim()) {
+    return `${piTestnetExplorerBase}/tx/${encodeURIComponent(txid.trim())}`;
   }
 
   return trimmedLink;

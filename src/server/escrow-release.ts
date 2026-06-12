@@ -133,7 +133,7 @@ async function submitAppWalletPayment(payment: PiPaymentDTO) {
 
   const submitted = await horizon.submitTransaction(transaction);
 
-  return submitted.id;
+  return submitted.hash;
 }
 
 async function getCompletedPaymentRow(tradeId: string) {

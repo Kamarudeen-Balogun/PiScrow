@@ -132,7 +132,7 @@ def assert_payment_amount_and_window_guards() -> None:
     assert "No send requested. Use --send --to <PUBLIC_KEY> to submit a payment." in wallet_smoke
     assert "Preparing payment of" in wallet_smoke
     assert 'const PI_TESTNET_BLOCK_EXPLORER_URL = "https://blockexplorer.minepi.com/testnet2";' in wallet_smoke
-    assert 'Explorer: ${PI_TESTNET_BLOCK_EXPLORER_URL}/tx/${encodeURIComponent(submitted.id)}' in wallet_smoke
+    assert 'Explorer: ${PI_TESTNET_BLOCK_EXPLORER_URL}/tx/${encodeURIComponent(submitted.hash)}' in wallet_smoke
 
 
 def assert_trade_chat_guards() -> None:
@@ -251,10 +251,12 @@ def assert_transaction_explorer_links() -> None:
 
     assert 'const piBlockExplorerBase = "https://blockexplorer.minepi.com"' in pi_platform
     assert 'const piTestnetBlockExplorerBase = `${piBlockExplorerBase}/testnet2`' in pi_platform
+    assert 'return normalizedNetwork === "pi network" || normalizedNetwork === "mainnet"' in pi_platform
     assert 'return `${base}/tx/${encodeURIComponent(txid)}`' in pi_platform
     assert 'return `https://blockexplorer.minepi.com/testnet2/tx/${encodeURIComponent(txid)}`;' in app
     assert 'const piTestnetExplorerBase = "https://blockexplorer.minepi.com/testnet2";' in workspaces
     assert 'parsed.pathname.match(/\\/transactions\\/([^/?#]+)/i)' in workspaces
+    assert 'if (trimmedLink?.includes("blockexplorer.minepi.com")) {' in workspaces
     assert 'href={explorerLink}' in workspaces
 
 

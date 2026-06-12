@@ -5,6 +5,16 @@ const piApiBase =
 const piBlockExplorerBase = "https://blockexplorer.minepi.com";
 const piTestnetBlockExplorerBase = `${piBlockExplorerBase}/testnet2`;
 
+function isPiMainnetNetwork(network?: string) {
+  const normalizedNetwork = (network ?? "").trim().toLowerCase();
+
+  if (!normalizedNetwork) {
+    return false;
+  }
+
+  return normalizedNetwork === "pi network" || normalizedNetwork === "mainnet";
+}
+
 const piWalletSeedBase32Pattern = /^S[A-Z2-7]{55}$/;
 const piWalletSeedNoisePattern = /[`"'“”‘’<>()\[\]{}.,;:|\\/_-]+/g;
 
@@ -181,11 +191,9 @@ export async function completePiPayment(paymentId: string, txid: string) {
 }
 
 export function piTransactionLink(txid: string, network?: string) {
-  const trimmedNetwork = (network ?? "").trim();
-  const base =
-    trimmedNetwork === "Pi Network"
-      ? piBlockExplorerBase
-      : piTestnetBlockExplorerBase;
+  const base = isPiMainnetNetwork(network)
+    ? piBlockExplorerBase
+    : piTestnetBlockExplorerBase;
 
   return `${base}/tx/${encodeURIComponent(txid)}`;
 }
