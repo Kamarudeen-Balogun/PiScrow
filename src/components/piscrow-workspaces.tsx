@@ -704,9 +704,11 @@ export function BuyerDesk({
   activeValue,
   paymentState,
   onConfirm,
+  onGenerateHandoffCode,
   onDeleteTrade,
   onDeclinePrivate,
   onFund,
+  onRevealHandoffCode,
   onOpenChat,
   onOpenDispute,
   onSubmitInterest,
@@ -722,9 +724,11 @@ export function BuyerDesk({
   activeValue: number;
   paymentState: string;
   onConfirm: (trade: Trade, event: FormEvent<HTMLFormElement>) => void;
+  onGenerateHandoffCode: (trade: Trade) => void;
   onDeleteTrade: (trade: Trade) => void;
   onDeclinePrivate: (trade: Trade) => void;
   onFund: (trade: Trade) => void;
+  onRevealHandoffCode: (trade: Trade) => void;
   onOpenChat: (trade: Trade) => void;
   onOpenDispute: (event: FormEvent<HTMLFormElement>) => void;
   onSubmitInterest: (trade: Trade, event: FormEvent<HTMLFormElement>) => void;
@@ -862,9 +866,11 @@ export function BuyerDesk({
           chatRoom={chatRooms.find((room) => room.tradeId === liveSelectedTrade.id)}
           onClose={() => setSelectedTrade(null)}
           onConfirm={onConfirm}
+          onGenerateHandoffCode={onGenerateHandoffCode}
           onDeleteTrade={onDeleteTrade}
           onDeclinePrivate={onDeclinePrivate}
           onFund={onFund}
+          onRevealHandoffCode={onRevealHandoffCode}
           onOpenChat={onOpenChat}
           onOpenDispute={onOpenDispute}
           onSubmitInterest={onSubmitInterest}
@@ -889,6 +895,7 @@ export function SellerDesk({
   onDeleteOffer,
   onOpenChat,
   onRequestRelease,
+  onVerifyHandoffCode,
   onOpenDispute,
 }: {
   chatLoadingTradeId: string;
@@ -905,6 +912,7 @@ export function SellerDesk({
   onDeleteOffer: (trade: Trade) => void;
   onOpenChat: (trade: Trade) => void;
   onRequestRelease: (trade: Trade, note: string) => void;
+  onVerifyHandoffCode: (trade: Trade, code: string) => void;
   onOpenDispute: (event: FormEvent<HTMLFormElement>) => void;
 }) {
   const copy = getWorkspaceCopy(language);
@@ -971,6 +979,7 @@ export function SellerDesk({
           onOpenDispute={onOpenDispute}
           onSelectInterest={onSelectInterest}
           onRequestRelease={onRequestRelease}
+          onVerifyHandoffCode={onVerifyHandoffCode}
         />
       )}
     </section>
@@ -1634,7 +1643,7 @@ function CompactListingCard({
   const profile = compactProfileForTrade(trade);
 
   return (
-    <div>
+    <div className="min-w-0 overflow-hidden">
       <div className="mb-3 flex flex-wrap items-center gap-[5px]">
         <StatusBadge status={trade.status} />
         <Chip tone={trade.visibility === "private" ? "private" : "neutral"}>
@@ -1646,21 +1655,25 @@ function CompactListingCard({
           <Chip tone={compactEscrowTone(trade)}>{compactEscrowLabel(trade)}</Chip>
         )}
       </div>
-      <h3 className="text-[16px] font-bold leading-snug text-white">{trade.title}</h3>
-      <div className="mt-3 flex items-center gap-2">
+      <h3 className="break-words text-[16px] font-bold leading-snug text-white">
+        {trade.title}
+      </h3>
+      <div className="mt-3 flex min-w-0 items-center gap-2">
         <VerifiedUsername
-          className="truncate text-sm text-slate-300"
+          className="min-w-0 break-words whitespace-normal text-sm text-slate-300"
           profile={profile}
           username={trade.sellerPiUsername}
         />
         <TrustRing score={profile.trustScore} />
       </div>
-      <div className="mt-3 flex items-center gap-1 text-sm text-slate-500">
+      <div className="mt-3 flex min-w-0 items-start gap-1 text-sm text-slate-500">
         <MapPin className="h-3.5 w-3.5 shrink-0" />
-        <span className="truncate">{location || copy.trade.locationNotProvided}</span>
+        <span className="min-w-0 break-words whitespace-normal">
+          {location || copy.trade.locationNotProvided}
+        </span>
       </div>
       <div className="mt-5 flex items-end justify-between gap-3">
-        <div>
+        <div className="min-w-0">
           <div className="mb-1 text-[10px] uppercase tracking-[0.04em] text-slate-500">
             {copy.trade.buyerFunds}
           </div>
@@ -1668,7 +1681,7 @@ function CompactListingCard({
             {formatPiAmount(calculateBuyerTotal(trade.amountTestPi))}
           </span>
         </div>
-        <div className="inline-flex items-center gap-1 truncate text-right text-sm text-slate-500">
+        <div className="inline-flex shrink-0 items-center gap-1 text-right text-sm text-slate-500">
           {copy.publicLedger.filters[category ?? listingCategory(trade)]}
           <ChevronRight className="h-4 w-4" />
         </div>
@@ -1813,9 +1826,11 @@ function TradeDetailSheet({
   trade,
   onClose,
   onConfirm,
+  onGenerateHandoffCode,
   onDeleteTrade,
   onDeclinePrivate,
   onFund,
+  onRevealHandoffCode,
   onOpenChat,
   onOpenDispute,
   onSubmitInterest,
@@ -1831,9 +1846,11 @@ function TradeDetailSheet({
   trade: Trade;
   onClose: () => void;
   onConfirm: (trade: Trade, event: FormEvent<HTMLFormElement>) => void;
+  onGenerateHandoffCode: (trade: Trade) => void;
   onDeleteTrade: (trade: Trade) => void;
   onDeclinePrivate: (trade: Trade) => void;
   onFund: (trade: Trade) => void;
+  onRevealHandoffCode: (trade: Trade) => void;
   onOpenChat: (trade: Trade) => void;
   onOpenDispute: (event: FormEvent<HTMLFormElement>) => void;
   onSubmitInterest: (trade: Trade, event: FormEvent<HTMLFormElement>) => void;
@@ -1934,6 +1951,14 @@ function TradeDetailSheet({
         <ReceiptForm trade={trade} onConfirm={onConfirm} />
       )}
 
+      {selectedForUser && trade.status === "Funded" && (
+        <BuyerHandoffCodePanel
+          trade={trade}
+          onGenerate={onGenerateHandoffCode}
+          onReveal={onRevealHandoffCode}
+        />
+      )}
+
       {selectedForUser && ["Completed", "Cancelled"].includes(trade.status) && (
         <button className={dangerButtonClass} type="button" onClick={() => onDeleteTrade(trade)}>
           <Trash2 className="h-4 w-4" />
@@ -1985,6 +2010,7 @@ function SellerTradeSheet({
   onOpenDispute,
   onSelectInterest,
   onRequestRelease,
+  onVerifyHandoffCode,
 }: {
   copy: WorkspaceCopy;
   chatLoading: boolean;
@@ -2000,6 +2026,7 @@ function SellerTradeSheet({
   onOpenDispute: (event: FormEvent<HTMLFormElement>) => void;
   onSelectInterest: (trade: Trade, interest: TradeInterest) => void;
   onRequestRelease: (trade: Trade, note: string) => void;
+  onVerifyHandoffCode: (trade: Trade, code: string) => void;
 }) {
   const tradeInterests = tradeInterestsFor(trade, interests);
   const [selectedProfile, setSelectedProfile] = useState<UserReputation | null>(null);
@@ -2095,6 +2122,10 @@ function SellerTradeSheet({
 
       {trade.status === "DeliverySubmitted" && (
         <RequestReleaseForm trade={trade} onRequestRelease={onRequestRelease} />
+      )}
+
+      {trade.status === "Funded" && trade.handoffCode?.status === "active" && (
+        <SellerHandoffCodePanel trade={trade} onVerify={onVerifyHandoffCode} />
       )}
 
       <TradeChatPanel
@@ -2244,9 +2275,9 @@ function LocationLine({ trade }: { trade: Trade }) {
   }
 
   return (
-    <div className="flex items-center gap-2 text-sm text-slate-400">
+    <div className="flex min-w-0 items-start gap-2 text-sm text-slate-400">
       <MapPin className="h-4 w-4 shrink-0 text-[var(--gold)]" />
-      <span>{location}</span>
+      <span className="min-w-0 break-words whitespace-normal">{location}</span>
     </div>
   );
 }
@@ -2599,6 +2630,52 @@ function ReceiptForm({
   );
 }
 
+function BuyerHandoffCodePanel({
+  trade,
+  onGenerate,
+  onReveal,
+}: {
+  trade: Trade;
+  onGenerate: (trade: Trade) => void;
+  onReveal: (trade: Trade) => void;
+}) {
+  const active = trade.handoffCode?.status === "active";
+
+  return (
+    <ActionPanel title="Local Handoff Code" icon={<ShieldCheck className="h-4 w-4" />}>
+      <InfoBox tone="info">
+        Use this only for in-person handoffs after buyer funding is already locked in escrow.
+      </InfoBox>
+      {trade.handoffCode ? (
+        <div className="rounded-2xl border border-white/8 bg-black/14 p-3 text-sm leading-6 text-slate-300">
+          <p className="font-bold text-white">
+            {active ? "Active one-time code" : humanizeUnderscore(trade.handoffCode.status)}
+          </p>
+          <p className="mt-1">{trade.handoffCode.maskedCode}</p>
+          <p className="mt-2 text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+            Expires {dateLabel(trade.handoffCode.expiresAt)}
+          </p>
+        </div>
+      ) : null}
+      <div className="grid gap-2 sm:grid-cols-2">
+        <button className={primaryButtonClass} type="button" onClick={() => onGenerate(trade)}>
+          <ShieldCheck className="h-4 w-4" />
+          {active ? "Regenerate code" : "Generate code"}
+        </button>
+        <button
+          className={secondaryButtonClass}
+          disabled={!active}
+          type="button"
+          onClick={() => onReveal(trade)}
+        >
+          <Eye className="h-4 w-4" />
+          Show code
+        </button>
+      </div>
+    </ActionPanel>
+  );
+}
+
 function RequestReleaseForm({
   trade,
   onRequestRelease,
@@ -2625,6 +2702,41 @@ function RequestReleaseForm({
         <button className={primaryButtonClass} type="submit">
           <HandCoins className="h-4 w-4" />
           Request payout release
+        </button>
+      </form>
+    </ActionPanel>
+  );
+}
+
+function SellerHandoffCodePanel({
+  trade,
+  onVerify,
+}: {
+  trade: Trade;
+  onVerify: (trade: Trade, code: string) => void;
+}) {
+  return (
+    <ActionPanel title="Verify Buyer Code" icon={<ShieldCheck className="h-4 w-4" />}>
+      <InfoBox tone="warning">
+        Enter the buyer's one-time handoff code only after the in-person exchange is complete.
+      </InfoBox>
+      <form
+        className="grid gap-3"
+        onSubmit={(event) => {
+          event.preventDefault();
+          const formData = new FormData(event.currentTarget);
+          onVerify(trade, String(formData.get("handoffCode") ?? ""));
+        }}
+      >
+        <input
+          className={inputClass}
+          name="handoffCode"
+          placeholder="ABCD-EFGH-IJKL-MNOP-QRST"
+          type="text"
+        />
+        <button className={primaryButtonClass} type="submit">
+          <ShieldCheck className="h-4 w-4" />
+          Verify and release escrow
         </button>
       </form>
     </ActionPanel>

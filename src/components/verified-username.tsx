@@ -19,8 +19,8 @@ export function VerifiedUsername({
 }: VerifiedUsernameProps) {
   const verified = Boolean(profile?.verifiedBadge);
   const content = (
-    <span className={`inline-flex items-center gap-1 ${className}`.trim()}>
-      <span>@{username}</span>
+    <span className={`inline-flex min-w-0 flex-wrap items-center gap-1 ${className}`.trim()}>
+      <span className="min-w-0 break-words whitespace-normal">@{username}</span>
       {verified && (
         <BadgeCheck
           aria-label="Verified user"
@@ -36,7 +36,7 @@ export function VerifiedUsername({
 
   return (
     <button
-      className="inline-flex items-center text-left transition hover:opacity-90"
+      className="inline-flex min-w-0 items-center text-left transition hover:opacity-90"
       type="button"
       onClick={onClick}
     >

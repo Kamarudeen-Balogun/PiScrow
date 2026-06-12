@@ -14,6 +14,7 @@ import {
   insertTradeEvent,
   listTradesForUser,
 } from "@/server/trades";
+import { invalidateTradeHandoffCode } from "@/server/trade-handoff";
 
 export async function POST(
   request: Request,
@@ -70,6 +71,12 @@ export async function POST(
     if (tradeError) {
       throw new Error(tradeError.message);
     }
+
+    await invalidateTradeHandoffCode(
+      tradeId,
+      "trade moved into dispute review",
+      user.id,
+    ).catch(() => undefined);
 
     await insertTradeEvent(tradeId, user.id, "Dispute opened", parsed.data.reason);
     await markTradeChatRoomDisputed(trade, user, parsed.data.reason);

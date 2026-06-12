@@ -16,6 +16,7 @@ import {
   insertTradeEvent,
   listTradesForUser,
 } from "@/server/trades";
+import { invalidateTradeHandoffCode } from "@/server/trade-handoff";
 
 export async function POST(
   request: Request,
@@ -86,6 +87,12 @@ export async function POST(
     if (releaseError) {
       throw new Error(releaseError.message);
     }
+
+    await invalidateTradeHandoffCode(
+      tradeId,
+      "seller moved trade into admin release review",
+      user.id,
+    ).catch(() => undefined);
 
     await insertTradeEvent(
       tradeId,

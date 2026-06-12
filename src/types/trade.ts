@@ -55,9 +55,27 @@ export type Trade = {
   deliveryExpiredAt?: string;
   completedAt?: string;
   cancelledAt?: string;
+  handoffCode?: TradeHandoffCodeSummary;
   payment?: TradePaymentSummary;
   createdAt: string;
   updatedAt: string;
+};
+
+export type TradeHandoffCodeStatus =
+  | "active"
+  | "used"
+  | "invalidated"
+  | "expired";
+
+export type TradeHandoffCodeSummary = {
+  status: TradeHandoffCodeStatus;
+  codeLast4: string;
+  maskedCode: string;
+  generatedAt: string;
+  expiresAt: string;
+  usedAt?: string;
+  invalidatedAt?: string;
+  invalidationReason?: string;
 };
 
 export type EscrowStatus =

@@ -248,6 +248,27 @@ create table public.trade_review_recommendations (
   created_at timestamptz not null default now()
 );
 
+create table public.trade_handoff_codes (
+  id uuid primary key default gen_random_uuid(),
+  trade_id uuid not null unique references public.trades(id) on delete cascade,
+  buyer_user_id uuid not null references public.users(id) on delete cascade,
+  seller_user_id uuid not null references public.users(id) on delete cascade,
+  code_hash text not null,
+  code_last4 text not null,
+  expires_at timestamptz not null,
+  generated_at timestamptz not null default now(),
+  last_revealed_at timestamptz,
+  reveal_count integer not null default 0 check (reveal_count >= 0),
+  verify_attempt_count integer not null default 0 check (verify_attempt_count >= 0),
+  last_attempt_at timestamptz,
+  used_at timestamptz,
+  used_by_user_id uuid references public.users(id) on delete set null,
+  invalidated_at timestamptz,
+  invalidation_reason text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 create table public.trade_chat_rooms (
   id uuid primary key default gen_random_uuid(),
   trade_id uuid not null unique references public.trades(id) on delete cascade,
@@ -345,6 +366,13 @@ create index trade_review_recommendations_trade_created_idx
   on public.trade_review_recommendations (trade_id, created_at desc);
 create index trade_review_recommendations_action_idx
   on public.trade_review_recommendations (recommended_action, created_at desc);
+create index trade_handoff_codes_buyer_idx
+  on public.trade_handoff_codes (buyer_user_id, generated_at desc);
+create index trade_handoff_codes_seller_idx
+  on public.trade_handoff_codes (seller_user_id, generated_at desc);
+create index trade_handoff_codes_expiry_idx
+  on public.trade_handoff_codes (expires_at)
+  where used_at is null and invalidated_at is null;
 create index trade_chat_rooms_trade_id_idx
   on public.trade_chat_rooms (trade_id);
 create index trade_chat_rooms_dispute_claim_idx
@@ -373,6 +401,7 @@ alter table public.telegram_links enable row level security;
 alter table public.notification_deliveries enable row level security;
 alter table public.feedback_messages enable row level security;
 alter table public.trade_review_recommendations enable row level security;
+alter table public.trade_handoff_codes enable row level security;
 alter table public.trade_chat_rooms enable row level security;
 alter table public.trade_chat_messages enable row level security;
 
@@ -439,6 +468,13 @@ with check (false);
 
 create policy "trade review recommendations direct access denied"
 on public.trade_review_recommendations
+for all
+to anon, authenticated
+using (false)
+with check (false);
+
+create policy "trade handoff codes direct access denied"
+on public.trade_handoff_codes
 for all
 to anon, authenticated
 using (false)

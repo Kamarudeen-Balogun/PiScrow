@@ -3,9 +3,11 @@ import { formatTestPi } from "@/lib/trade-state";
 import { calculatePlatformFee } from "@/lib/fees";
 import { normalizePiUsername, type AppUser } from "@/server/auth";
 import { signProofUrl } from "@/server/proof-storage";
+import { mapTradeHandoffCodeSummary } from "@/server/trade-handoff";
 import type {
   Trade,
   TradeEvent,
+  TradeHandoffCodeSummary,
   TradeInterest,
   TradePaymentSummary,
   TradeStatus,
@@ -111,6 +113,27 @@ type PaymentRow = {
   updated_at: string;
 };
 
+type TradeHandoffCodeRow = {
+  id: string;
+  trade_id: string;
+  buyer_user_id: string;
+  seller_user_id: string;
+  code_hash: string;
+  code_last4: string;
+  expires_at: string;
+  generated_at: string;
+  last_revealed_at: string | null;
+  reveal_count: number;
+  verify_attempt_count: number;
+  last_attempt_at: string | null;
+  used_at: string | null;
+  used_by_user_id: string | null;
+  invalidated_at: string | null;
+  invalidation_reason: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 export function getServiceClientOrThrow() {
   const supabase = createServiceSupabaseClient();
 
@@ -163,6 +186,7 @@ export function mapTrade(
   interestCount = 0,
   reputations = new Map<string, UserReputation>(),
   payments = new Map<string, TradePaymentSummary>(),
+  handoffCodes = new Map<string, TradeHandoffCodeSummary>(),
 ): Trade {
   return {
     id: row.id,
@@ -199,6 +223,7 @@ export function mapTrade(
     deliveryExpiredAt: row.delivery_expired_at ?? undefined,
     completedAt: row.completed_at ?? undefined,
     cancelledAt: row.cancelled_at ?? undefined,
+    handoffCode: handoffCodes.get(row.id),
     payment: payments.get(row.id),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -212,8 +237,9 @@ export async function mapTradeWithSignedProofs(
   canViewProofs = false,
   reputations = new Map<string, UserReputation>(),
   payments = new Map<string, TradePaymentSummary>(),
+  handoffCodes = new Map<string, TradeHandoffCodeSummary>(),
 ) {
-  const trade = mapTrade(row, users, interestCount, reputations, payments);
+  const trade = mapTrade(row, users, interestCount, reputations, payments, handoffCodes);
 
   if (!canViewProofs) {
     return {
@@ -335,6 +361,35 @@ async function getCompletedPaymentMap(tradeIds: string[]) {
   }
 
   return payments;
+}
+
+async function getTradeHandoffCodeMap(tradeIds: string[]) {
+  if (tradeIds.length === 0) {
+    return new Map<string, TradeHandoffCodeSummary>();
+  }
+
+  const supabase = getServiceClientOrThrow();
+  const { data, error } = await supabase
+    .from("trade_handoff_codes")
+    .select("*")
+    .in("trade_id", tradeIds);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return ((data ?? []) as TradeHandoffCodeRow[]).reduce<Map<string, TradeHandoffCodeSummary>>(
+    (map, row) => {
+      const summary = mapTradeHandoffCodeSummary(row);
+
+      if (summary) {
+        map.set(row.trade_id, summary);
+      }
+
+      return map;
+    },
+    new Map(),
+  );
 }
 
 export async function getUserMap(userIds: string[]) {
@@ -567,6 +622,7 @@ export async function listTradesForUser(user: AppUser) {
   const users = await getUserMap(userIds);
   const reputations = await getUserReputations(userIds);
   const payments = await getCompletedPaymentMap(tradeIds);
+  const handoffCodes = await getTradeHandoffCodeMap(tradeIds);
   const interests = allInterestRows.filter((interest) => {
     const trade = visibleRows.find((item) => item.id === interest.trade_id);
 
@@ -604,6 +660,7 @@ export async function listTradesForUser(user: AppUser) {
           canViewProofs,
           reputations,
           payments,
+          handoffCodes,
         );
       }),
     ),
@@ -663,6 +720,7 @@ export async function listPublicLedger() {
   const users = await getUserMap(userIds);
   const reputations = await getUserReputations(userIds);
   const payments = await getCompletedPaymentMap(tradeIds);
+  const handoffCodes = await getTradeHandoffCodeMap(tradeIds);
 
   return {
     trades: rows.map((trade) => ({
@@ -672,6 +730,7 @@ export async function listPublicLedger() {
         interestCounts.get(trade.id) ?? 0,
         reputations,
         payments,
+        handoffCodes,
       ),
       targetBuyerPiUsernames: [],
       deliveryProofUrl: undefined,

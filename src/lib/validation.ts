@@ -143,6 +143,21 @@ export const requestReleaseSchema = z.object({
   ),
 });
 
+export const tradeHandoffCodeActionSchema = z.object({
+  tradeId: z.string().min(1),
+  action: z.enum(["generate", "reveal"]),
+});
+
+export const verifyTradeHandoffCodeSchema = z.object({
+  tradeId: z.string().min(1),
+  code: sanitizedString(
+    z
+      .string()
+      .min(8, "Enter the buyer handoff code.")
+      .max(32, "Handoff code is too long."),
+  ),
+});
+
 export const tradeChatMessageSchema = z.object({
   tradeId: z.string().min(1),
   body: sanitizedString(
@@ -174,5 +189,7 @@ export type DisputeInput = z.infer<typeof disputeSchema>;
 export type DisputeFollowUpInput = z.infer<typeof disputeFollowUpSchema>;
 export type ConfirmReceiptInput = z.infer<typeof confirmReceiptSchema>;
 export type RequestReleaseInput = z.infer<typeof requestReleaseSchema>;
+export type TradeHandoffCodeActionInput = z.infer<typeof tradeHandoffCodeActionSchema>;
+export type VerifyTradeHandoffCodeInput = z.infer<typeof verifyTradeHandoffCodeSchema>;
 export type TradeChatMessageInput = z.infer<typeof tradeChatMessageSchema>;
 export type FeedbackInput = z.infer<typeof feedbackSchema>;

@@ -91,6 +91,7 @@ import type {
   TradeChatMessage,
   TradeChatRoom,
   TradeEvent,
+  TradeHandoffCodeSummary,
   TradeInterest,
   TradePaymentSummary,
   TradeStatus,
@@ -106,6 +107,11 @@ type TradePayload = {
   trades: Trade[];
   interests: TradeInterest[];
   events: TradeEvent[];
+};
+
+type HandoffCodePayload = TradePayload & {
+  handoffCode?: TradeHandoffCodeSummary;
+  code?: string;
 };
 
 type ProfilePayload = {
@@ -172,6 +178,8 @@ type FeedbackStatus = {
   tone: "success" | "warning";
   message: string;
 } | null;
+
+const handoffCodeCacheStorageKey = "piscrow-handoff-code-cache-v1";
 
 type SavedNotification = {
   id: string;
@@ -1228,6 +1236,14 @@ export function PiScrowApp({
     allowDemo ? (demoTrades[0]?.id ?? "") : "",
   );
   const [formError, setFormError] = useState("");
+  const [handoffCodeModal, setHandoffCodeModal] = useState<{
+    tradeId: string;
+    code: string;
+    expiresAt?: string;
+  } | null>(null);
+  const [handoffCodeCache, setHandoffCodeCache] = useState<
+    Record<string, { code: string; expiresAt?: string }>
+  >({});
   const [paymentState, setPaymentState] = useState("No payment started.");
   const [appRefreshing, setAppRefreshing] = useState(false);
   const [ledgerLoading, setLedgerLoading] = useState(false);
@@ -1297,6 +1313,44 @@ export function PiScrowApp({
     trades.find((trade) => trade.id === selectedTradeId) ??
     trades.find((trade) => trade.id === expandedTradeId) ??
     trades[0];
+
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(handoffCodeCacheStorageKey);
+
+      if (!raw) {
+        return;
+      }
+
+      const parsed = JSON.parse(raw) as Record<string, { code: string; expiresAt?: string }>;
+
+      if (parsed && typeof parsed === "object") {
+        setHandoffCodeCache(parsed);
+      }
+    } catch {
+      window.localStorage.removeItem(handoffCodeCacheStorageKey);
+    }
+  }, []);
+
+  useEffect(() => {
+    window.localStorage.setItem(
+      handoffCodeCacheStorageKey,
+      JSON.stringify(handoffCodeCache),
+    );
+  }, [handoffCodeCache]);
+
+  useEffect(() => {
+    setHandoffCodeCache((current) => {
+      const next = Object.fromEntries(
+        Object.entries(current).filter(([tradeId]) => {
+          const trade = trades.find((item) => item.id === tradeId);
+          return trade?.handoffCode?.status === "active";
+        }),
+      );
+
+      return Object.keys(next).length === Object.keys(current).length ? current : next;
+    });
+  }, [trades]);
 
   const sellerTrades = useMemo(
     () =>
@@ -1834,6 +1888,9 @@ export function PiScrowApp({
     setUser(null);
     setPiConnected(false);
     setPiAccessToken("");
+    setHandoffCodeCache({});
+    setHandoffCodeModal(null);
+    window.localStorage.removeItem(handoffCodeCacheStorageKey);
     clearPersistedAuthState();
     setTelegram(defaultTelegramStatus);
     setTelegramAwaitingLink(false);
@@ -4027,6 +4084,163 @@ export function PiScrowApp({
     );
   }
 
+  function generateHandoffCode(trade: Trade) {
+    askConfirmation({
+      title: trade.handoffCode?.status === "active" ? "Generate a new handoff code?" : "Generate handoff code?",
+      body:
+        trade.handoffCode?.status === "active"
+          ? "This revokes the current handoff code and replaces it with a new one-time code."
+          : "This creates a one-time buyer handoff code for a funded local delivery trade.",
+      confirmLabel: trade.handoffCode?.status === "active" ? "Regenerate code" : "Generate code",
+      onConfirm: () => generateHandoffCodeConfirmed(trade),
+    });
+  }
+
+  function generateHandoffCodeConfirmed(trade: Trade) {
+    if (!piConnected || !piAccessToken) {
+      setFormError("Handoff codes are available only in the live PiScrow workspace.");
+      return;
+    }
+
+    void (async () => {
+      try {
+        showBlockingAction(
+          "Generating handoff code",
+          "PiScrow is creating a one-time code for this local handoff.",
+        );
+        const payload = await apiRequest<HandoffCodePayload>(
+          `/api/trades/${trade.id}/handoff-code`,
+          piAccessToken,
+          {
+            method: "POST",
+            body: JSON.stringify({
+              tradeId: trade.id,
+              action: "generate",
+            }),
+          },
+        );
+        applyTradePayload(payload);
+        if (payload.code) {
+          setHandoffCodeCache((current) => ({
+            ...current,
+            [trade.id]: {
+              code: payload.code!,
+              expiresAt: payload.handoffCode?.expiresAt,
+            },
+          }));
+          setHandoffCodeModal({
+            tradeId: trade.id,
+            code: payload.code,
+            expiresAt: payload.handoffCode?.expiresAt,
+          });
+        }
+        pushNotice(
+          "Handoff code ready",
+          "Buyer handoff code generated. Show it to the seller only when the handoff is complete.",
+          "success",
+        );
+      } catch (error) {
+        setFormError(
+          error instanceof Error ? error.message : "Could not generate the handoff code.",
+        );
+      } finally {
+        hideBlockingAction();
+      }
+    })();
+  }
+
+  function showHandoffCode(trade: Trade) {
+    const cached = handoffCodeCache[trade.id];
+
+    if (!cached?.code) {
+      setFormError("Generate a fresh handoff code in this session before using Show code.");
+      return;
+    }
+
+    if (!piConnected || !piAccessToken) {
+      setFormError("Handoff codes are available only in the live PiScrow workspace.");
+      return;
+    }
+
+    void (async () => {
+      try {
+        showBlockingAction(
+          "Opening handoff code",
+          "PiScrow is loading the active local handoff code.",
+        );
+        const payload = await apiRequest<HandoffCodePayload>(
+          `/api/trades/${trade.id}/handoff-code`,
+          piAccessToken,
+          {
+            method: "POST",
+            body: JSON.stringify({
+              tradeId: trade.id,
+              action: "reveal",
+            }),
+          },
+        );
+        applyTradePayload(payload);
+        setHandoffCodeModal({
+          tradeId: trade.id,
+          code: cached.code,
+          expiresAt: payload.handoffCode?.expiresAt ?? cached.expiresAt,
+        });
+      } catch (error) {
+        setFormError(
+          error instanceof Error ? error.message : "Could not open the handoff code.",
+        );
+      } finally {
+        hideBlockingAction();
+      }
+    })();
+  }
+
+  function verifyHandoffCode(trade: Trade, code: string) {
+    const trimmedCode = code.trim();
+
+    if (trimmedCode.length < 8) {
+      setFormError("Enter the buyer handoff code before verifying.");
+      return;
+    }
+
+    if (!piConnected || !piAccessToken) {
+      setFormError("Handoff code verification is available only in the live PiScrow workspace.");
+      return;
+    }
+
+    void (async () => {
+      try {
+        showBlockingAction(
+          "Verifying handoff code",
+          "PiScrow is verifying the one-time code and releasing escrow automatically if it matches.",
+        );
+        const payload = await apiRequest<TradePayload>(
+          `/api/trades/${trade.id}/handoff-code/verify`,
+          piAccessToken,
+          {
+            method: "POST",
+            body: JSON.stringify({
+              tradeId: trade.id,
+              code: trimmedCode,
+            }),
+          },
+        );
+        applyTradePayload(payload);
+        pushNotice(
+          "Trade completed",
+          "Handoff code verified. PiScrow released escrow to the seller.",
+          "success",
+        );
+      } catch (error) {
+        setFormError(
+          error instanceof Error ? error.message : "Could not verify the handoff code.",
+        );
+      } finally {
+        hideBlockingAction();
+      }
+    })();
+  }
+
   function chatSenderRoleFor(trade: Trade): TradeChatMessage["senderRole"] {
     if (normalizeUsername(trade.buyerPiUsername ?? "") === normalizedUsername) {
       return "buyer";
@@ -4424,6 +4638,13 @@ export function PiScrowApp({
           onConfirm={runConfirmedAction}
         />
       )}
+      {handoffCodeModal && (
+        <HandoffCodeDialog
+          code={handoffCodeModal.code}
+          expiresAt={handoffCodeModal.expiresAt}
+          onClose={() => setHandoffCodeModal(null)}
+        />
+      )}
 
       <section className="ps">
         {blockingAction && <ProcessingOverlay action={blockingAction} />}
@@ -4503,9 +4724,11 @@ export function PiScrowApp({
                   activeValue={activeValue}
                   paymentState={paymentState}
                   onConfirm={confirmReceipt}
+                  onGenerateHandoffCode={generateHandoffCode}
                   onDeleteTrade={deleteOffer}
                   onDeclinePrivate={declinePrivateOffer}
                   onFund={fundTrade}
+                  onRevealHandoffCode={showHandoffCode}
                   onOpenChat={openTradeChat}
                   onOpenDispute={openDispute}
                   onSubmitInterest={submitInterest}
@@ -4545,6 +4768,7 @@ export function PiScrowApp({
                       onDeleteOffer={deleteOffer}
                       onOpenChat={openTradeChat}
                       onRequestRelease={requestSellerRelease}
+                      onVerifyHandoffCode={verifyHandoffCode}
                       onOpenDispute={openDispute}
                     />
                   )}
@@ -5401,6 +5625,63 @@ function ActionFeedbackDialog({
           onClick={onDismiss}
         >
           Got it
+        </button>
+      </div>
+    </section>
+  );
+}
+
+function HandoffCodeDialog({
+  code,
+  expiresAt,
+  onClose,
+}: {
+  code: string;
+  expiresAt?: string;
+  onClose: () => void;
+}) {
+  return (
+    <section
+      aria-labelledby="handoff-code-title"
+      aria-modal="true"
+      className="fixed inset-0 z-[62] grid place-items-center bg-zinc-950/70 px-4 py-6 backdrop-blur-sm"
+      role="dialog"
+    >
+      <div className="w-full max-w-sm rounded-[26px] border border-white/10 bg-[rgba(11,23,40,0.96)] p-5 shadow-[0_32px_80px_rgba(0,0,0,0.48)]">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h2 className="text-lg font-black text-white" id="handoff-code-title">
+              Buyer handoff code
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-slate-300">
+              Show this code to the seller only after the local exchange is complete.
+            </p>
+          </div>
+          <button
+            aria-label="Close handoff code"
+            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/6 text-slate-300"
+            type="button"
+            onClick={onClose}
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <div className="mt-5 rounded-2xl border border-amber-400/25 bg-amber-400/10 px-4 py-5 text-center">
+          <p className="text-[28px] font-black tracking-[0.16em] text-[var(--gold)]">
+            {code}
+          </p>
+        </div>
+        {expiresAt && (
+          <p className="mt-3 text-center text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+            Expires {new Date(expiresAt).toLocaleString()}
+          </p>
+        )}
+        <button
+          className="mt-5 inline-flex h-11 w-full items-center justify-center rounded-xl bg-[linear-gradient(135deg,#f5a623,#d97706)] px-4 text-sm font-black text-slate-950 transition hover:brightness-105"
+          type="button"
+          onClick={onClose}
+        >
+          Close
         </button>
       </div>
     </section>

@@ -1,6 +1,7 @@
 import { executeEscrowRelease, markEscrowReleaseFailed } from "@/server/escrow-release";
 import { createNotification } from "@/server/notifications";
 import { closeTradeChatRoom } from "@/server/trade-chat";
+import { invalidateTradeHandoffCode } from "@/server/trade-handoff";
 import {
   getServiceClientOrThrow,
   insertTradeEvent,
@@ -80,6 +81,11 @@ async function markTradeExpiredAndRefunded(trade: TradeRow) {
     releaseType: "buyer_refund",
     trade,
   });
+
+  await invalidateTradeHandoffCode(
+    trade.id,
+    "trade expired and buyer was refunded automatically",
+  ).catch(() => undefined);
 
   const { error: tradeError } = await supabase
     .from("trades")

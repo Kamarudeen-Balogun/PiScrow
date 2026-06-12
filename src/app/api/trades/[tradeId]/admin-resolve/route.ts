@@ -20,6 +20,7 @@ import {
   insertTradeEvent,
   listTradesForUser,
 } from "@/server/trades";
+import { invalidateTradeHandoffCode } from "@/server/trade-handoff";
 import type { EscrowReleaseType } from "@/types/trade";
 
 const adminActionSchema = z.discriminatedUnion("action", [
@@ -122,6 +123,12 @@ export async function POST(
       }).catch(() => undefined);
       throw releaseError;
     }
+
+    await invalidateTradeHandoffCode(
+      tradeId,
+      parsed.data.status === "Completed" ? "trade completed by admin resolution" : "buyer refund completed by admin resolution",
+      user.id,
+    ).catch(() => undefined);
 
     const { error: tradeError } = await supabase
       .from("trades")
