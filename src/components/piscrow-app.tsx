@@ -4293,6 +4293,13 @@ export function PiScrowApp({
         ? "Admin approved the seller release path after reviewing buyer receipt and party evidence."
         : "Admin approved the buyer refund path after reviewing the dispute and party evidence.";
 
+    showBlockingAction(
+      status === "Completed" ? "Releasing seller payout" : "Refunding buyer",
+      status === "Completed"
+        ? "PiScrow is signing and submitting the escrow payout transaction."
+        : "PiScrow is signing and submitting the escrow refund transaction.",
+    );
+
     if (piConnected && piAccessToken) {
       void apiRequest<TradePayload>(
         `/api/trades/${trade.id}/admin-resolve`,
@@ -4306,7 +4313,14 @@ export function PiScrowApp({
           }),
         },
       )
-        .then(applyTradePayload)
+        .then((payload) => {
+          applyTradePayload(payload);
+          const resolvedTrade = payload.trades.find((item) => item.id === trade.id);
+
+          if (resolvedTrade) {
+            setActiveChatTrade(resolvedTrade);
+          }
+        })
         .then(() => {
           pushNotice(
             status === "Completed" ? "Payout completed" : "Refund completed",
@@ -4351,6 +4365,17 @@ export function PiScrowApp({
         updatedAt: now,
       },
     });
+    setActiveChatTrade((current) =>
+      current?.id === trade.id
+        ? {
+            ...current,
+            status,
+            completedAt: status === "Completed" ? now : current.completedAt,
+            cancelledAt: status === "Cancelled" ? now : current.cancelledAt,
+            updatedAt: now,
+          }
+        : current,
+    );
     if (status === "Completed" || status === "Cancelled") {
       setTrades((current) =>
         current.map((item) =>
@@ -4380,6 +4405,7 @@ export function PiScrowApp({
         : "Held Test Pi was refunded to the buyer after admin review.",
       status === "Completed" ? "success" : "warning",
     );
+    hideBlockingAction();
   }
 
   return (

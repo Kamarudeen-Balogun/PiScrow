@@ -66,6 +66,8 @@ def assert_authenticated_workspace_sync() -> None:
     assert "function signOutPiSession()" in app
     assert "onSignOut={signOutPiSession}" in app
     assert "copy.profile.signOut" in workspaces
+    assert "showBlockingAction(" in app
+    assert 'setActiveChatTrade(resolvedTrade);' in app
 
 
 def assert_authorization_guards() -> None:
@@ -92,6 +94,7 @@ def assert_payment_amount_and_window_guards() -> None:
     confirm_route = read("src/app/api/trades/[tradeId]/confirm/route.ts")
     escrow_release = read("src/server/escrow-release.ts")
     pi_platform = read("src/lib/pi-platform.ts")
+    wallet_smoke = read("scripts/pi-wallet-smoke-test.mjs")
 
     assert "Pi payment amount does not match the trade total." in payments
     assert "calculateBuyerTotal(sellerAmount)" in payments
@@ -125,6 +128,9 @@ def assert_payment_amount_and_window_guards() -> None:
     assert "invalidCharacters" in pi_platform
     assert "released_to_seller" in escrow_release
     assert "refunded_to_buyer" in escrow_release
+    assert "Derived public key:" in wallet_smoke
+    assert "No send requested. Use --send --to <PUBLIC_KEY> to submit a payment." in wallet_smoke
+    assert "Preparing payment of" in wallet_smoke
 
 
 def assert_trade_chat_guards() -> None:

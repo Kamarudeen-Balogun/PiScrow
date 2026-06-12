@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "wallet:smoke": "node scripts/pi-wallet-smoke-test.mjs",
     "test:regressions": "python src/tests/piscrow_regressions.py",
     "test:security": "python src/tests/piscrow_security.py",
     "test:smoke": "python src/tests/piscrow_smoke.py",
