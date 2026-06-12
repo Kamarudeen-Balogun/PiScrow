@@ -80,6 +80,46 @@ More context is in [docs/screenshots/README.md](docs/screenshots/README.md).
 - [scripts/](scripts/README.md): operational utility scripts
 - [docs/](docs/README.md): backlog, screenshots, and project notes
 
+## Knowledge graph and vault
+
+Graphify is wired into this project for codebase navigation, while Foam and
+Obsidian are used for linked Markdown notes and graph browsing.
+
+- Knowledge graph JSON: `graphify-out/graph.json`
+- Graph report: `graphify-out/GRAPH_REPORT.md`
+- Wiki entry point: `graphify-out/wiki/index.md`
+- Generated Obsidian vault: `graphify-out/obsidian/`
+- Handwritten notes location: `docs/notes/`
+
+Primary commands:
+
+```bash
+graphify query "How is admin release and refund implemented?"
+graphify path "executeEscrowRelease()" "POST()_11"
+graphify explain "trade-handoff.ts"
+```
+
+Refresh workflow:
+
+```bash
+# code-only refresh after source edits
+graphify update .
+
+# rebuild graph after markdown/docs changes or when semantic edges need refresh
+# replace <backend> and <model> with the provider available on this machine
+graphify extract . --backend <backend> --model <model> --token-budget 12000 --max-concurrency 1 --out .
+
+# regenerate community report, html, and labels
+graphify cluster-only . --graph graphify-out/graph.json --backend <backend>
+
+# regenerate Foam/Obsidian outputs
+graphify export obsidian --graph graphify-out/graph.json
+graphify export wiki --graph graphify-out/graph.json
+```
+
+Open `graphify-out/obsidian/` as an Obsidian vault to inspect `graph.canvas` and
+Graph View. More detail is in [docs/GRAPHIFY.md](docs/GRAPHIFY.md).
+
 ## Local setup
 
 1. Install dependencies:

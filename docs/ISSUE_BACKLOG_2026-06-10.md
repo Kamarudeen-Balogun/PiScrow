@@ -746,6 +746,7 @@ Completed in code:
 - Explorer links were corrected to Pi testnet explorer and invalid hashes no longer show dead links.
 - New release/refund transactions now use readable on-chain memos.
 - Curated screenshots were refreshed on June 12, 2026.
+- Local Graphify knowledge-graph, wiki, and Obsidian/Foam vault outputs are now available in `graphify-out/` for project navigation and architecture notes.
 
 Still requiring follow-up:
 

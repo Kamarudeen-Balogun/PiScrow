@@ -54,3 +54,7 @@ dev-server*.err.log
 next-env.d.ts
 
 docs/CODESCENE_REVIEW_2026-06-08.md
+
+# local knowledge graph and Codex hook artifacts
+/graphify-out/
+/.codex/

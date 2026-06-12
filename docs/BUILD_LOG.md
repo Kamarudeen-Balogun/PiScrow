@@ -50,3 +50,30 @@ The following changes were completed in the current working tree after the previ
 - Added public-ledger cached fallback behavior for short Supabase read outages.
 - Prioritized active trades ahead of completed/cancelled trades in the public ledger.
 - Rewrote the root README and added local README files for source, server, tests, scripts, docs, and Supabase.
+
+## Knowledge Graph Tooling Update On 2026-06-12
+
+Graphify and Foam support were wired into the local developer workflow for this
+project.
+
+- Installed `graphifyy[mcp]` and the required Python SDK dependencies.
+- Registered a local custom Graphify provider against the existing OpenAI-compatible
+  `freemodel` gateway on this machine.
+- Built the PiScrow graph successfully:
+  - `807` nodes
+  - `2356` edges
+  - `67` communities
+- Generated:
+  - `graphify-out/graph.json`
+  - `graphify-out/GRAPH_REPORT.md`
+  - `graphify-out/graph.html`
+  - `graphify-out/wiki/index.md`
+  - `graphify-out/obsidian/`
+- Installed the project-level Graphify Codex hook into `AGENTS.md` and `.codex/hooks.json`.
+- Appended the Graphify MCP server block to the global Codex config so a reloaded
+  Codex session can expose Graphify MCP tools.
+
+Operational note:
+
+- `graphify update .` is enough after code-only edits.
+- Markdown/Foam note changes require a semantic rebuild with `graphify extract ...`.
