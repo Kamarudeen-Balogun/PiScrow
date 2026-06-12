@@ -451,6 +451,37 @@ function awaitingReleaseNotice(trade: Trade, emphasis: "admin" | "buyer" | "sell
   return "Releasing now should create the actual seller payout from PiScrow escrow. Refunding will instead send the held Test Pi back to the buyer.";
 }
 
+const piTestnetExplorerBase = "https://blockexplorer.minepi.com/testnet2";
+
+function transactionExplorerLink(link?: string, txid?: string) {
+  if (txid?.trim()) {
+    return `${piTestnetExplorerBase}/tx/${encodeURIComponent(txid.trim())}`;
+  }
+
+  const trimmedLink = link?.trim();
+
+  if (!trimmedLink) {
+    return undefined;
+  }
+
+  if (trimmedLink.includes("blockexplorer.minepi.com")) {
+    return trimmedLink;
+  }
+
+  try {
+    const parsed = new URL(trimmedLink);
+    const transactionPathMatch = parsed.pathname.match(/\/transactions\/([^/?#]+)/i);
+
+    if (transactionPathMatch?.[1]) {
+      return `${piTestnetExplorerBase}/tx/${encodeURIComponent(transactionPathMatch[1])}`;
+    }
+  } catch {
+    // Fall through to the original value when the link is not a valid URL.
+  }
+
+  return trimmedLink;
+}
+
 function releaseExpectedAmount(trade: Trade) {
   const payment = trade.payment;
 
@@ -2904,6 +2935,8 @@ function TransactionRow({
   status: string;
   txid?: string;
 }) {
+  const explorerLink = transactionExplorerLink(link, txid);
+
   return (
     <div className="rounded-2xl border border-white/8 bg-black/14 p-3">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -2915,10 +2948,10 @@ function TransactionRow({
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {chipLabel && chipTone && <Chip tone={chipTone}>{chipLabel}</Chip>}
-          {link && (
+          {explorerLink && (
             <a
               className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/6 px-3 py-1.5 text-xs font-bold text-slate-100 transition hover:bg-white/10"
-              href={link}
+              href={explorerLink}
               rel="noreferrer"
               target="_blank"
             >

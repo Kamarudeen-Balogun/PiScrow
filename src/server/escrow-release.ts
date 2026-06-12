@@ -318,6 +318,10 @@ export async function executeEscrowRelease({
 
   const completed = await completePiPayment(paymentId, txid);
   const completedAt = new Date().toISOString();
+  const releaseExplorerLink = piTransactionLink(
+    completed.transaction?.txid ?? txid,
+    completed.network ?? releasePayment.network,
+  );
 
   const { error: completedError } = await supabase
     .from("payments")
@@ -325,8 +329,7 @@ export async function executeEscrowRelease({
       escrow_status:
         releaseType === "seller_release" ? "released_to_seller" : "refunded_to_buyer",
       release_status: "Completed",
-      release_transaction_link:
-        completed.transaction?._link ?? transactionLink,
+      release_transaction_link: releaseExplorerLink,
       release_completed_at: completedAt,
       raw_provider_status: {
         buyerPaymentStatus: payment,
@@ -344,7 +347,7 @@ export async function executeEscrowRelease({
     releasePayment: completed,
     releasePiPaymentId: paymentId,
     releaseTxid: txid,
-    releaseTransactionLink: completed.transaction?._link ?? transactionLink,
+    releaseTransactionLink: releaseExplorerLink,
   };
 }
 

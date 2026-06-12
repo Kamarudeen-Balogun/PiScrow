@@ -2,6 +2,8 @@ import type { PiPaymentDTO, PiUser } from "@/types/pi";
 
 const piApiBase =
   process.env.PI_PLATFORM_API_BASE?.replace(/\/$/, "") ?? "https://api.minepi.com";
+const piBlockExplorerBase = "https://blockexplorer.minepi.com";
+const piTestnetBlockExplorerBase = `${piBlockExplorerBase}/testnet2`;
 
 const piWalletSeedBase32Pattern = /^S[A-Z2-7]{55}$/;
 const piWalletSeedNoisePattern = /[`"'“”‘’<>()\[\]{}.,;:|\\/_-]+/g;
@@ -178,8 +180,14 @@ export async function completePiPayment(paymentId: string, txid: string) {
   });
 }
 
-export function piTransactionLink(txid: string) {
-  return `https://api.testnet.minepi.com/transactions/${encodeURIComponent(txid)}`;
+export function piTransactionLink(txid: string, network?: string) {
+  const trimmedNetwork = (network ?? "").trim();
+  const base =
+    trimmedNetwork === "Pi Network"
+      ? piBlockExplorerBase
+      : piTestnetBlockExplorerBase;
+
+  return `${base}/tx/${encodeURIComponent(txid)}`;
 }
 
 export async function verifyPiAccessToken(accessToken: string) {

@@ -2335,7 +2335,7 @@ export function PiScrowApp({
   }
 
   function demoTransactionLink(txid: string) {
-    return `https://api.testnet.minepi.com/transactions/${encodeURIComponent(txid)}`;
+    return `https://blockexplorer.minepi.com/testnet2/tx/${encodeURIComponent(txid)}`;
   }
 
   function ensureDemoPaymentSummary(trade: Trade): TradePaymentSummary {

@@ -131,6 +131,8 @@ def assert_payment_amount_and_window_guards() -> None:
     assert "Derived public key:" in wallet_smoke
     assert "No send requested. Use --send --to <PUBLIC_KEY> to submit a payment." in wallet_smoke
     assert "Preparing payment of" in wallet_smoke
+    assert 'const PI_TESTNET_BLOCK_EXPLORER_URL = "https://blockexplorer.minepi.com/testnet2";' in wallet_smoke
+    assert 'Explorer: ${PI_TESTNET_BLOCK_EXPLORER_URL}/tx/${encodeURIComponent(submitted.id)}' in wallet_smoke
 
 
 def assert_trade_chat_guards() -> None:
@@ -242,6 +244,20 @@ def assert_delivery_deadline_flow() -> None:
     assert "cancelled_at: parsed.data.status === \"Cancelled\" ? now : null" in admin_resolve
 
 
+def assert_transaction_explorer_links() -> None:
+    pi_platform = read("src/lib/pi-platform.ts")
+    app = read("src/components/piscrow-app.tsx")
+    workspaces = read("src/components/piscrow-workspaces.tsx")
+
+    assert 'const piBlockExplorerBase = "https://blockexplorer.minepi.com"' in pi_platform
+    assert 'const piTestnetBlockExplorerBase = `${piBlockExplorerBase}/testnet2`' in pi_platform
+    assert 'return `${base}/tx/${encodeURIComponent(txid)}`' in pi_platform
+    assert 'return `https://blockexplorer.minepi.com/testnet2/tx/${encodeURIComponent(txid)}`;' in app
+    assert 'const piTestnetExplorerBase = "https://blockexplorer.minepi.com/testnet2";' in workspaces
+    assert 'parsed.pathname.match(/\\/transactions\\/([^/?#]+)/i)' in workspaces
+    assert 'href={explorerLink}' in workspaces
+
+
 def main() -> None:
     assert_state_transition_guards()
     assert_validation_guards()
@@ -254,6 +270,7 @@ def main() -> None:
     assert_no_sensitive_console_logging()
     assert_telegram_link_flow()
     assert_delivery_deadline_flow()
+    assert_transaction_explorer_links()
 
 
 if __name__ == "__main__":
