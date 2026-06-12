@@ -11,6 +11,7 @@ import {
   Languages,
   Lightbulb,
   LoaderCircle,
+  LogOut,
   MapPin,
   MessageSquare,
   Plus,
@@ -1099,6 +1100,7 @@ export function ProfileDesk({
   onRefreshTelegram,
   onSubmitFeedback,
   onRefresh,
+  onSignOut,
   onRequestVerifiedBadge,
   onUnlinkTelegram,
 }: {
@@ -1118,6 +1120,7 @@ export function ProfileDesk({
   onRefreshTelegram: () => void;
   onSubmitFeedback: (event: FormEvent<HTMLFormElement>) => void;
   onRefresh: () => void;
+  onSignOut: () => void;
   onRequestVerifiedBadge: () => void;
   onUnlinkTelegram: () => void;
 }) {
@@ -1382,6 +1385,17 @@ export function ProfileDesk({
               : hasRequested
                 ? copy.profile.badgeRequestPending
                 : copy.profile.requestVerifiedBadge}
+          </span>
+          <ChevronRight className="h-4 w-4 text-slate-600" />
+        </button>
+        <button
+          className="fr w-full border-t border-white/8 text-left text-sm font-semibold text-rose-200"
+          type="button"
+          onClick={onSignOut}
+        >
+          <span className="inline-flex items-center gap-2">
+            <LogOut className="h-4 w-4" />
+            {copy.profile.signOut}
           </span>
           <ChevronRight className="h-4 w-4 text-slate-600" />
         </button>

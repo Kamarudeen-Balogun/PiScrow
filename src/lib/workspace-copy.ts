@@ -111,6 +111,7 @@ export type WorkspaceCopy = {
     payoutReadiness: string;
     achievementBadges: string;
     refreshProfile: string;
+    signOut: string;
     verifiedBadgeActive: string;
     badgeRequestPending: string;
     requestVerifiedBadge: string;
@@ -257,6 +258,7 @@ const en: WorkspaceCopy = {
     payoutReadiness: "Payout Readiness",
     achievementBadges: "Achievement Badges",
     refreshProfile: "Refresh profile",
+    signOut: "Sign out",
     verifiedBadgeActive: "Verified badge active",
     badgeRequestPending: "Badge request pending",
     requestVerifiedBadge: "Request verified badge",
@@ -404,6 +406,7 @@ const pcm: WorkspaceCopy = {
     payoutReadiness: "Payout readiness",
     achievementBadges: "Achievement badges",
     refreshProfile: "Refresh profile",
+    signOut: "Sign out",
     verifiedBadgeActive: "Verified badge don active",
     badgeRequestPending: "Badge request still pending",
     requestVerifiedBadge: "Request verified badge",

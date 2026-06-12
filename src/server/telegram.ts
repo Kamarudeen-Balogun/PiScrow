@@ -49,6 +49,15 @@ const telegramApiBase = "https://api.telegram.org";
 const telegramSendTimeoutMs = 4_500;
 const telegramLinkLifetimeMs = 30 * 60 * 1000;
 const telegramLinkTokenSignatureLength = 16;
+const telegramWebhookRetryLimit = 2;
+
+type TelegramApiResponse = {
+  ok?: boolean;
+  description?: string;
+  parameters?: {
+    retry_after?: number;
+  };
+};
 
 function telegramBotToken() {
   return process.env.TELEGRAM_BOT_TOKEN?.trim() || "";
@@ -328,6 +337,40 @@ async function updateTelegramDeliveryStatus(
 }
 
 function formatTelegramNotificationMessage(notification: AppNotification) {
+  return formatTelegramNotificationLines(notification).join("\n").trim();
+}
+
+function wait(milliseconds: number) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, milliseconds);
+  });
+}
+
+async function getTradeTitleForNotification(tradeId?: string) {
+  if (!tradeId) {
+    return "";
+  }
+
+  const supabase = getServiceClientOrThrow();
+  const { data, error } = await supabase
+    .from("trades")
+    .select("title")
+    .eq("id", tradeId)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return typeof data?.title === "string" ? data.title.trim() : "";
+}
+
+function notificationTradeTitleFromMetadata(notification: AppNotification) {
+  const tradeTitle = notification.metadata?.tradeTitle;
+  return typeof tradeTitle === "string" ? tradeTitle.trim() : "";
+}
+
+function formatTelegramNotificationLines(notification: AppNotification) {
   const lines = [
     "PiScrow update",
     "",
@@ -336,7 +379,13 @@ function formatTelegramNotificationMessage(notification: AppNotification) {
   ];
 
   if (notification.tradeId) {
-    lines.push("", `Trade: ${notification.tradeId.slice(0, 8)}`);
+    const tradeTitle = notificationTradeTitleFromMetadata(notification);
+
+    if (tradeTitle) {
+      lines.push("", `Trade: ${tradeTitle}`, `Ref: ${notification.tradeId.slice(0, 8)}`);
+    } else {
+      lines.push("", `Trade: ${notification.tradeId.slice(0, 8)}`);
+    }
   }
 
   const url = appUrl();
@@ -345,7 +394,7 @@ function formatTelegramNotificationMessage(notification: AppNotification) {
     lines.push("", `Open PiScrow: ${url}`);
   }
 
-  return lines.join("\n").trim();
+  return lines;
 }
 
 export async function sendTelegramText(
@@ -406,44 +455,75 @@ async function ensureTelegramWebhook() {
   }
 
   const webhookSecret = telegramWebhookSecret();
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), telegramSendTimeoutMs);
 
-  try {
-    const response = await fetch(`${telegramApiBase}/bot${token}/setWebhook`, {
-      method: "POST",
-      cache: "no-store",
-      signal: controller.signal,
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        url: `${url}/api/telegram/webhook`,
-        secret_token: webhookSecret || undefined,
-        allowed_updates: ["message", "edited_message"],
-        drop_pending_updates: false,
-      }),
-    });
+  for (let attempt = 0; attempt < telegramWebhookRetryLimit; attempt += 1) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), telegramSendTimeoutMs);
 
-    if (!response.ok) {
-      const errorText = await response.text().catch(() => "");
-      throw new Error(
-        `Telegram webhook setup failed with ${response.status}. ${errorText}`.trim(),
-      );
-    }
+    try {
+      const response = await fetch(`${telegramApiBase}/bot${token}/setWebhook`, {
+        method: "POST",
+        cache: "no-store",
+        signal: controller.signal,
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          url: `${url}/api/telegram/webhook`,
+          secret_token: webhookSecret || undefined,
+          allowed_updates: ["message", "edited_message"],
+          drop_pending_updates: false,
+        }),
+      });
 
-    const payload = (await response.json().catch(() => ({}))) as {
-      ok?: boolean;
-      description?: string;
-    };
+      const responseText = await response.text().catch(() => "");
+      const payload = responseText
+        ? (JSON.parse(responseText) as TelegramApiResponse)
+        : ({} as TelegramApiResponse);
 
-    if (!payload.ok) {
+      if (response.ok && payload.ok !== false) {
+        return;
+      }
+
+      const retryAfterSeconds = Number(payload.parameters?.retry_after ?? 0);
+      const shouldRetry =
+        response.status === 429 &&
+        attempt + 1 < telegramWebhookRetryLimit &&
+        Number.isFinite(retryAfterSeconds) &&
+        retryAfterSeconds > 0 &&
+        retryAfterSeconds <= 5;
+
+      if (shouldRetry) {
+        await wait(retryAfterSeconds * 1000);
+        continue;
+      }
+
+      if (response.status === 429) {
+        throw new Error(
+          "Telegram is temporarily rate limiting bot setup. Wait a moment, then try Link Telegram again.",
+        );
+      }
+
+      if (!response.ok) {
+        throw new Error(
+          "Telegram bot setup failed for this deployment. Check the bot token, bot username, and app URL, then try again.",
+        );
+      }
+
       throw new Error(
         payload.description || "Telegram webhook setup failed for this deployment.",
       );
+    } catch (error) {
+      if (error instanceof SyntaxError) {
+        throw new Error(
+          "Telegram bot setup returned an unreadable response. Try Link Telegram again.",
+        );
+      }
+
+      throw error;
+    } finally {
+      clearTimeout(timeout);
     }
-  } finally {
-    clearTimeout(timeout);
   }
 }
 
@@ -831,7 +911,16 @@ export async function deliverTelegramNotification(
     return;
   }
 
-  const message = formatTelegramNotificationMessage(notification);
+  const tradeTitle =
+    notificationTradeTitleFromMetadata(notification) ||
+    (await getTradeTitleForNotification(notification.tradeId).catch(() => ""));
+  const message = formatTelegramNotificationMessage({
+    ...notification,
+    metadata: {
+      ...notification.metadata,
+      tradeTitle,
+    },
+  });
 
   try {
     const responseCode = await sendTelegramText(link.telegram_chat_id, message);

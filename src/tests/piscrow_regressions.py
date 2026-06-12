@@ -42,6 +42,7 @@ def assert_validation_guards() -> None:
 
 def assert_authenticated_workspace_sync() -> None:
     app = read("src/components/piscrow-app.tsx")
+    workspaces = read("src/components/piscrow-workspaces.tsx")
     supabase = read("src/lib/supabase.ts")
 
     assert "const workspaceFallbackSyncIntervalMs = 60_000" in app
@@ -62,6 +63,9 @@ def assert_authenticated_workspace_sync() -> None:
     assert "persistSession: false" in supabase
     assert "detectSessionInUrl: false" in supabase
     assert 'normalizeUsername(trade.buyerPiUsername ?? "") === normalizedUsername' in app
+    assert "function signOutPiSession()" in app
+    assert "onSignOut={signOutPiSession}" in app
+    assert "copy.profile.signOut" in workspaces
 
 
 def assert_authorization_guards() -> None:
@@ -109,6 +113,8 @@ def assert_payment_amount_and_window_guards() -> None:
     assert "submitAppWalletPayment" in escrow_release
     assert 'StellarSdk.Keypair.fromSecret' in escrow_release
     assert 'PI_WALLET_PRIVATE_SEED does not match the app wallet expected by this Pi payment.' in escrow_release
+    assert 'message.includes("missing_scope") && message.includes("wallet_address")' in escrow_release
+    assert "approve the wallet permission" in escrow_release
     assert "PI_WALLET_PRIVATE_SEED" in pi_platform
     assert ".normalize(\"NFKC\")" in pi_platform
     assert "invisible characters" in pi_platform
@@ -176,6 +182,8 @@ def assert_no_sensitive_console_logging() -> None:
 
 def assert_telegram_link_flow() -> None:
     telegram = read("src/server/telegram.ts")
+    pi_browser = read("src/lib/pi-browser-helpers.ts")
+    app = read("src/components/piscrow-app.tsx")
 
     assert "setWebhook" in telegram
     assert 'url: `${url}/api/telegram/webhook`' in telegram
@@ -184,6 +192,11 @@ def assert_telegram_link_flow() -> None:
     assert "separatorIndex = trimmed.length - telegramLinkTokenSignatureLength - 1" in telegram
     assert "getTelegramUserIdentityRowById" in telegram
     assert "PiScrow Telegram link confirmed." in telegram
+    assert 'const piAuthScopes = ["username", "payments", "wallet_address"] as const;' in pi_browser
+    assert 'piSessionStorageKey = "piscrow-pi-session-v2"' in app
+    assert "Telegram is temporarily rate limiting bot setup" in telegram
+    assert "Trade: ${tradeTitle}" in telegram
+    assert "Ref: ${notification.tradeId.slice(0, 8)}" in telegram
 
 
 def assert_delivery_deadline_flow() -> None:

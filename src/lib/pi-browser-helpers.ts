@@ -12,6 +12,7 @@ const piTimeoutMarkers = ["timed out", "did not complete"];
 
 export const piSdkWaitMs = 7000;
 export const piAuthTimeoutMs = 10_000;
+const piAuthScopes = ["username", "payments", "wallet_address"] as const;
 
 export function wait(milliseconds: number) {
   return new Promise((resolve) => {
@@ -131,7 +132,7 @@ export async function authenticateWithPiBrowser(
       await wait(attempt === 0 ? 0 : 450);
 
       return await withTimeout<PiAuthResult | PiUser>(
-        pi.authenticate(["username", "payments"], onIncompletePaymentFound),
+        pi.authenticate([...piAuthScopes], onIncompletePaymentFound),
         piAuthTimeoutMs,
         "Pi Browser authentication timed out before it completed.",
       );

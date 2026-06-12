@@ -52,6 +52,22 @@ function releaseMemo(tradeId: string, releaseType: EscrowReleaseType) {
     : "PiScrow buyer refund";
 }
 
+function isPiWalletScopeError(error: unknown) {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  const message = error.message.toLowerCase();
+  return message.includes("missing_scope") && message.includes("wallet_address");
+}
+
+function piWalletScopeRecoveryMessage(releaseType: EscrowReleaseType) {
+  const recipientRole = releaseType === "seller_release" ? "seller" : "buyer";
+  return `PiScrow cannot complete this ${
+    releaseType === "seller_release" ? "seller payout" : "buyer refund"
+  } yet because the ${recipientRole}'s Pi account has not granted wallet access. Ask the ${recipientRole} to sign out of PiScrow, sign in again, approve the wallet permission, then retry this action.`;
+}
+
 function assertDbOk(error: { message?: string } | null | undefined) {
   if (error) {
     throw new Error(error.message ?? "Could not update escrow release state.");
@@ -236,21 +252,31 @@ export async function executeEscrowRelease({
 
   assertDbOk(createdError);
 
-  const paymentId =
-    payment.release_pi_payment_id ??
-    (await piPlatformCreatePayment({
-      amount: releaseAmount,
-      memo: releaseMemo(trade.id, releaseType),
-      metadata: {
-        product: "PiScrow escrow release",
-        tradeId: trade.id,
-        buyerPaymentId: payment.pi_payment_id,
-        releaseType,
-        adminUsername: normalizePiUsername(actor.username),
-        notes,
-      },
-      uid: recipient.pi_uid,
-    }));
+  let paymentId = payment.release_pi_payment_id;
+
+  try {
+    paymentId =
+      paymentId ??
+      (await piPlatformCreatePayment({
+        amount: releaseAmount,
+        memo: releaseMemo(trade.id, releaseType),
+        metadata: {
+          product: "PiScrow escrow release",
+          tradeId: trade.id,
+          buyerPaymentId: payment.pi_payment_id,
+          releaseType,
+          adminUsername: normalizePiUsername(actor.username),
+          notes,
+        },
+        uid: recipient.pi_uid,
+      }));
+  } catch (error) {
+    if (isPiWalletScopeError(error)) {
+      throw new Error(piWalletScopeRecoveryMessage(releaseType));
+    }
+
+    throw error;
+  }
 
   const { error: paymentIdError } = await supabase
     .from("payments")
@@ -263,7 +289,17 @@ export async function executeEscrowRelease({
 
   assertDbOk(paymentIdError);
 
-  const releasePayment = await getPiPayment(paymentId);
+  let releasePayment: PiPaymentDTO;
+
+  try {
+    releasePayment = await getPiPayment(paymentId);
+  } catch (error) {
+    if (isPiWalletScopeError(error)) {
+      throw new Error(piWalletScopeRecoveryMessage(releaseType));
+    }
+
+    throw error;
+  }
   const txid =
     payment.release_txid ?? (await submitAppWalletPayment(releasePayment));
   const transactionLink = piTransactionLink(txid);

@@ -189,7 +189,7 @@ const nextPublicSandbox =
 
 const consentStorageKey = "piscrow-consent-v1";
 const languageStorageKey = "piscrow-language-v1";
-const piSessionStorageKey = "piscrow-pi-session-v1";
+const piSessionStorageKey = "piscrow-pi-session-v2";
 const telegramLinkStateStorageKey = "piscrow-telegram-link-v1";
 const consentVersion = "2026-06-07";
 const nextPublicMaintenanceEnabled =
@@ -1828,6 +1828,27 @@ export function PiScrowApp({
       copy.notices.loginBlockedBody,
       "warning",
     );
+  }
+
+  function signOutPiSession() {
+    setUser(null);
+    setPiConnected(false);
+    setPiAccessToken("");
+    clearPersistedAuthState();
+    setTelegram(defaultTelegramStatus);
+    setTelegramAwaitingLink(false);
+    setActiveChatTrade(null);
+    setTrades([]);
+    setInterests([]);
+    setEvents([]);
+    setNotices([]);
+    setNotificationsOpen(false);
+    setProfile(null);
+    setVerificationRequests([]);
+    setReviewRecommendations([]);
+    setAuthMessage({ key: "initial" });
+    setMode("market");
+    pushNotice("Signed out", "Your PiScrow session has been cleared on this device.", "info");
   }
 
   function dismissNotice(id: string) {
@@ -4537,6 +4558,7 @@ export function PiScrowApp({
                     onRefreshTelegram={() => void refreshTelegramStatus()}
                     onSubmitFeedback={submitFeedback}
                     onRefresh={() => void refreshProfile()}
+                    onSignOut={signOutPiSession}
                     onRequestVerifiedBadge={() => void requestVerifiedBadge()}
                     onUnlinkTelegram={() => void unlinkTelegram()}
                   />

@@ -8,6 +8,7 @@ export type NotificationRow = {
   type: string;
   title: string;
   body: string;
+  metadata: Record<string, unknown>;
   read_at: string | null;
   created_at: string;
 };
@@ -19,6 +20,7 @@ export type AppNotification = {
   type: string;
   title: string;
   body: string;
+  metadata: Record<string, unknown>;
   readAt?: string;
   createdAt: string;
 };
@@ -31,6 +33,7 @@ export function mapNotification(row: NotificationRow): AppNotification {
     type: row.type,
     title: row.title,
     body: row.body,
+    metadata: row.metadata ?? {},
     readAt: row.read_at ?? undefined,
     createdAt: row.created_at,
   };
@@ -40,7 +43,7 @@ export async function listNotificationsForUser(userId: string) {
   const supabase = getServiceClientOrThrow();
   const { data, error } = await supabase
     .from("notifications")
-    .select("id, user_id, trade_id, type, title, body, read_at, created_at")
+    .select("id, user_id, trade_id, type, title, body, metadata, read_at, created_at")
     .eq("user_id", userId)
     .order("created_at", { ascending: false })
     .limit(30);
@@ -82,7 +85,7 @@ export async function createNotification({
       body,
       metadata,
     })
-    .select("id, user_id, trade_id, type, title, body, read_at, created_at")
+    .select("id, user_id, trade_id, type, title, body, metadata, read_at, created_at")
     .single();
 
   if (error) {
