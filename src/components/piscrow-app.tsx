@@ -4,6 +4,7 @@ import {
   AlertTriangle,
   Bell,
   CirclePlay,
+  Copy,
   X,
   CheckCircle2,
   Heart,
@@ -109,6 +110,11 @@ type TradePayload = {
   events: TradeEvent[];
 };
 
+type PublicLedgerPayload = Pick<TradePayload, "trades" | "events"> & {
+  stale?: boolean;
+  staleAt?: string;
+};
+
 type HandoffCodePayload = TradePayload & {
   handoffCode?: TradeHandoffCodeSummary;
   code?: string;
@@ -143,6 +149,8 @@ type AppNotice = {
   persistent?: boolean;
   expiresAt?: number;
 };
+
+const publicLedgerCacheKey = "piscrow-public-ledger-cache-v1";
 
 type BlockingAction = {
   title: string;
@@ -1676,6 +1684,45 @@ export function PiScrowApp({
     ].slice(0, 6));
   }, []);
 
+  const cachePublicLedger = useCallback((payload: PublicLedgerPayload) => {
+    try {
+      window.localStorage.setItem(
+        publicLedgerCacheKey,
+        JSON.stringify({
+          trades: payload.trades,
+          events: payload.events,
+          cachedAt: new Date().toISOString(),
+        }),
+      );
+    } catch {
+      // Ignore local cache write failures.
+    }
+  }, []);
+
+  const loadCachedPublicLedger = useCallback(() => {
+    try {
+      const raw = window.localStorage.getItem(publicLedgerCacheKey);
+
+      if (!raw) {
+        return null;
+      }
+
+      const parsed = JSON.parse(raw) as {
+        trades?: Trade[];
+        events?: TradeEvent[];
+        cachedAt?: string;
+      };
+
+      if (!Array.isArray(parsed.trades) || !Array.isArray(parsed.events)) {
+        return null;
+      }
+
+      return parsed;
+    } catch {
+      return null;
+    }
+  }, []);
+
   const broadcastRealtimeSync = useCallback(async (
     event:
       | "workspace-refresh"
@@ -1818,16 +1865,36 @@ export function PiScrowApp({
           throw new Error("Could not load public ledger.");
         }
 
-        return response.json() as Promise<Pick<TradePayload, "trades" | "events">>;
+        return response.json() as Promise<PublicLedgerPayload>;
       });
       setLedgerTrades(payload.trades);
       setLedgerEvents(payload.events);
+      cachePublicLedger(payload);
+      if (payload.stale) {
+        pushNotice(
+          "Ledger running on cached data",
+          "PiScrow loaded the last available public ledger while live data recovers.",
+          "warning",
+        );
+      }
     } catch (error) {
-      setFormError(error instanceof Error ? error.message : "Could not load ledger.");
+      const cached = loadCachedPublicLedger();
+
+      if (cached) {
+        setLedgerTrades(cached.trades ?? []);
+        setLedgerEvents(cached.events ?? []);
+        pushNotice(
+          "Ledger temporarily cached",
+          "Live public-ledger data is unavailable. Showing the last cached activity instead.",
+          "warning",
+        );
+      } else {
+        setFormError(error instanceof Error ? error.message : "Could not load ledger.");
+      }
     } finally {
       setLedgerLoading(false);
     }
-  }, [allowDemo, events, trades]);
+  }, [allowDemo, cachePublicLedger, events, loadCachedPublicLedger, pushNotice, trades]);
 
   function acceptConsent() {
     setConsentState("accepted");
@@ -2392,7 +2459,7 @@ export function PiScrowApp({
   }
 
   function demoTransactionLink(txid: string) {
-    return `https://blockexplorer.minepi.com/testnet2/tx/${encodeURIComponent(txid)}`;
+    return `https://blockexplorer.minepi.com/testnet/tx/${encodeURIComponent(txid)}`;
   }
 
   function ensureDemoPaymentSummary(trade: Trade): TradePaymentSummary {
@@ -4195,6 +4262,34 @@ export function PiScrowApp({
     })();
   }
 
+  function copyHandoffCode() {
+    if (!handoffCodeModal?.code) {
+      return;
+    }
+
+    void (async () => {
+      try {
+        if (navigator.clipboard?.writeText) {
+          await navigator.clipboard.writeText(handoffCodeModal.code);
+        } else {
+          const textArea = document.createElement("textarea");
+          textArea.value = handoffCodeModal.code;
+          textArea.setAttribute("readonly", "true");
+          textArea.style.position = "absolute";
+          textArea.style.left = "-9999px";
+          document.body.appendChild(textArea);
+          textArea.select();
+          document.execCommand("copy");
+          document.body.removeChild(textArea);
+        }
+
+        pushNotice("Code copied", "The buyer handoff code has been copied to your clipboard.", "success");
+      } catch {
+        setFormError("Could not copy the handoff code.");
+      }
+    })();
+  }
+
   function verifyHandoffCode(trade: Trade, code: string) {
     const trimmedCode = code.trim();
 
@@ -4638,13 +4733,14 @@ export function PiScrowApp({
           onConfirm={runConfirmedAction}
         />
       )}
-      {handoffCodeModal && (
-        <HandoffCodeDialog
-          code={handoffCodeModal.code}
-          expiresAt={handoffCodeModal.expiresAt}
-          onClose={() => setHandoffCodeModal(null)}
-        />
-      )}
+        {handoffCodeModal && (
+          <HandoffCodeDialog
+            code={handoffCodeModal.code}
+            expiresAt={handoffCodeModal.expiresAt}
+            onCopy={copyHandoffCode}
+            onClose={() => setHandoffCodeModal(null)}
+          />
+        )}
 
       <section className="ps">
         {blockingAction && <ProcessingOverlay action={blockingAction} />}
@@ -5634,10 +5730,12 @@ function ActionFeedbackDialog({
 function HandoffCodeDialog({
   code,
   expiresAt,
+  onCopy,
   onClose,
 }: {
   code: string;
   expiresAt?: string;
+  onCopy: () => void;
   onClose: () => void;
 }) {
   return (
@@ -5667,9 +5765,21 @@ function HandoffCodeDialog({
           </button>
         </div>
         <div className="mt-5 rounded-2xl border border-amber-400/25 bg-amber-400/10 px-4 py-5 text-center">
-          <p className="text-[28px] font-black tracking-[0.16em] text-[var(--gold)]">
-            {code}
-          </p>
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0 flex-1 text-left">
+              <p className="text-[28px] font-black tracking-[0.16em] text-[var(--gold)]">
+                {code}
+              </p>
+            </div>
+            <button
+              aria-label="Copy handoff code"
+              className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/8 text-slate-100 transition hover:bg-white/14"
+              type="button"
+              onClick={onCopy}
+            >
+              <Copy className="h-4 w-4" />
+            </button>
+          </div>
         </div>
         {expiresAt && (
           <p className="mt-3 text-center text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">

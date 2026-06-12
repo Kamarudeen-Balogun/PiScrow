@@ -4,6 +4,12 @@ Created: 2026-06-10
 
 This backlog captures the current issues reported from Pi Browser/mobile testing so they can be solved one by one. All items are open unless marked otherwise.
 
+## Status Legend
+
+- `Open`: not fixed yet
+- `In Progress`: partially fixed or follow-up still required
+- `Fixed`: implemented and verified in the current codebase
+
 ## Recommended Solve Order
 
 1. Fix blocking trade lifecycle and admin finalization issues.
@@ -15,6 +21,8 @@ This backlog captures the current issues reported from Pi Browser/mobile testing
 ## Issues
 
 ### PSC-001 - Telegram Linking Does Not Confirm or Persist
+
+Status: Fixed
 
 Priority: High
 
@@ -43,6 +51,8 @@ Acceptance criteria:
 
 ### PSC-002 - Proof Uploads Do Not Trigger Release or Seller Request Review Flow
 
+Status: Fixed
+
 Priority: Critical
 
 Current behavior:
@@ -66,6 +76,8 @@ Acceptance criteria:
 
 ### PSC-003 - Duplicate Admin Chat Interfaces Still Exist
 
+Status: In Progress
+
 Priority: High
 
 Current behavior:
@@ -88,6 +100,8 @@ Acceptance criteria:
 
 ### PSC-004 - Clear Old Trades Except Last Keyboard Trade
 
+Status: Open
+
 Priority: Medium
 
 Current behavior:
@@ -106,6 +120,8 @@ Acceptance criteria:
 - If data is deleted directly from Supabase, create a reversible backup/export first.
 
 ### PSC-005 - Live Activity Appears Inside Buy Tab Trade Cards
+
+Status: Fixed
 
 Priority: Medium
 
@@ -127,6 +143,8 @@ Acceptance criteria:
 
 ### PSC-006 - Toast/Popup Notifications Do Not Auto Dismiss
 
+Status: Fixed
+
 Priority: Medium
 
 Current behavior:
@@ -147,6 +165,8 @@ Acceptance criteria:
 
 ### PSC-007 - Notification Icon Should Show Counter, Not Red Dot
 
+Status: Fixed
+
 Priority: Medium
 
 Current behavior:
@@ -165,6 +185,8 @@ Acceptance criteria:
 - Count updates after reading/clearing notifications.
 
 ### PSC-008 - Users Need Per-Account Trade Deletion
+
+Status: Fixed
 
 Priority: High
 
@@ -188,6 +210,8 @@ Acceptance criteria:
 
 ### PSC-009 - Explore Expanded Trade Is Not a Fixed Popup
 
+Status: In Progress
+
 Priority: Medium
 
 Current behavior:
@@ -210,6 +234,8 @@ Acceptance criteria:
 
 ### PSC-010 - Chat Room Does Not Auto Update
 
+Status: Fixed
+
 Priority: High
 
 Current behavior:
@@ -230,6 +256,8 @@ Acceptance criteria:
 
 ### PSC-011 - Top Reload Button Does Not Work
 
+Status: Fixed
+
 Priority: Medium
 
 Current behavior:
@@ -247,6 +275,8 @@ Acceptance criteria:
 - Errors are surfaced through a dismissible notification.
 
 ### PSC-012 - Completed Trade Chat Rooms Need 7-Day Retention Then Cleanup
+
+Status: In Progress
 
 Priority: High
 
@@ -270,6 +300,8 @@ Acceptance criteria:
 
 ### PSC-013 - Language Switch Does Not Work and Needs Nigerian Pidgin
 
+Status: Open
+
 Priority: Medium
 
 Current behavior:
@@ -290,6 +322,8 @@ Acceptance criteria:
 - Missing translations gracefully fall back to English until completed.
 
 ### PSC-014 - Achievement Badges Are Hardcoded Instead of Earned
+
+Status: Open
 
 Priority: Medium
 
@@ -313,6 +347,8 @@ Acceptance criteria:
 
 ### PSC-015 - Users Need Public Profile View
 
+Status: Fixed
+
 Priority: High
 
 Current behavior:
@@ -332,6 +368,8 @@ Acceptance criteria:
 - Profile is reachable from Explore, Buy, Sell, chat, and admin views where usernames appear.
 
 ### PSC-016 - Verified Badge Request Flow Needs Milestones
+
+Status: Fixed
 
 Priority: Medium
 
@@ -353,6 +391,8 @@ Acceptance criteria:
 
 ### PSC-017 - Verified Badge Should Appear Everywhere Username Appears
 
+Status: Fixed
+
 Priority: Medium
 
 Current behavior:
@@ -370,6 +410,8 @@ Acceptance criteria:
 - Badge state is loaded consistently without stale UI.
 
 ### PSC-018 - Chat Opens Before Trade Is Funded
+
+Status: Fixed
 
 Priority: Critical
 
@@ -389,6 +431,8 @@ Acceptance criteria:
 - Funding confirmation unlocks the room.
 
 ### PSC-019 - Admin Finalize Trade Fails With Wallet Seed Length Error
+
+Status: Fixed
 
 Priority: Critical
 
@@ -411,6 +455,8 @@ Acceptance criteria:
 - Admin can finalize a test trade successfully.
 
 ### PSC-020 - Transaction Memo Text Should Be Readable
+
+Status: Fixed
 
 Priority: Low
 
@@ -440,6 +486,8 @@ Acceptance criteria:
 
 ### PSC-021 - Explore Bottom Sheet Still Leaks Into Underlying Trade List
 
+Status: In Progress
+
 Priority: High
 
 Current behavior:
@@ -463,6 +511,8 @@ Acceptance criteria:
 
 ### PSC-022 - Buyer Detail Still Shows Submit Interest After Buyer Already Responded
 
+Status: In Progress
+
 Priority: Medium
 
 Current behavior:
@@ -482,6 +532,8 @@ Acceptance criteria:
 - Demo and real accounts behave the same way.
 
 ### PSC-023 - Seller Trade Sheet Still Shows Legacy Proof Panel
+
+Status: In Progress
 
 Priority: Medium
 
@@ -503,6 +555,8 @@ Acceptance criteria:
 
 ### PSC-024 - Seller Trade Sheet Still Shows Live Activity
 
+Status: Fixed
+
 Priority: Low
 
 Current behavior:
@@ -518,6 +572,8 @@ Acceptance criteria:
 - Seller detail no longer renders Live Activity.
 
 ### PSC-025 - Public Profile Overlay Breaks Open Trade Sheet
+
+Status: In Progress
 
 Priority: High
 
@@ -538,6 +594,8 @@ Acceptance criteria:
 - No overlapping scroll regions or clipped actions appear.
 
 ### PSC-026 - Profile Surface Needs Compaction
+
+Status: In Progress
 
 Priority: Low
 
@@ -667,3 +725,34 @@ Required standard:
 - Keep audit and dispute evidence intact even when users delete/hide trades from their own history.
 - Use clear status transitions for funding, proof submitted, release requested, admin review, completed, reopened, and cleanup scheduled.
 - Avoid deleting production-like data without a backup/export step.
+
+## Implementation Notes Updated On 2026-06-12
+
+Completed in code:
+
+- Telegram linking now confirms and persists after Pi Browser return.
+- Buyer/seller/admin now use the unified trade room flow with live updates.
+- Per-account trade deletion is implemented.
+- Notification counter replaced the older red-dot behavior.
+- Toasts auto-dismiss unless intentionally persistent.
+- Chat is blocked until buyer funding is complete.
+- Admin release/refund seed handling was fixed and release/refund flow now works.
+- Public profile view and verified badge propagation are implemented.
+- Verification request milestones are enforced.
+- Handoff code flow was implemented with server-side hashed verification.
+- Handoff code dialog now includes a copy action.
+- Public ledger now prioritizes active trades before completed/cancelled ones.
+- Public ledger now falls back to cached data during short read outages.
+- Explorer links were corrected to Pi testnet explorer and invalid hashes no longer show dead links.
+- New release/refund transactions now use readable on-chain memos.
+- Curated screenshots were refreshed on June 12, 2026.
+
+Still requiring follow-up:
+
+- Explore bottom-sheet containment and overlay behavior still needs another pass.
+- Seller and buyer detail sheets still need cleanup on some legacy content surfaces.
+- Profile compaction still needs a final polish pass.
+- Language switching and Nigerian Pidgin support remain open.
+- Earned-badge activation logic still needs completion.
+- Completed trade chat retention/cleanup is only partially implemented.
+- Trade-delivery auto-refund scheduling remains open.

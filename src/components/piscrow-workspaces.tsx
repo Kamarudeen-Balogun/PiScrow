@@ -5,6 +5,7 @@ import {
   BadgeCheck,
   CheckCircle2,
   ChevronRight,
+  Copy,
   ExternalLink,
   Eye,
   HandCoins,
@@ -117,6 +118,24 @@ function tradeSearchText(trade: Trade) {
     .filter(Boolean)
     .join(" ")
     .toLowerCase();
+}
+
+function ledgerTradePriority(trade: Trade) {
+  switch (trade.status) {
+    case "Draft":
+    case "PendingFunding":
+    case "Funded":
+    case "DeliverySubmitted":
+    case "AwaitingRelease":
+    case "Disputed":
+      return 0;
+    case "Completed":
+      return 1;
+    case "Cancelled":
+      return 2;
+    default:
+      return 3;
+  }
 }
 
 function tradeInterestsFor(trade: Trade, interests: TradeInterest[]) {
@@ -451,7 +470,13 @@ function awaitingReleaseNotice(trade: Trade, emphasis: "admin" | "buyer" | "sell
   return "Releasing now should create the actual seller payout from PiScrow escrow. Refunding will instead send the held Test Pi back to the buyer.";
 }
 
-const piTestnetExplorerBase = "https://blockexplorer.minepi.com/testnet2";
+const piTestnetExplorerBase = "https://blockexplorer.minepi.com/testnet";
+
+const piTransactionHashPattern = /^[0-9a-f]{64}$/i;
+
+function canOpenExplorerTransaction(txid?: string) {
+  return Boolean(txid?.trim() && piTransactionHashPattern.test(txid.trim()));
+}
 
 function transactionExplorerLink(link?: string, txid?: string) {
   const trimmedLink = link?.trim();
@@ -465,7 +490,7 @@ function transactionExplorerLink(link?: string, txid?: string) {
       const parsed = new URL(trimmedLink);
       const transactionPathMatch = parsed.pathname.match(/\/transactions\/([^/?#]+)/i);
 
-      if (transactionPathMatch?.[1]) {
+      if (transactionPathMatch?.[1] && canOpenExplorerTransaction(transactionPathMatch[1])) {
         return `${piTestnetExplorerBase}/tx/${encodeURIComponent(transactionPathMatch[1])}`;
       }
     } catch {
@@ -473,11 +498,13 @@ function transactionExplorerLink(link?: string, txid?: string) {
     }
   }
 
-  if (txid?.trim()) {
-    return `${piTestnetExplorerBase}/tx/${encodeURIComponent(txid.trim())}`;
+  const trimmedTxid = txid?.trim();
+
+  if (trimmedTxid && canOpenExplorerTransaction(trimmedTxid)) {
+    return `${piTestnetExplorerBase}/tx/${encodeURIComponent(trimmedTxid)}`;
   }
 
-  return trimmedLink;
+  return undefined;
 }
 
 function releaseExpectedAmount(trade: Trade) {
@@ -1027,6 +1054,15 @@ export function PublicLedger({
         isSeller(trade, currentUsername);
 
       return matchesQuery && matchesFilter && isPrivateVisible;
+    })
+    .sort((left, right) => {
+      const priorityDelta = ledgerTradePriority(left) - ledgerTradePriority(right);
+
+      if (priorityDelta !== 0) {
+        return priorityDelta;
+      }
+
+      return new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime();
     })
     .slice(0, 25);
 

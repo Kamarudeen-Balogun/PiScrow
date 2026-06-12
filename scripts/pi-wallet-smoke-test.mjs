@@ -5,7 +5,7 @@ import StellarSdk from "stellar-sdk";
 
 const PI_TESTNET_HORIZON_URL = "https://api.testnet.minepi.com";
 const PI_TESTNET_PASSPHRASE = "Pi Testnet";
-const PI_TESTNET_BLOCK_EXPLORER_URL = "https://blockexplorer.minepi.com/testnet2";
+const PI_TESTNET_BLOCK_EXPLORER_URL = "https://blockexplorer.minepi.com/testnet";
 const PI_WALLET_SEED_PATTERN = /^S[A-Z2-7]{55}$/;
 const PI_WALLET_SEED_NOISE_PATTERN = /[`"'“”‘’<>()\[\]{}.,;:|\\/_-]+/g;
 

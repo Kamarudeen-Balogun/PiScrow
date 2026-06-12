@@ -3,7 +3,7 @@ import type { PiPaymentDTO, PiUser } from "@/types/pi";
 const piApiBase =
   process.env.PI_PLATFORM_API_BASE?.replace(/\/$/, "") ?? "https://api.minepi.com";
 const piBlockExplorerBase = "https://blockexplorer.minepi.com";
-const piTestnetBlockExplorerBase = `${piBlockExplorerBase}/testnet2`;
+const piTestnetBlockExplorerBase = `${piBlockExplorerBase}/testnet`;
 
 function isPiMainnetNetwork(network?: string) {
   const normalizedNetwork = (network ?? "").trim().toLowerCase();

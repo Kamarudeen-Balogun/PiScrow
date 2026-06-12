@@ -90,7 +90,10 @@ function getHorizonServer(network: string | undefined) {
   };
 }
 
-async function submitAppWalletPayment(payment: PiPaymentDTO) {
+async function submitAppWalletPayment(
+  payment: PiPaymentDTO,
+  memoText: string,
+) {
   const walletSeed = getPiWalletPrivateSeed();
   const keypair = StellarSdk.Keypair.fromSecret(walletSeed);
   const fromAddress = payment.from_address?.trim();
@@ -126,7 +129,7 @@ async function submitAppWalletPayment(payment: PiPaymentDTO) {
         amount: Number(payment.amount).toString(),
       }),
     )
-    .addMemo(StellarSdk.Memo.text(payment.identifier))
+    .addMemo(StellarSdk.Memo.text(memoText.slice(0, 28)))
     .build();
 
   transaction.sign(keypair);
@@ -301,7 +304,11 @@ export async function executeEscrowRelease({
     throw error;
   }
   const txid =
-    payment.release_txid ?? (await submitAppWalletPayment(releasePayment));
+    payment.release_txid ??
+    (await submitAppWalletPayment(
+      releasePayment,
+      releaseMemo(trade.id, releaseType),
+    ));
   const transactionLink = piTransactionLink(txid);
 
   const { error: submittedError } = await supabase

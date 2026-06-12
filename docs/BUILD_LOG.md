@@ -32,17 +32,21 @@ Curated screenshots live in `docs/screenshots/`:
 - Admin dispute room and review assistant controls.
 - Mobile ledger/profile captures from the current responsive layout.
 
-The screenshot set was refreshed on June 10, 2026 from passing smoke and
+The screenshot set was refreshed on June 12, 2026 from passing smoke and
 full-site Playwright runs after the latest redesign and payout-readiness work.
 
-## Remaining Real-World Validation
+## Recent Implementation Update
 
-These checks need live accounts or external portals:
+The following changes were completed in the current working tree after the previous screenshot refresh cycle:
 
-- Apply Supabase migrations to the linked project.
-- Confirm Vercel env vars for Supabase, Pi, and Upstash.
-- Confirm Pi Developer Portal legal/privacy URL fields.
-- Test Pi Browser auth on the deployed URL.
-- Capture real Pi Browser Test Pi payment screenshots.
-- Run 20 successful testnet trade simulations with external testers.
-
+- Added one-time buyer handoff code generation and seller verification flow.
+- Added handoff code copy action in the buyer reveal dialog.
+- Fixed Pi app wallet seed normalization and admin release/refund execution.
+- Corrected Pi explorer links to the active Pi testnet explorer path.
+- Stopped rendering explorer buttons for invalid or placeholder transaction hashes.
+- Changed server-signed payout/refund memos to readable on-chain text:
+  - `PiScrow seller payout`
+  - `PiScrow buyer refund`
+- Added public-ledger cached fallback behavior for short Supabase read outages.
+- Prioritized active trades ahead of completed/cancelled trades in the public ledger.
+- Rewrote the root README and added local README files for source, server, tests, scripts, docs, and Supabase.

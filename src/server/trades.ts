@@ -722,8 +722,8 @@ export async function listPublicLedger() {
   const payments = await getCompletedPaymentMap(tradeIds);
   const handoffCodes = await getTradeHandoffCodeMap(tradeIds);
 
-  return {
-    trades: rows.map((trade) => ({
+  const mappedTrades = rows
+    .map((trade) => ({
       ...mapTrade(
         trade,
         users,
@@ -735,7 +735,22 @@ export async function listPublicLedger() {
       targetBuyerPiUsernames: [],
       deliveryProofUrl: undefined,
       buyerReceiptProofUrl: undefined,
-    })),
+    }))
+    .sort((left, right) => {
+      const leftPriority =
+        left.status === "Completed" ? 1 : left.status === "Cancelled" ? 2 : 0;
+      const rightPriority =
+        right.status === "Completed" ? 1 : right.status === "Cancelled" ? 2 : 0;
+
+      if (leftPriority !== rightPriority) {
+        return leftPriority - rightPriority;
+      }
+
+      return new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime();
+    });
+
+  return {
+    trades: mappedTrades,
     events: ((eventRows ?? []) as TradeEventRow[]).map((event) =>
       mapEvent(event, users, reputations),
     ),

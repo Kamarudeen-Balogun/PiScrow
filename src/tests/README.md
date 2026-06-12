@@ -1,21 +1,23 @@
 # Tests
 
-This folder is reserved for PiScrow unit and browser test helpers.
+This folder contains PiScrow verification scripts for source regressions, security checks, smoke coverage, and broader browser workflow validation.
 
-Initial test targets:
+## Files
 
-- Seller offer posting
-- Buyer interest submission
-- Seller buyer selection
-- Public ledger visibility
-- Trade state transitions
-- Validation schemas
-- Payment callback request handling
-- Dispute lock behavior
+- `piscrow_regressions.py`: source-level guardrails for trade-state, validation, auth, Pi payment, explorer links, and other fixed expectations
+- `piscrow_security.py`: security-header and secret-leak checks
+- `piscrow_smoke.py`: fast browser walkthrough with curated screenshot capture
+- `piscrow_full_site.py`: broader Playwright scenario coverage across desktop and mobile
 
-Current commands:
+## Commands
 
-- `npm run test:regressions` checks source-level state, validation, authorization, payment, dispute, review-copilot, and sensitive logging guardrails.
-- `npm run test:security` checks security headers, payment guardrails, and client bundle secret leakage.
-- `npm run test:smoke` checks the core demo flow and captures screenshots.
-- `npm run test:full` checks wider UI flows, mobile navigation, feedback, admin review, and console errors.
+- `npm run test:regressions`
+- `npm run test:security`
+- `npm run test:smoke`
+- `npm run test:full`
+
+## Notes
+
+- Browser tests expect a running app at `http://localhost:3000` unless `PISCROW_BASE_URL` is set.
+- `test-artifacts/` is intentionally gitignored; curated screenshots should be copied into `docs/screenshots/` only when needed.
+- Keep regression checks tight around trade lifecycle, Pi payment handling, admin review, and public-ledger behavior.
