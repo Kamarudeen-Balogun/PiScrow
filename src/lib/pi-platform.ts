@@ -111,6 +111,22 @@ export async function approvePiPayment(paymentId: string) {
   });
 }
 
+export async function piPlatformCreatePayment(payment: {
+  amount: number;
+  memo: string;
+  metadata: Record<string, unknown>;
+  uid: string;
+}) {
+  const response = await piPlatformRequest<{ identifier: string }>("/v2/payments", {
+    method: "POST",
+    body: JSON.stringify({
+      payment,
+    }),
+  });
+
+  return response.identifier;
+}
+
 export async function getPiPayment(paymentId: string) {
   return piPlatformRequest<PiPaymentDTO>(`/v2/payments/${paymentId}`, {
     method: "GET",

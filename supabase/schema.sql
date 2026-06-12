@@ -61,6 +61,8 @@ create table public.trades (
   buyer_receipt_proof_url text,
   selected_at timestamptz,
   selection_expires_at timestamptz,
+  delivery_due_at timestamptz,
+  delivery_expired_at timestamptz,
   completed_at timestamptz,
   cancelled_at timestamptz,
   buyer_deleted_at timestamptz,
@@ -326,6 +328,8 @@ create index telegram_links_status_idx
   on public.telegram_links (status, notifications_enabled, updated_at desc);
 create index telegram_links_pi_username_idx
   on public.telegram_links (pi_username);
+create index trades_delivery_due_idx
+  on public.trades (status, delivery_due_at);
 create index notification_deliveries_notification_idx
   on public.notification_deliveries (notification_id, created_at desc);
 create index notification_deliveries_user_idx

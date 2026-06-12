@@ -68,6 +68,7 @@ import {
   reviewActionLabel,
   toneFromNotificationType,
 } from "@/lib/piscrow-ui-helpers";
+import { buildDeliveryDueAt } from "@/lib/trade-deadlines";
 import {
   canRequestVerifiedBadge,
   VERIFIED_BADGE_MIN_COMPLETED_TRADES,
@@ -3528,7 +3529,10 @@ export function PiScrowApp({
 
     if (allowDemo && (!window.Pi || !piConnected)) {
       const paymentTxid = `demo-fund-${trade.id}-${Date.now()}`;
+      const deliveryDueAt = buildDeliveryDueAt();
       updateTrade(trade.id, "Funded", {
+        deliveryDueAt,
+        deliveryExpiredAt: undefined,
         payment: {
           ...ensureDemoPaymentSummary(trade),
           amountTestPi: buyerTotal,
@@ -4303,6 +4307,7 @@ export function PiScrowApp({
     }
 
     const releaseTxid = `demo-${status === "Completed" ? "release" : "refund"}-${trade.id}-${Date.now()}`;
+    const now = new Date().toISOString();
     updateTrade(trade.id, status, {
       payment: {
         ...ensureDemoPaymentSummary(trade),
@@ -4320,11 +4325,25 @@ export function PiScrowApp({
             : trade.payment?.buyerTotalTestPi ?? calculateBuyerTotal(trade.amountTestPi),
         releaseTargetPiUsername:
           status === "Completed" ? trade.sellerPiUsername : trade.buyerPiUsername,
-        releaseRequestedAt: new Date().toISOString(),
-        releaseCompletedAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
+        releaseRequestedAt: now,
+        releaseCompletedAt: now,
+        updatedAt: now,
       },
     });
+    if (status === "Completed" || status === "Cancelled") {
+      setTrades((current) =>
+        current.map((item) =>
+          item.id === trade.id
+            ? {
+                ...item,
+                completedAt: status === "Completed" ? now : item.completedAt,
+                cancelledAt: status === "Cancelled" ? now : item.cancelledAt,
+                updatedAt: now,
+              }
+            : item,
+        ),
+      );
+    }
     appendEvent(
       trade.id,
       status === "Completed"

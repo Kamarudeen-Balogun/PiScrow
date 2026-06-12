@@ -1,6 +1,7 @@
 import type { UserReputation } from "@/types/profile";
 import type { TradeReviewRecommendation } from "@/types/review";
 import type { Trade, TradeEvent, TradeStatus } from "@/types/trade";
+import { DELIVERY_WINDOW_DAYS } from "@/lib/trade-deadlines";
 import { canRequestVerifiedBadge } from "@/lib/reputation";
 
 export function createEvent(
@@ -47,6 +48,45 @@ export function fundingWindowLabel(trade: Trade) {
 
   const minutes = Math.max(1, Math.ceil(remainingMs / 60_000));
   return `${minutes} min left to fund`;
+}
+
+export function deliveryWindowExpired(trade: Pick<Trade, "deliveryDueAt">) {
+  return Boolean(
+    trade.deliveryDueAt && new Date(trade.deliveryDueAt).getTime() <= Date.now(),
+  );
+}
+
+export function deliveryDeadlineChipLabel(trade: Pick<Trade, "deliveryDueAt">) {
+  if (!trade.deliveryDueAt) {
+    return `${DELIVERY_WINDOW_DAYS}-day delivery window`;
+  }
+
+  if (deliveryWindowExpired(trade)) {
+    return "Delivery overdue";
+  }
+
+  return `Delivery due ${new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+  }).format(new Date(trade.deliveryDueAt))}`;
+}
+
+export function deliveryDeadlineDetail(
+  trade: Pick<Trade, "deliveryDueAt" | "deliveryExpiredAt">,
+) {
+  if (!trade.deliveryDueAt) {
+    return `Seller has ${DELIVERY_WINDOW_DAYS} days after funding to submit delivery proof.`;
+  }
+
+  if (trade.deliveryExpiredAt) {
+    return `Seller delivery proof did not arrive before ${dateLabel(trade.deliveryDueAt)}. PiScrow refunded the buyer in full.`;
+  }
+
+  if (deliveryWindowExpired(trade)) {
+    return `Delivery deadline passed at ${dateLabel(trade.deliveryDueAt)}. PiScrow is processing the buyer refund.`;
+  }
+
+  return `Seller must submit delivery proof by ${dateLabel(trade.deliveryDueAt)} or PiScrow refunds the buyer automatically.`;
 }
 
 export function interestErrorMessage(message?: string) {

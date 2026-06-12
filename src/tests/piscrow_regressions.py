@@ -104,6 +104,11 @@ def assert_payment_amount_and_window_guards() -> None:
     assert 'escrow_status: "held_in_app"' in incomplete_route
     assert 'status: "AwaitingRelease"' in confirm_route
     assert "getPiWalletPrivateSeed" in escrow_release
+    assert "piPlatformCreatePayment" in escrow_release
+    assert "completePiPayment" in escrow_release
+    assert "submitAppWalletPayment" in escrow_release
+    assert 'StellarSdk.Keypair.fromSecret' in escrow_release
+    assert 'PI_WALLET_PRIVATE_SEED does not match the app wallet expected by this Pi payment.' in escrow_release
     assert "PI_WALLET_PRIVATE_SEED" in pi_platform
     assert ".normalize(\"NFKC\")" in pi_platform
     assert "invisible characters" in pi_platform
@@ -169,6 +174,52 @@ def assert_no_sensitive_console_logging() -> None:
         assert "console.error" not in source
 
 
+def assert_telegram_link_flow() -> None:
+    telegram = read("src/server/telegram.ts")
+
+    assert "setWebhook" in telegram
+    assert 'url: `${url}/api/telegram/webhook`' in telegram
+    assert 'return;' in telegram and 'Telegram webhook secret is not configured.' not in telegram.split("export function assertTelegramWebhookSecret", 1)[1].split("export async function deliverTelegramNotification", 1)[0]
+    assert "const body = `p_${compactUserId}_${expiresAtToken}`" in telegram
+    assert "separatorIndex = trimmed.length - telegramLinkTokenSignatureLength - 1" in telegram
+    assert "getTelegramUserIdentityRowById" in telegram
+    assert "PiScrow Telegram link confirmed." in telegram
+
+
+def assert_delivery_deadline_flow() -> None:
+    schema = read("supabase/schema.sql")
+    migration = read("supabase/migrations/20260612123000_trade_delivery_deadlines.sql")
+    trade_types = read("src/types/trade.ts")
+    ui_helpers = read("src/lib/piscrow-ui-helpers.ts")
+    trade_deadlines = read("src/lib/trade-deadlines.ts")
+    complete_route = read("src/app/api/pi/complete/route.ts")
+    incomplete_route = read("src/app/api/pi/incomplete/route.ts")
+    delivery_route = read("src/app/api/trades/[tradeId]/delivery/route.ts")
+    workspaces = read("src/components/piscrow-workspaces.tsx")
+    expiry_server = read("src/server/delivery-expiry.ts")
+    expiry_route = read("src/app/api/internal/trades/expire-deliveries/route.ts")
+    admin_resolve = read("src/app/api/trades/[tradeId]/admin-resolve/route.ts")
+
+    assert "delivery_due_at timestamptz" in schema
+    assert "delivery_expired_at timestamptz" in schema
+    assert "trades_delivery_due_idx" in schema
+    assert "add column if not exists delivery_due_at timestamptz" in migration
+    assert "add column if not exists delivery_expired_at timestamptz" in migration
+    assert "deliveryDueAt?: string;" in trade_types
+    assert "deliveryExpiredAt?: string;" in trade_types
+    assert "DELIVERY_WINDOW_DAYS = 7" in trade_deadlines
+    assert "buildDeliveryDueAt" in complete_route
+    assert 'delivery_due_at: deliveryDueAt' in complete_route
+    assert 'delivery_due_at: deliveryDueAt' in incomplete_route
+    assert "DELIVERY_WINDOW_DAYS" in delivery_route
+    assert "delivery window" in delivery_route
+    assert "deliveryDeadlineDetail" in workspaces
+    assert "processExpiredDeliveries" in expiry_server
+    assert "Delivery window expired" in expiry_server
+    assert "PISCROW_INTERNAL_CRON_TOKEN" in expiry_route
+    assert "cancelled_at: parsed.data.status === \"Cancelled\" ? now : null" in admin_resolve
+
+
 def main() -> None:
     assert_state_transition_guards()
     assert_validation_guards()
@@ -179,6 +230,8 @@ def main() -> None:
     assert_review_copilot_is_recommend_only()
     assert_demo_payment_visibility()
     assert_no_sensitive_console_logging()
+    assert_telegram_link_flow()
+    assert_delivery_deadline_flow()
 
 
 if __name__ == "__main__":

@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { buildDeliveryDueAt } from "@/lib/trade-deadlines";
 import {
   completePiPayment,
   getPiPayment,
@@ -116,11 +117,15 @@ export async function POST(request: Request) {
       throw new Error(paymentError.message);
     }
 
+    const now = Date.now();
+    const deliveryDueAt = buildDeliveryDueAt(now);
     const { error: tradeError } = await supabase
       .from("trades")
       .update({
         status: "Funded",
-        updated_at: new Date().toISOString(),
+        delivery_due_at: deliveryDueAt,
+        delivery_expired_at: null,
+        updated_at: new Date(now).toISOString(),
       })
       .eq("id", parsed.data.tradeId);
 
@@ -146,7 +151,7 @@ export async function POST(request: Request) {
       tradeId: parsed.data.tradeId,
       type: "payment_completed",
       title: "Trade funded",
-      body: `@${user.username} funded the trade. You can now submit package proof.`,
+      body: `@${user.username} funded the trade. Submit seller delivery proof within 7 days or PiScrow refunds the buyer automatically.`,
     });
 
     const payload = await listTradesForUser(user);

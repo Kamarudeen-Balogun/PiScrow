@@ -50,6 +50,8 @@ export type TradeRow = {
   delivery_proof_url: string | null;
   buyer_receipt_note: string | null;
   buyer_receipt_proof_url: string | null;
+  delivery_due_at: string | null;
+  delivery_expired_at: string | null;
   completed_at: string | null;
   cancelled_at: string | null;
   buyer_deleted_at: string | null;
@@ -193,6 +195,10 @@ export function mapTrade(
     deliveryProofUrl: row.delivery_proof_url ?? undefined,
     buyerReceiptNote: row.buyer_receipt_note ?? undefined,
     buyerReceiptProofUrl: row.buyer_receipt_proof_url ?? undefined,
+    deliveryDueAt: row.delivery_due_at ?? undefined,
+    deliveryExpiredAt: row.delivery_expired_at ?? undefined,
+    completedAt: row.completed_at ?? undefined,
+    cancelledAt: row.cancelled_at ?? undefined,
     payment: payments.get(row.id),
     createdAt: row.created_at,
     updatedAt: row.updated_at,

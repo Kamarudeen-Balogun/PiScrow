@@ -14,6 +14,9 @@ export type PiPaymentDTO = {
   amount: number;
   memo: string;
   metadata: Record<string, unknown>;
+  from_address?: string;
+  to_address?: string;
+  network?: string;
   status?: {
     developer_approved?: boolean;
     transaction_verified?: boolean;

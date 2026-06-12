@@ -1,13 +1,17 @@
-import PiNetwork from "pi-backend";
+import StellarSdk from "stellar-sdk";
 
 import {
+  completePiPayment,
+  getPiPayment,
   getPiWalletPrivateSeed,
   hasPiNetworkApiKey,
   hasPiWalletPrivateSeed,
+  piPlatformCreatePayment,
   piTransactionLink,
 } from "@/lib/pi-platform";
 import { normalizePiUsername, type AppUser } from "@/server/auth";
 import { getServiceClientOrThrow, type TradeRow } from "@/server/trades";
+import type { PiPaymentDTO } from "@/types/pi";
 import type { EscrowReleaseType } from "@/types/trade";
 
 type PaymentReleaseRow = {
@@ -30,21 +34,12 @@ type UserRecipientRow = {
   pi_username: string;
 };
 
+type ReleaseActor = Pick<AppUser, "username"> & {
+  id?: string | null;
+};
+
 export function hasAutomaticPiReleaseConfig() {
   return hasPiNetworkApiKey() && hasPiWalletPrivateSeed();
-}
-
-function getPiNetworkServer() {
-  const apiKey = process.env.PI_NETWORK_API_KEY;
-  const walletSeed = getPiWalletPrivateSeed();
-
-  if (!apiKey) {
-    throw new Error("PI_NETWORK_API_KEY is not configured.");
-  }
-
-  return new PiNetwork(apiKey, walletSeed, {
-    baseUrl: process.env.PI_PLATFORM_API_BASE ?? "https://api.minepi.com",
-  });
 }
 
 function roundTestPi(amount: number) {
@@ -61,6 +56,68 @@ function assertDbOk(error: { message?: string } | null | undefined) {
   if (error) {
     throw new Error(error.message ?? "Could not update escrow release state.");
   }
+}
+
+function getHorizonServer(network: string | undefined) {
+  const normalizedNetwork = (network ?? "").trim();
+  const isMainnet = normalizedNetwork === "Pi Network";
+  const serverUrl = isMainnet
+    ? "https://api.mainnet.minepi.com"
+    : "https://api.testnet.minepi.com";
+  const networkPassphrase = isMainnet
+    ? "Pi Network"
+    : "Pi Testnet";
+
+  return {
+    horizon: new StellarSdk.Server(serverUrl),
+    networkPassphrase,
+  };
+}
+
+async function submitAppWalletPayment(payment: PiPaymentDTO) {
+  const walletSeed = getPiWalletPrivateSeed();
+  const keypair = StellarSdk.Keypair.fromSecret(walletSeed);
+  const fromAddress = payment.from_address?.trim();
+  const toAddress = payment.to_address?.trim();
+  const network = payment.network?.trim();
+
+  if (!fromAddress || !toAddress || !network) {
+    throw new Error(
+      "Pi release payment is missing from_address, to_address, or network.",
+    );
+  }
+
+  if (fromAddress !== keypair.publicKey()) {
+    throw new Error(
+      "PI_WALLET_PRIVATE_SEED does not match the app wallet expected by this Pi payment.",
+    );
+  }
+
+  const { horizon, networkPassphrase } = getHorizonServer(network);
+  const account = await horizon.loadAccount(keypair.publicKey());
+  const baseFee = await horizon.fetchBaseFee();
+  const timebounds = await horizon.fetchTimebounds(180);
+
+  const transaction = new StellarSdk.TransactionBuilder(account, {
+    fee: baseFee.toString(),
+    networkPassphrase,
+    timebounds,
+  })
+    .addOperation(
+      StellarSdk.Operation.payment({
+        destination: toAddress,
+        asset: StellarSdk.Asset.native(),
+        amount: Number(payment.amount).toString(),
+      }),
+    )
+    .addMemo(StellarSdk.Memo.text(payment.identifier))
+    .build();
+
+  transaction.sign(keypair);
+
+  const submitted = await horizon.submitTransaction(transaction);
+
+  return submitted.id;
 }
 
 async function getCompletedPaymentRow(tradeId: string) {
@@ -111,12 +168,12 @@ async function getRecipientForRelease(
 }
 
 export async function executeEscrowRelease({
-  admin,
+  actor,
   notes,
   releaseType,
   trade,
 }: {
-  admin: AppUser;
+  actor: ReleaseActor;
   notes: string;
   releaseType: EscrowReleaseType;
   trade: TradeRow;
@@ -170,7 +227,7 @@ export async function executeEscrowRelease({
       release_amount_test_pi: releaseAmount,
       release_target_user_id: recipient.id,
       release_target_pi_username: normalizePiUsername(recipient.pi_username),
-      release_requested_by_user_id: admin.id,
+      release_requested_by_user_id: actor.id ?? null,
       release_requested_at: now,
       release_failure: null,
       updated_at: now,
@@ -179,10 +236,9 @@ export async function executeEscrowRelease({
 
   assertDbOk(createdError);
 
-  const pi = getPiNetworkServer();
   const paymentId =
     payment.release_pi_payment_id ??
-    (await pi.createPayment({
+    (await piPlatformCreatePayment({
       amount: releaseAmount,
       memo: releaseMemo(trade.id, releaseType),
       metadata: {
@@ -190,7 +246,7 @@ export async function executeEscrowRelease({
         tradeId: trade.id,
         buyerPaymentId: payment.pi_payment_id,
         releaseType,
-        adminUsername: normalizePiUsername(admin.username),
+        adminUsername: normalizePiUsername(actor.username),
         notes,
       },
       uid: recipient.pi_uid,
@@ -207,7 +263,9 @@ export async function executeEscrowRelease({
 
   assertDbOk(paymentIdError);
 
-  const txid = payment.release_txid ?? (await pi.submitPayment(paymentId));
+  const releasePayment = await getPiPayment(paymentId);
+  const txid =
+    payment.release_txid ?? (await submitAppWalletPayment(releasePayment));
   const transactionLink = piTransactionLink(txid);
 
   const { error: submittedError } = await supabase
@@ -222,7 +280,7 @@ export async function executeEscrowRelease({
 
   assertDbOk(submittedError);
 
-  const completed = await pi.completePayment(paymentId, txid);
+  const completed = await completePiPayment(paymentId, txid);
   const completedAt = new Date().toISOString();
 
   const { error: completedError } = await supabase

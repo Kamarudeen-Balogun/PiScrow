@@ -35,6 +35,9 @@ import {
   feePercentLabel,
 } from "@/lib/fees";
 import {
+  deliveryDeadlineChipLabel,
+  deliveryDeadlineDetail,
+  deliveryWindowExpired,
   dateLabel,
   fundingWindowLabel,
   humanizeUnderscore,
@@ -633,6 +636,11 @@ export function SellerPostPanel({
               placeholder="How will handoff, delivery proof, and receipt confirmation work?"
             />
           </label>
+          <div className="rounded-xl border border-amber-400/20 bg-amber-500/10 p-3 text-sm leading-6 text-amber-100">
+            Sellers must complete delivery within 7 days after buyer funding. If no
+            seller delivery proof is submitted before that deadline, PiScrow
+            automatically refunds the buyer in full.
+          </div>
           <div className="rounded-xl border border-emerald-400/20 bg-emerald-500/10 p-3 text-sm leading-6 text-emerald-100">
             PiScrow fee: {feePercentLabel()} of the listing price. Buyers fund
             the seller price plus the platform fee.
@@ -2236,6 +2244,11 @@ function EscrowTrackerCard({
         <div className="mb-3 flex flex-wrap items-center gap-2">
           <StatusBadge status={trade.status} />
           {trade.status === "PendingFunding" && <Chip>{fundingWindowLabel(trade)}</Chip>}
+          {trade.status === "Funded" && trade.deliveryDueAt && (
+            <Chip tone={deliveryWindowExpired(trade) ? "danger" : "info"}>
+              {deliveryDeadlineChipLabel(trade)}
+            </Chip>
+          )}
         </div>
         <h3 className="text-[17px] font-black leading-tight text-white">{trade.title}</h3>
         <LocationLine trade={trade} />
@@ -2807,6 +2820,25 @@ function TradeTransactionPanel({
                             : "Escrow tracking starts as soon as funding is verified."
           }
         />
+        {trade.deliveryDueAt && (
+          <TransactionRow
+            actionLabel="Delivery deadline"
+            amount={dateLabel(trade.deliveryDueAt)}
+            chipLabel={
+              trade.deliveryExpiredAt
+                ? "Expired"
+                : deliveryWindowExpired(trade)
+                  ? "Overdue"
+                  : "7 days"
+            }
+            chipTone={
+              trade.deliveryExpiredAt || deliveryWindowExpired(trade)
+                ? "danger"
+                : "info"
+            }
+            status={deliveryDeadlineDetail(trade)}
+          />
+        )}
         <TransactionRow
           actionLabel={releaseLineLabel(trade)}
           amount={formatTestPi(releaseExpectedAmount(trade))}
@@ -2828,7 +2860,7 @@ function TradeTransactionPanel({
 
       {emphasis === "seller" && trade.status === "Funded" && !trade.deliveryProofNote && (
         <InfoBox tone="warning">
-          Buyer funding is already locked in PiScrow escrow. Submit seller proof here before asking the buyer to confirm receipt.
+          Buyer funding is already locked in PiScrow escrow. Submit seller proof here before asking the buyer to confirm receipt. {deliveryDeadlineDetail(trade)}
         </InfoBox>
       )}
 

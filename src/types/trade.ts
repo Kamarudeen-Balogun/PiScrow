@@ -51,6 +51,10 @@ export type Trade = {
   deliveryProofUrl?: string;
   buyerReceiptNote?: string;
   buyerReceiptProofUrl?: string;
+  deliveryDueAt?: string;
+  deliveryExpiredAt?: string;
+  completedAt?: string;
+  cancelledAt?: string;
   payment?: TradePaymentSummary;
   createdAt: string;
   updatedAt: string;

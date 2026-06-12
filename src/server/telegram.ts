@@ -25,8 +25,6 @@ type TelegramLinkRow = {
 
 type TelegramLinkTokenPayload = {
   userId: string;
-  piUid: string;
-  piUsername: string;
   exp: number;
 };
 
@@ -50,6 +48,7 @@ type TelegramMessage = {
 const telegramApiBase = "https://api.telegram.org";
 const telegramSendTimeoutMs = 4_500;
 const telegramLinkLifetimeMs = 30 * 60 * 1000;
+const telegramLinkTokenSignatureLength = 16;
 
 function telegramBotToken() {
   return process.env.TELEGRAM_BOT_TOKEN?.trim() || "";
@@ -67,8 +66,25 @@ function telegramLinkSecret() {
   return process.env.PISCROW_TELEGRAM_LINK_SECRET?.trim() || "";
 }
 
+function normalizeUrl(value: string) {
+  const trimmed = value.trim();
+
+  if (!trimmed) {
+    return "";
+  }
+
+  const withProtocol = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+  return withProtocol.replace(/\/+$/, "");
+}
+
 function appUrl() {
-  return process.env.NEXT_PUBLIC_APP_URL?.trim() || "";
+  return normalizeUrl(
+    process.env.NEXT_PUBLIC_APP_URL?.trim() ||
+      process.env.VERCEL_PROJECT_PRODUCTION_URL?.trim() ||
+      process.env.VERCEL_BRANCH_URL?.trim() ||
+      process.env.VERCEL_URL?.trim() ||
+      "",
+  );
 }
 
 export function telegramIsConfigured() {
@@ -98,12 +114,28 @@ function maskChatId(chatId?: string | null) {
   return `••••${trimmed.slice(-4)}`;
 }
 
-function base64UrlEncode(value: string) {
-  return Buffer.from(value, "utf8").toString("base64url");
+function compactUuid(value: string) {
+  const normalized = value.trim().replace(/-/g, "").toLowerCase();
+
+  if (!/^[0-9a-f]{32}$/.test(normalized)) {
+    throw new Error("Telegram link token user is invalid.");
+  }
+
+  return normalized;
 }
 
-function base64UrlDecode(value: string) {
-  return Buffer.from(value, "base64url").toString("utf8");
+function expandCompactUuid(value: string) {
+  if (!/^[0-9a-f]{32}$/.test(value)) {
+    throw new Error("Telegram link token payload is invalid.");
+  }
+
+  return [
+    value.slice(0, 8),
+    value.slice(8, 12),
+    value.slice(12, 16),
+    value.slice(16, 20),
+    value.slice(20),
+  ].join("-");
 }
 
 function signTelegramTokenBody(body: string) {
@@ -116,27 +148,52 @@ function signTelegramTokenBody(body: string) {
   return createHmac("sha256", secret).update(body).digest("base64url");
 }
 
+function shortenTelegramTokenSignature(signature: string) {
+  return signature.slice(0, telegramLinkTokenSignatureLength);
+}
+
 function createTelegramLinkToken(user: Pick<AppUser, "id" | "uid" | "username">) {
-  const payload: TelegramLinkTokenPayload = {
-    userId: user.id,
-    piUid: user.uid,
-    piUsername: normalizePiUsername(user.username),
-    exp: Date.now() + telegramLinkLifetimeMs,
-  };
-  const body = base64UrlEncode(JSON.stringify(payload));
-  const signature = signTelegramTokenBody(body);
-  return `${body}.${signature}`;
+  const compactUserId = compactUuid(user.id);
+  const expiresAtSeconds = Math.floor((Date.now() + telegramLinkLifetimeMs) / 1000);
+  const expiresAtToken = expiresAtSeconds.toString(36);
+  const body = `p_${compactUserId}_${expiresAtToken}`;
+  const signature = shortenTelegramTokenSignature(signTelegramTokenBody(body));
+
+  if (!/^[A-Za-z0-9_-]{1,64}$/.test(`${body}_${signature}`)) {
+    throw new Error("Telegram link token could not be encoded safely.");
+  }
+
+  return `${body}_${signature}`;
 }
 
 function verifyTelegramLinkToken(token: string) {
-  const [body, signature] = token.trim().split(".");
+  const trimmed = token.trim();
 
-  if (!body || !signature) {
+  if (trimmed.length <= telegramLinkTokenSignatureLength + 1) {
+    throw new Error("Telegram link token is malformed.");
+  }
+
+  const separatorIndex = trimmed.length - telegramLinkTokenSignatureLength - 1;
+  const separator = trimmed.charAt(separatorIndex);
+  const body = trimmed.slice(0, separatorIndex);
+  const signature = trimmed.slice(separatorIndex + 1);
+  const [prefix, compactUserId, expiresAtToken] = body.split("_");
+
+  if (
+    separator !== "_" ||
+    prefix !== "p" ||
+    !compactUserId ||
+    !expiresAtToken ||
+    !signature ||
+    !/^[0-9a-f]{32}$/.test(compactUserId) ||
+    !/^[a-z0-9]+$/i.test(expiresAtToken) ||
+    !/^[A-Za-z0-9_-]+$/.test(signature)
+  ) {
     throw new Error("Telegram link token is malformed.");
   }
 
   const expected = signTelegramTokenBody(body);
-  const expectedBuffer = Buffer.from(expected);
+  const expectedBuffer = Buffer.from(shortenTelegramTokenSignature(expected));
   const signatureBuffer = Buffer.from(signature);
 
   if (
@@ -146,19 +203,17 @@ function verifyTelegramLinkToken(token: string) {
     throw new Error("Telegram link token is invalid.");
   }
 
-  const parsed = JSON.parse(base64UrlDecode(body)) as TelegramLinkTokenPayload;
+  const expiresAtSeconds = Number.parseInt(expiresAtToken, 36);
+  const parsed: TelegramLinkTokenPayload = {
+    userId: expandCompactUuid(compactUserId),
+    exp: expiresAtSeconds,
+  };
 
-  if (
-    !parsed ||
-    typeof parsed.userId !== "string" ||
-    typeof parsed.piUid !== "string" ||
-    typeof parsed.piUsername !== "string" ||
-    typeof parsed.exp !== "number"
-  ) {
+  if (!parsed || typeof parsed.userId !== "string" || !Number.isFinite(parsed.exp)) {
     throw new Error("Telegram link token payload is invalid.");
   }
 
-  if (parsed.exp <= Date.now()) {
+  if (parsed.exp <= Math.floor(Date.now() / 1000)) {
     throw new Error("Telegram link token has expired.");
   }
 
@@ -196,6 +251,21 @@ async function getTelegramLinkRowByUserId(userId: string) {
   }
 
   return (data as TelegramLinkRow | null) ?? null;
+}
+
+async function getTelegramUserIdentityRowById(userId: string) {
+  const supabase = getServiceClientOrThrow();
+  const { data, error } = await supabase
+    .from("users")
+    .select("id, pi_uid, pi_username")
+    .eq("id", userId)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return (data as { id: string; pi_uid: string; pi_username: string } | null) ?? null;
 }
 
 async function getTelegramLinkRowByChatId(chatId: string) {
@@ -322,6 +392,61 @@ export async function sendTelegramText(
   }
 }
 
+async function ensureTelegramWebhook() {
+  const token = telegramBotToken();
+
+  if (!token) {
+    throw new Error("Telegram bot token is not configured.");
+  }
+
+  const url = appUrl();
+
+  if (!url) {
+    throw new Error("PiScrow app URL is not configured for Telegram linking.");
+  }
+
+  const webhookSecret = telegramWebhookSecret();
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), telegramSendTimeoutMs);
+
+  try {
+    const response = await fetch(`${telegramApiBase}/bot${token}/setWebhook`, {
+      method: "POST",
+      cache: "no-store",
+      signal: controller.signal,
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        url: `${url}/api/telegram/webhook`,
+        secret_token: webhookSecret || undefined,
+        allowed_updates: ["message", "edited_message"],
+        drop_pending_updates: false,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => "");
+      throw new Error(
+        `Telegram webhook setup failed with ${response.status}. ${errorText}`.trim(),
+      );
+    }
+
+    const payload = (await response.json().catch(() => ({}))) as {
+      ok?: boolean;
+      description?: string;
+    };
+
+    if (!payload.ok) {
+      throw new Error(
+        payload.description || "Telegram webhook setup failed for this deployment.",
+      );
+    }
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 export async function getTelegramStatusForUser(userId: string) {
   const row = await getTelegramLinkRowByUserId(userId);
   return mapTelegramStatus(row);
@@ -334,6 +459,7 @@ export async function createTelegramLinkForUser(
     throw new Error("Telegram bot is not configured for this deployment.");
   }
 
+  await ensureTelegramWebhook();
   const token = createTelegramLinkToken(user);
   return {
     deepLink: `https://t.me/${telegramBotUsername()}?start=${encodeURIComponent(token)}`,
@@ -378,6 +504,12 @@ export async function linkTelegramChatFromToken(params: {
   telegramUsername?: string;
 }) {
   const payload = verifyTelegramLinkToken(params.token);
+  const userRow = await getTelegramUserIdentityRowById(payload.userId);
+
+  if (!userRow) {
+    throw new Error("PiScrow account for this Telegram link was not found.");
+  }
+
   const supabase = getServiceClientOrThrow();
   const now = new Date().toISOString();
 
@@ -397,8 +529,8 @@ export async function linkTelegramChatFromToken(params: {
     .upsert(
       {
         user_id: payload.userId,
-        pi_uid: payload.piUid,
-        pi_username: payload.piUsername,
+        pi_uid: userRow.pi_uid,
+        pi_username: normalizePiUsername(userRow.pi_username),
         telegram_chat_id: params.chatId,
         telegram_username: params.telegramUsername?.replace(/^@+/, "") || null,
         status: "linked",
@@ -667,7 +799,7 @@ export function assertTelegramWebhookSecret(request: Request) {
   const expected = telegramWebhookSecret();
 
   if (!expected) {
-    throw new Error("Telegram webhook secret is not configured.");
+    return;
   }
 
   const received =

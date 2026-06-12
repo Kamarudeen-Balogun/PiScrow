@@ -1,4 +1,5 @@
 import { deliveryProofSchema } from "@/lib/validation";
+import { DELIVERY_WINDOW_DAYS } from "@/lib/trade-deadlines";
 import { jsonError, requireAppUser } from "@/server/auth";
 import { createNotification } from "@/server/notifications";
 import { uploadTradeProofImage } from "@/server/proof-storage";
@@ -45,6 +46,15 @@ export async function POST(
     const trade = await getTradeForAction(tradeId);
     assertSeller(trade, user);
     assertTradeStatus(trade, ["Funded"]);
+
+    if (
+      trade.delivery_due_at &&
+      new Date(trade.delivery_due_at).getTime() <= Date.now()
+    ) {
+      throw new Error(
+        `This trade passed the ${DELIVERY_WINDOW_DAYS}-day delivery window. PiScrow will refund the buyer automatically.`,
+      );
+    }
 
     const proofImagePath =
       body instanceof FormData

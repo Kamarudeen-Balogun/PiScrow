@@ -106,7 +106,7 @@ export async function POST(
 
     try {
       releaseResult = await executeEscrowRelease({
-        admin: user,
+        actor: user,
         notes: resolutionNotes,
         releaseType,
         trade,
@@ -128,6 +128,7 @@ export async function POST(
       .update({
         status: parsed.data.status,
         completed_at: parsed.data.status === "Completed" ? now : null,
+        cancelled_at: parsed.data.status === "Cancelled" ? now : null,
         updated_at: now,
       })
       .eq("id", tradeId);
