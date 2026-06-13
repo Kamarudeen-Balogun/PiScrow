@@ -35,9 +35,9 @@ def main() -> None:
         desktop.goto(f"{BASE_URL}/rules", wait_until="domcontentloaded")
         desktop.wait_for_load_state("networkidle")
         expect(desktop.get_by_role("heading", name="PiScrow User Agreement")).to_be_visible()
-        expect(desktop.get_by_text("Rules, Privacy, And Consent")).to_be_visible()
-        expect(desktop.get_by_text("Testnet Disclaimer")).to_be_visible()
-        expect(desktop.get_by_text("Feedback And Support")).to_be_visible()
+        expect(desktop.get_by_text("Rules, Privacy, And Consent", exact=True)).to_be_visible()
+        expect(desktop.get_by_role("heading", name="Testnet Disclaimer")).to_be_visible()
+        expect(desktop.get_by_role("heading", name="Feedback And Support")).to_be_visible()
 
         desktop.goto(DEMO_URL, wait_until="domcontentloaded")
         desktop.wait_for_load_state("networkidle")
@@ -76,7 +76,8 @@ def main() -> None:
         )
 
         desktop.get_by_role("button", name="Admin", exact=True).click()
-        expect(desktop.get_by_text("Dispute Queue")).to_be_visible()
+        expect(desktop.get_by_text("Admin Review Queue")).to_be_visible()
+        expect(desktop.get_by_role("button", name="Enter Review Room")).to_be_visible()
         desktop.get_by_role("button", name="Enter Dispute Room").first.click()
         expect(desktop.get_by_text("Review copilot")).to_be_visible()
         desktop.screenshot(

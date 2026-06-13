@@ -17,7 +17,6 @@ import type {
 } from "@/types/trade";
 
 const HANDOFF_CODE_BYTES = 16;
-const HANDOFF_CODE_GROUP_SIZE = 4;
 const HANDOFF_CODE_TTL_MS = 30 * 60 * 1000;
 const HANDOFF_VERIFY_ATTEMPT_LIMIT = 6;
 const HANDOFF_VERIFY_WINDOW_MS = 15 * 60 * 1000;
@@ -411,21 +410,19 @@ export async function verifyTradeHandoffCode({
     throw new Error("That handoff code is invalid.");
   }
 
-  const { error: usedError } = await supabase
+  const { error: attemptError } = await supabase
     .from("trade_handoff_codes")
     .update({
       verify_attempt_count: row.verify_attempt_count + 1,
       last_attempt_at: now,
-      used_at: now,
-      used_by_user_id: user.id,
       updated_at: now,
     })
     .eq("id", row.id)
     .is("used_at", null)
     .is("invalidated_at", null);
 
-  if (usedError) {
-    throw new Error(usedError.message);
+  if (attemptError) {
+    throw new Error(attemptError.message);
   }
 
   let releaseResult: Awaited<ReturnType<typeof executeEscrowRelease>>;
@@ -444,6 +441,21 @@ export async function verifyTradeHandoffCode({
       failure: error instanceof Error ? error.message : "Automatic seller release failed after handoff code verification.",
     }).catch(() => undefined);
     throw error;
+  }
+
+  const { error: usedError } = await supabase
+    .from("trade_handoff_codes")
+    .update({
+      used_at: now,
+      used_by_user_id: user.id,
+      updated_at: now,
+    })
+    .eq("id", row.id)
+    .is("used_at", null)
+    .is("invalidated_at", null);
+
+  if (usedError) {
+    throw new Error(usedError.message);
   }
 
   const { error: tradeError } = await supabase

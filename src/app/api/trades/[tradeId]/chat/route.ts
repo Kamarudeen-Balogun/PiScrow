@@ -152,7 +152,11 @@ export async function POST(
     }
 
     const title =
-      senderRole === "admin" ? "Admin added dispute update" : "New trade chat message";
+      senderRole === "admin"
+        ? trade.status === "AwaitingRelease"
+          ? "Admin added review update"
+          : "Admin added dispute update"
+        : "New trade chat message";
     const preview =
       (parsed.data.body ?? "").trim() ||
       (attachmentUrl ? "Proof image uploaded in the trade chat." : "New chat message.");

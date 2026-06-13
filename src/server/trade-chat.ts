@@ -330,13 +330,17 @@ export async function claimTradeChatRoom(trade: TradeRow, user: AppUser) {
     trade,
     trade.status === "Disputed" ? "disputed" : "active",
   );
+  const alreadyClaimedMessage =
+    trade.status === "AwaitingRelease"
+      ? "This release review room is already claimed by another admin."
+      : "This dispute room is already claimed by another admin.";
 
   if (room.claimed_admin_user_id === user.id) {
     return room;
   }
 
   if (room.claimed_admin_user_id) {
-    throw new Error("This dispute room is already claimed by another admin.");
+    throw new Error(alreadyClaimedMessage);
   }
 
   const supabase = getServiceClientOrThrow();
@@ -360,7 +364,7 @@ export async function claimTradeChatRoom(trade: TradeRow, user: AppUser) {
   }
 
   if (!data) {
-    throw new Error("This dispute room is already claimed by another admin.");
+    throw new Error(alreadyClaimedMessage);
   }
 
   const claimedRoom = data as TradeChatRoomRow;

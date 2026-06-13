@@ -9,6 +9,7 @@ import {
   CheckCircle2,
   Heart,
   Home,
+  Languages,
   LockKeyhole,
   Mail,
   RefreshCcw,
@@ -217,6 +218,26 @@ const workspaceFallbackSyncIntervalMs = 60_000;
 const activeChatRefreshIntervalMs = 5_000;
 const realtimeSyncChannelName = "piscrow-app-sync";
 
+function readStoredHandoffCodeCache() {
+  if (typeof window === "undefined") {
+    return {};
+  }
+
+  try {
+    const raw = window.localStorage.getItem(handoffCodeCacheStorageKey);
+
+    if (!raw) {
+      return {};
+    }
+
+    const parsed = JSON.parse(raw) as Record<string, { code: string; expiresAt?: string }>;
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    window.localStorage.removeItem(handoffCodeCacheStorageKey);
+    return {};
+  }
+}
+
 const viewIcons: Record<ViewMode, typeof Home> = {
   market: ShoppingBag,
   sell: Tag,
@@ -400,7 +421,7 @@ const appCopy: Record<
       "Testnet only. PiScrow does not custody Mainnet Pi.",
       "Proof images may be reviewed by the seller, buyer, and admin.",
       "Public ledger activity is shown for marketplace transparency.",
-      "Admins can review disputed trades before release or cancellation.",
+      "Admins can review release-ready or disputed trades before release or cancellation.",
     ],
     readRules: "Read full rules, privacy, and agreements",
     checkingConsent: "Checking saved consent...",
@@ -846,7 +867,7 @@ const appCopy: Record<
       "Sirf testnet. PiScrow Mainnet Pi custody nahi karta.",
       "Proof images seller, buyer aur admin dekh sakte hain.",
       "Public ledger transparency ke liye activity dikhata hai.",
-      "Admins disputed trades release ya cancel se pehle review karte hain.",
+      "Admins release-ready ya disputed trades release ya cancel se pehle review karte hain.",
     ],
     readRules: "Rules, privacy aur agreements padhein",
     checkingConsent: "Saved consent check ho raha hai...",
@@ -876,7 +897,7 @@ const appCopy: Record<
       sell: { label: "Seller", description: "Offers post karein, buyer responses compare karein aur delivery manage karein." },
       ledger: { label: "Ledger", description: "PiScrow testnet ki transparent activity." },
       profile: { label: "Profile", description: "Trust score, trade history aur badge status track karein." },
-      admin: { label: "Admin", description: "Approved Pi usernames ke disputed trades resolve karein." },
+      admin: { label: "Admin", description: "Approved Pi usernames ke release-ready ya disputed trades review karein." },
     },
     auth: {
       initial: "PiScrow use karne ke liye Pi Browser se connect karein.",
@@ -1094,7 +1115,7 @@ const appCopy: Record<
       "Na testnet only. PiScrow no dey hold Mainnet Pi.",
       "Seller, buyer, and admin fit review proof images.",
       "Public ledger activity dey show for marketplace transparency.",
-      "Admins fit review disputed trades before release or cancellation.",
+      "Admins fit review release-ready or disputed trades before release or cancellation.",
     ],
     readRules: "Read full rules, privacy, and agreement",
     checkingConsent: "Dey check saved consent...",
@@ -1146,7 +1167,7 @@ const appCopy: Record<
       },
       admin: {
         label: "Admin",
-        description: "Resolve disputed trades from approved Pi usernames.",
+        description: "Review release-ready or disputed trades from approved Pi usernames.",
       },
     },
     auth: {
@@ -1251,7 +1272,7 @@ export function PiScrowApp({
   } | null>(null);
   const [handoffCodeCache, setHandoffCodeCache] = useState<
     Record<string, { code: string; expiresAt?: string }>
-  >({});
+  >(() => readStoredHandoffCodeCache());
   const [paymentState, setPaymentState] = useState("No payment started.");
   const [appRefreshing, setAppRefreshing] = useState(false);
   const [ledgerLoading, setLedgerLoading] = useState(false);
@@ -1322,43 +1343,25 @@ export function PiScrowApp({
     trades.find((trade) => trade.id === expandedTradeId) ??
     trades[0];
 
-  useEffect(() => {
-    try {
-      const raw = window.localStorage.getItem(handoffCodeCacheStorageKey);
-
-      if (!raw) {
-        return;
-      }
-
-      const parsed = JSON.parse(raw) as Record<string, { code: string; expiresAt?: string }>;
-
-      if (parsed && typeof parsed === "object") {
-        setHandoffCodeCache(parsed);
-      }
-    } catch {
-      window.localStorage.removeItem(handoffCodeCacheStorageKey);
-    }
-  }, []);
+  const activeHandoffCodeCache = useMemo<
+    Record<string, { code: string; expiresAt?: string }>
+  >(
+    () =>
+      Object.fromEntries(
+        Object.entries(handoffCodeCache).filter(([tradeId]) => {
+          const trade = trades.find((item) => item.id === tradeId);
+          return trade?.handoffCode?.status === "active";
+        }),
+      ),
+    [handoffCodeCache, trades],
+  );
 
   useEffect(() => {
     window.localStorage.setItem(
       handoffCodeCacheStorageKey,
-      JSON.stringify(handoffCodeCache),
+      JSON.stringify(activeHandoffCodeCache),
     );
-  }, [handoffCodeCache]);
-
-  useEffect(() => {
-    setHandoffCodeCache((current) => {
-      const next = Object.fromEntries(
-        Object.entries(current).filter(([tradeId]) => {
-          const trade = trades.find((item) => item.id === tradeId);
-          return trade?.handoffCode?.status === "active";
-        }),
-      );
-
-      return Object.keys(next).length === Object.keys(current).length ? current : next;
-    });
-  }, [trades]);
+  }, [activeHandoffCodeCache]);
 
   const sellerTrades = useMemo(
     () =>
@@ -4217,7 +4220,7 @@ export function PiScrowApp({
   }
 
   function showHandoffCode(trade: Trade) {
-    const cached = handoffCodeCache[trade.id];
+    const cached = activeHandoffCodeCache[trade.id];
 
     if (!cached?.code) {
       setFormError("Generate a fresh handoff code in this session before using Show code.");
@@ -4504,7 +4507,7 @@ export function PiScrowApp({
     setActiveChatTrade(trade);
 
     if (!user?.isAdmin) {
-      setFormError("Only admins can join dispute rooms.");
+      setFormError("Only admins can join review rooms.");
       return;
     }
 
@@ -4554,7 +4557,7 @@ export function PiScrowApp({
     }
 
     if (!piAccessToken) {
-      setFormError("Connect your admin Pi account before joining dispute rooms.");
+      setFormError("Connect your admin Pi account before joining review rooms.");
       return;
     }
 
@@ -4567,10 +4570,20 @@ export function PiScrowApp({
         { method: "POST" },
       );
       applyChatPayload(payload);
-      pushNotice("Dispute room joined", "You can now message this dispute room.", "success");
+      pushNotice(
+        trade.status === "AwaitingRelease" ? "Review room joined" : "Dispute room joined",
+        trade.status === "AwaitingRelease"
+          ? "You can now message this release review room."
+          : "You can now message this dispute room.",
+        "success",
+      );
     } catch (error) {
       setFormError(
-        error instanceof Error ? error.message : "Could not join dispute room.",
+        error instanceof Error
+          ? error.message
+          : trade.status === "AwaitingRelease"
+            ? "Could not join review room."
+            : "Could not join dispute room.",
       );
     } finally {
       setChatLoadingTradeId("");
@@ -4600,7 +4613,9 @@ export function PiScrowApp({
     const notes =
       status === "Completed"
         ? "Admin approved the seller release path after reviewing buyer receipt and party evidence."
-        : "Admin approved the buyer refund path after reviewing the dispute and party evidence.";
+        : trade.status === "AwaitingRelease"
+          ? "Admin approved the buyer refund path after reviewing buyer receipt, seller proof, and party evidence."
+          : "Admin approved the buyer refund path after reviewing the dispute and party evidence.";
 
     showBlockingAction(
       status === "Completed" ? "Releasing seller payout" : "Refunding buyer",
@@ -4641,7 +4656,7 @@ export function PiScrowApp({
         })
         .catch((error) => {
           setFormError(
-            error instanceof Error ? error.message : "Could not resolve dispute.",
+            error instanceof Error ? error.message : "Could not complete the admin review.",
           );
         })
         .finally(() => {
@@ -4775,6 +4790,12 @@ export function PiScrowApp({
 
           {!signedIn && (
             <div className="grid gap-3 pb-4">
+              <LanguageSelector
+                copy={copy}
+                language={language}
+                onChange={changeLanguage}
+                variant="guest"
+              />
               <WelcomeHero copy={copy} />
               <SessionCard
                 authState={authState}
@@ -5123,20 +5144,31 @@ function LanguageSelector({
   copy: AppCopy;
   language: LanguageCode;
   onChange: (language: LanguageCode) => void;
-  variant?: "inline" | "card";
+  variant?: "inline" | "card" | "guest";
 }) {
   const containerClassName =
     variant === "card"
       ? "card mx-[14px] grid gap-1"
+      : variant === "guest"
+        ? "mx-[14px] grid gap-2 rounded-2xl border border-white/10 bg-[rgba(10,20,36,0.88)] p-3 shadow-[0_14px_34px_rgba(0,0,0,0.16)]"
       : "mx-[14px] grid gap-1";
+  const labelClassName =
+    variant === "guest"
+      ? "inline-flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.14em] text-slate-200"
+      : "text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--muted)]";
+  const selectClassName =
+    variant === "guest"
+      ? "inp h-11 normal-case border-white/12 bg-[rgba(5,12,22,0.72)]"
+      : "inp h-10 normal-case";
 
   return (
     <label className={containerClassName}>
-      <span className="text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--muted)]">
+      <span className={labelClassName}>
+        {variant === "guest" && <Languages className="h-4 w-4 text-[var(--gold)]" />}
         {copy.language}
       </span>
       <select
-        className="inp h-10 normal-case"
+        className={selectClassName}
         value={language}
         onChange={(event) => {
           const nextLanguage = event.target.value;
@@ -5300,22 +5332,39 @@ function MaintenanceBanner({
 }
 
 function DemoModeBanner({ copy }: { copy: AppCopy }) {
+  const demoViews = [
+    copy.views.market.label,
+    copy.views.sell.label,
+    copy.views.profile.label,
+    copy.views.admin.label,
+  ];
+
   return (
-    <section className="mx-[14px] mt-3 flex items-center gap-3 rounded-2xl border border-sky-400/25 bg-sky-500/10 px-3 py-2.5 text-sky-100">
-      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-sky-400/14">
+    <section className="mx-[14px] mt-3 flex items-start gap-3 rounded-[24px] border border-sky-400/25 bg-[linear-gradient(180deg,rgba(14,57,96,0.26),rgba(8,28,48,0.2))] px-4 py-4 text-sky-100 shadow-[0_18px_40px_rgba(5,34,58,0.18)]">
+      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-sky-400/14">
         <CirclePlay className="h-4 w-4" />
       </div>
       <div className="min-w-0 flex-1">
         <p className="text-sm font-black">{copy.demoWorkspace}</p>
-        <p className="truncate text-xs text-sky-50/75">
-          Local demo only. No Pi, Supabase, or testnet writes.
+        <p className="mt-1 text-sm leading-6 text-sky-50/78">
+          {copy.demoBody}
         </p>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {demoViews.map((label) => (
+            <span
+              key={label}
+              className="rounded-full border border-sky-300/18 bg-sky-300/10 px-2.5 py-1 text-[11px] font-bold uppercase tracking-[0.12em] text-sky-50/88"
+            >
+              {label}
+            </span>
+          ))}
+        </div>
       </div>
       <Link
         className="btn-gh shrink-0 border-sky-300/25 px-3 py-2 text-xs text-sky-100"
         href="/"
       >
-        Exit
+        {copy.exitDemo}
       </Link>
     </section>
   );

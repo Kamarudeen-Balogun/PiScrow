@@ -22,21 +22,32 @@ export type WorkspaceCopy = {
     filters: Record<"All" | "Digital Assets" | "Physical Goods" | "Services", string>;
     liveLedger: string;
     activity: string;
+    activityFilters: Record<
+      "All" | "Listings" | "Interest" | "Funding" | "Delivery" | "Disputes" | "Outcomes",
+      string
+    >;
     refresh: string;
     refreshing: string;
     noMatches: string;
+    noActivity: string;
+    reset: string;
+    openTrade: string;
   };
   admin: {
     totalTrades: string;
     disputes: string;
+    reviews: string;
     resolved: string;
     disputeQueue: string;
+    reviewQueue: string;
     activeCount: (count: number) => string;
     noDisputes: string;
+    noReviews: string;
     unselectedBuyer: string;
     buyerSellerLine: (buyer: string, seller: string) => string;
     atStake: string;
     enterDisputeRoom: string;
+    enterReviewRoom: string;
     releaseToSeller: string;
     refundBuyer: string;
   };
@@ -81,12 +92,14 @@ export type WorkspaceCopy = {
   chat: {
     title: string;
     disputeActive: string;
+    releaseReviewActive: string;
     tradeRoomInfo: string;
     secureRoomReady: string;
     secureRoomOnDemand: string;
     messagesRecorded: (count: number) => string;
     noMessages: string;
     disputeRoom: string;
+    reviewRoom: string;
     tradeRoom: string;
     latestUpdate: string;
     proofImageUploaded: string;
@@ -163,21 +176,37 @@ const en: WorkspaceCopy = {
     },
     liveLedger: "Live Ledger",
     activity: "Activity",
+    activityFilters: {
+      All: "All",
+      Listings: "Listings",
+      Interest: "Interest",
+      Funding: "Funding",
+      Delivery: "Delivery",
+      Disputes: "Disputes",
+      Outcomes: "Outcomes",
+    },
     refresh: "Refresh",
     refreshing: "Refreshing",
     noMatches: "No ledger activity matches this filter.",
+    noActivity: "No public activity matches this filter yet.",
+    reset: "Reset",
+    openTrade: "Open trade",
   },
   admin: {
     totalTrades: "Total Trades",
     disputes: "Disputes",
+    reviews: "Admin Reviews",
     resolved: "Resolved",
     disputeQueue: "Dispute Queue",
+    reviewQueue: "Admin Review Queue",
     activeCount: (count) => `${count} active`,
     noDisputes: "No disputed trades waiting for admin review.",
+    noReviews: "No trades are waiting for admin review.",
     unselectedBuyer: "unselected",
     buyerSellerLine: (buyer, seller) => `Buyer: @${buyer} · Seller: @${seller}`,
     atStake: "at stake",
     enterDisputeRoom: "Enter Dispute Room",
+    enterReviewRoom: "Enter Review Room",
     releaseToSeller: "Release to seller",
     refundBuyer: "Refund buyer",
   },
@@ -224,6 +253,8 @@ const en: WorkspaceCopy = {
     title: "Trade Chat",
     disputeActive:
       "Dispute is open. Keep replies, proof, and admin decisions in this room.",
+    releaseReviewActive:
+      "Admin review is active. Keep payout notes, proof, and release decisions in this room.",
     tradeRoomInfo:
       "Use this room for delivery updates, proof, and buyer-seller coordination.",
     secureRoomReady: "Secure room is ready",
@@ -231,6 +262,7 @@ const en: WorkspaceCopy = {
     messagesRecorded: (count) => `${count} messages recorded for this trade.`,
     noMessages: "No messages yet. Open the full chat when you need it.",
     disputeRoom: "Dispute room",
+    reviewRoom: "Review room",
     tradeRoom: "Trade room",
     latestUpdate: "Latest update",
     proofImageUploaded: "Proof image uploaded in chat.",
@@ -311,21 +343,37 @@ const pcm: WorkspaceCopy = {
     },
     liveLedger: "Live ledger",
     activity: "Activity",
+    activityFilters: {
+      All: "All",
+      Listings: "Listings",
+      Interest: "Interest",
+      Funding: "Funding",
+      Delivery: "Delivery",
+      Disputes: "Disputes",
+      Outcomes: "Outcomes",
+    },
     refresh: "Refresh",
     refreshing: "Refreshing",
     noMatches: "No ledger activity match this filter.",
+    noActivity: "No public activity match this filter yet.",
+    reset: "Reset",
+    openTrade: "Open trade",
   },
   admin: {
     totalTrades: "Total trades",
     disputes: "Disputes",
+    reviews: "Admin reviews",
     resolved: "Resolved",
     disputeQueue: "Dispute queue",
+    reviewQueue: "Admin review queue",
     activeCount: (count) => `${count} active`,
     noDisputes: "No disputed trade dey wait for admin review.",
+    noReviews: "No trade dey wait for admin review.",
     unselectedBuyer: "never select",
     buyerSellerLine: (buyer, seller) => `Buyer: @${buyer} · Seller: @${seller}`,
     atStake: "wey dey stake",
     enterDisputeRoom: "Enter dispute room",
+    enterReviewRoom: "Enter review room",
     releaseToSeller: "Release to seller",
     refundBuyer: "Refund buyer",
   },
@@ -372,6 +420,8 @@ const pcm: WorkspaceCopy = {
     title: "Trade chat",
     disputeActive:
       "Dispute don open. Keep reply, proof, and admin decision inside this room.",
+    releaseReviewActive:
+      "Admin review don start. Keep payout note, proof, and release decision inside this room.",
     tradeRoomInfo:
       "Use this room for delivery update, proof, and buyer-seller coordination.",
     secureRoomReady: "Secure room don ready",
@@ -379,6 +429,7 @@ const pcm: WorkspaceCopy = {
     messagesRecorded: (count) => `${count} message don record for this trade.`,
     noMessages: "No message yet. Open full chat when you need am.",
     disputeRoom: "Dispute room",
+    reviewRoom: "Review room",
     tradeRoom: "Trade room",
     latestUpdate: "Latest update",
     proofImageUploaded: "Proof image don upload for chat.",

@@ -78,7 +78,7 @@ def assert_authorization_guards() -> None:
     dispute_route = read("src/app/api/trades/[tradeId]/dispute/route.ts")
 
     assert "if (!user.isAdmin)" in admin_route
-    assert "Only admins can resolve disputes." in admin_route
+    assert "Only admins can resolve review rooms or disputes." in admin_route
     assert "if (!user.isAdmin)" in review_route
     assert "Only admins can run review recommendations." in review_route
     assert "assertBuyerIsEligibleForListing(trade, user)" in interest_route
@@ -114,6 +114,10 @@ def assert_payment_amount_and_window_guards() -> None:
     assert "piPlatformCreatePayment" in escrow_release
     assert "completePiPayment" in escrow_release
     assert "submitAppWalletPayment" in escrow_release
+    assert "payment_already_linked_with_a_tx" in escrow_release
+    assert "releasePayment.transaction?.txid?.trim()" in escrow_release
+    assert "if (releasePayment.status?.developer_completed)" in escrow_release
+    assert ".addMemo(StellarSdk.Memo.text(paymentIdentifier))" in escrow_release
     assert 'StellarSdk.Keypair.fromSecret' in escrow_release
     assert 'PI_WALLET_PRIVATE_SEED does not match the app wallet expected by this Pi payment.' in escrow_release
     assert 'message.includes("missing_scope") && message.includes("wallet_address")' in escrow_release
@@ -135,6 +139,17 @@ def assert_payment_amount_and_window_guards() -> None:
     assert 'Explorer: ${PI_TESTNET_BLOCK_EXPLORER_URL}/tx/${encodeURIComponent(submitted.hash)}' in wallet_smoke
 
 
+def assert_handoff_code_release_recovery() -> None:
+    handoff = read("src/server/trade-handoff.ts")
+    escrow_release = read("src/server/escrow-release.ts")
+
+    assert "verify_attempt_count: row.verify_attempt_count + 1" in handoff
+    assert handoff.index("executeEscrowRelease({") < handoff.index("used_at: now")
+    assert '["NotStarted", "Failed", "Cancelled", "Created", "Submitted"]' in escrow_release
+    assert "persistCompletedEscrowRelease" in escrow_release
+    assert "releasePayment.transaction?.txid?.trim() ||" in escrow_release
+
+
 def assert_trade_chat_guards() -> None:
     migration = read("supabase/migrations/20260609190000_trade_chat_rooms.sql")
     chat_server = read("src/server/trade-chat.ts")
@@ -148,6 +163,7 @@ def assert_trade_chat_guards() -> None:
     assert "trade chat rooms direct access denied" in migration
     assert "trade chat messages direct access denied" in migration
     assert "Join this review room before sending admin messages." in chat_server
+    assert "This release review room is already claimed by another admin." in chat_server
     assert "This dispute room is already claimed by another admin." in chat_server
     assert "uploadTradeProofImage" in chat_route
     assert "claimTradeChatRoom" in claim_route
@@ -166,6 +182,17 @@ def assert_review_copilot_is_recommend_only() -> None:
     assert "Review copilot only runs on disputed or release-ready trades." in review_server
     assert "It never releases funds or resolves a" in workspaces
     assert "onRunReview" in workspaces
+
+
+def assert_review_room_copy_consistency() -> None:
+    admin_resolve = read("src/app/api/trades/[tradeId]/admin-resolve/route.ts")
+    chat_route = read("src/app/api/trades/[tradeId]/chat/route.ts")
+    app = read("src/components/piscrow-app.tsx")
+
+    assert "Only admins can resolve review rooms or disputes." in admin_resolve
+    assert "Admin completed review" in admin_resolve
+    assert "Admin added review update" in chat_route
+    assert "release-ready or disputed trades" in app
 
 
 def assert_demo_payment_visibility() -> None:
@@ -267,8 +294,10 @@ def main() -> None:
     assert_authenticated_workspace_sync()
     assert_authorization_guards()
     assert_payment_amount_and_window_guards()
+    assert_handoff_code_release_recovery()
     assert_trade_chat_guards()
     assert_review_copilot_is_recommend_only()
+    assert_review_room_copy_consistency()
     assert_demo_payment_visibility()
     assert_no_sensitive_console_logging()
     assert_telegram_link_flow()

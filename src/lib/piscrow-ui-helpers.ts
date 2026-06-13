@@ -211,6 +211,18 @@ export function buildDemoReviewRecommendations(): TradeReviewRecommendation[] {
       riskFlags: ["active_dispute_review", "party_claim_conflict"],
       createdAt: "2026-06-06T13:55:00.000Z",
     },
+    {
+      id: "review-demo-002",
+      tradeId: "trade-006",
+      reviewedByPiUsername: "admin",
+      recommendedAction: "release",
+      confidence: 82,
+      summary:
+        "Payment, seller dispatch proof, and buyer receipt confirmation are present. Admin can move to final seller release review.",
+      missingEvidence: [],
+      riskFlags: ["release_ready_review"],
+      createdAt: "2026-06-06T20:36:00.000Z",
+    },
   ];
 }
 
@@ -222,8 +234,10 @@ export function buildDemoReviewForTrade(
   const hasBuyerReceipt = Boolean(
     trade.buyerReceiptNote || trade.buyerReceiptProofUrl,
   );
+  const reviewFlag =
+    trade.status === "AwaitingRelease" ? "release_ready_review" : "active_dispute_review";
   const riskFlags = [
-    "active_dispute_review",
+    reviewFlag,
     ...(hasSellerProof ? [] : ["seller_proof_missing"]),
     ...(trade.description.toLowerCase().includes("serial")
       ? ["party_claim_conflict"]

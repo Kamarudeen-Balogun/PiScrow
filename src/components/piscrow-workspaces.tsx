@@ -5,7 +5,6 @@ import {
   BadgeCheck,
   CheckCircle2,
   ChevronRight,
-  Copy,
   ExternalLink,
   Eye,
   HandCoins,
@@ -25,7 +24,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { FormEvent, ReactNode, useEffect, useRef, useState } from "react";
+import { FormEvent, ReactNode, useEffect, useMemo, useRef, useState } from "react";
 
 import { PublicProfileSheet } from "@/components/public-profile-sheet";
 import { StatusBadge } from "@/components/status-badge";
@@ -82,6 +81,24 @@ const dangerButtonClass = "btn-d";
 const sectionEyebrowClass = "lbl";
 
 type ListingCategory = "Physical Goods" | "Services" | "Digital Assets";
+type ActivityPhase =
+  | "All"
+  | "Listings"
+  | "Interest"
+  | "Funding"
+  | "Delivery"
+  | "Disputes"
+  | "Outcomes";
+
+const activityPhaseOrder: ActivityPhase[] = [
+  "All",
+  "Listings",
+  "Interest",
+  "Funding",
+  "Delivery",
+  "Disputes",
+  "Outcomes",
+];
 
 function formatPiAmount(amount: number) {
   return `π ${amount.toLocaleString("en-US", {
@@ -118,6 +135,129 @@ function tradeSearchText(trade: Trade) {
     .filter(Boolean)
     .join(" ")
     .toLowerCase();
+}
+
+function activityPhaseForEvent(event: TradeEvent): ActivityPhase {
+  const text = `${event.eventType} ${event.notes}`.toLowerCase();
+
+  if (/\bcompleted?\b|\breleased\b|\brefunded\b|\bcancelled?\b|\bresolved?\b|\bexpired\b/.test(text)) {
+    return "Outcomes";
+  }
+
+  if (/\bdispute\b|\badmin requested\b|\breview\b/.test(text)) {
+    return "Disputes";
+  }
+
+  if (/\bdelivery\b|\bproof\b|\bhandoff\b|\breceipt\b/.test(text)) {
+    return "Delivery";
+  }
+
+  if (/\bfund\b|\bpayment\b|\bescrow\b|\brelease\b/.test(text)) {
+    return "Funding";
+  }
+
+  if (/\binterest\b|\bselected\b/.test(text)) {
+    return "Interest";
+  }
+
+  return "Listings";
+}
+
+function activityPhaseTone(phase: ActivityPhase) {
+  switch (phase) {
+    case "Listings":
+      return {
+        rail: "bg-sky-400",
+        dot: "bg-sky-300",
+        chip: "border-sky-300/30 bg-sky-400/12 text-sky-100",
+      };
+    case "Interest":
+      return {
+        rail: "bg-amber-400",
+        dot: "bg-amber-300",
+        chip: "border-amber-300/30 bg-amber-400/12 text-amber-100",
+      };
+    case "Funding":
+      return {
+        rail: "bg-emerald-400",
+        dot: "bg-emerald-300",
+        chip: "border-emerald-300/30 bg-emerald-400/12 text-emerald-100",
+      };
+    case "Delivery":
+      return {
+        rail: "bg-cyan-400",
+        dot: "bg-cyan-300",
+        chip: "border-cyan-300/30 bg-cyan-400/12 text-cyan-100",
+      };
+    case "Disputes":
+      return {
+        rail: "bg-rose-400",
+        dot: "bg-rose-300",
+        chip: "border-rose-300/30 bg-rose-400/12 text-rose-100",
+      };
+    case "Outcomes":
+      return {
+        rail: "bg-[var(--gold)]",
+        dot: "bg-[var(--gold-light)]",
+        chip: "border-[rgba(245,166,35,0.35)] bg-[rgba(245,166,35,0.12)] text-[var(--gold-light)]",
+      };
+    default:
+      return {
+        rail: "bg-white/18",
+        dot: "bg-white/30",
+        chip: "border-white/10 bg-white/6 text-slate-200",
+      };
+  }
+}
+
+function activityTimeLabel(value: string) {
+  const parsed = new Date(value);
+
+  if (Number.isNaN(parsed.getTime())) {
+    return dateLabel(value);
+  }
+
+  return parsed.toLocaleTimeString([], {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function activityDayKey(value: string) {
+  const parsed = new Date(value);
+
+  if (Number.isNaN(parsed.getTime())) {
+    return value;
+  }
+
+  return parsed.toISOString().slice(0, 10);
+}
+
+function activityDayLabel(value: string) {
+  const parsed = new Date(value);
+
+  if (Number.isNaN(parsed.getTime())) {
+    return "Recent";
+  }
+
+  const now = new Date();
+  const sameYear = parsed.getFullYear() === now.getFullYear();
+
+  return parsed.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    ...(sameYear ? {} : { year: "numeric" }),
+  });
+}
+
+function compactEventNote(value: string, max = 84) {
+  const normalized = value.trim();
+
+  if (!normalized || normalized.length <= max) {
+    return normalized;
+  }
+
+  return `${normalized.slice(0, max).trimEnd()}...`;
 }
 
 function ledgerTradePriority(trade: Trade) {
@@ -1036,6 +1176,7 @@ export function PublicLedger({
   const [filter, setFilter] = useState<"All" | ListingCategory>("All");
   const [selectedTrade, setSelectedTrade] = useState<Trade | null>(null);
   const [showActivity, setShowActivity] = useState(false);
+  const [activityFilter, setActivityFilter] = useState<ActivityPhase>("All");
   const copy = getWorkspaceCopy(language);
   const filters: ("All" | ListingCategory)[] = [
     "All",
@@ -1043,29 +1184,49 @@ export function PublicLedger({
     "Services",
     "Digital Assets",
   ];
+  const publicTrades = useMemo(
+    () =>
+      trades.filter(
+        (trade) =>
+          trade.visibility === "public" ||
+          (currentUsername && trade.targetBuyerPiUsernames.includes(currentUsername)) ||
+          isSeller(trade, currentUsername),
+      ),
+    [currentUsername, trades],
+  );
 
-  const visibleTrades = trades
-    .filter((trade) => {
-      const matchesQuery = tradeSearchText(trade).includes(query.trim().toLowerCase());
-      const matchesFilter = filter === "All" || listingCategory(trade) === filter;
-      const isPrivateVisible =
-        trade.visibility === "public" ||
-        (currentUsername && trade.targetBuyerPiUsernames.includes(currentUsername)) ||
-        isSeller(trade, currentUsername);
+  const visibleTrades = useMemo(
+    () =>
+      publicTrades
+        .filter((trade) => {
+          const matchesQuery = tradeSearchText(trade).includes(query.trim().toLowerCase());
+          const matchesFilter = filter === "All" || listingCategory(trade) === filter;
 
-      return matchesQuery && matchesFilter && isPrivateVisible;
-    })
-    .sort((left, right) => {
-      const priorityDelta = ledgerTradePriority(left) - ledgerTradePriority(right);
+          return matchesQuery && matchesFilter;
+        })
+        .sort((left, right) => {
+          const priorityDelta = ledgerTradePriority(left) - ledgerTradePriority(right);
 
-      if (priorityDelta !== 0) {
-        return priorityDelta;
-      }
+          if (priorityDelta !== 0) {
+            return priorityDelta;
+          }
 
-      return new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime();
-    })
-    .slice(0, 25);
-
+          return new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime();
+        })
+        .slice(0, 25),
+    [filter, publicTrades, query],
+  );
+  const visibleTradeMap = useMemo(
+    () => new Map(publicTrades.map((trade) => [trade.id, trade])),
+    [publicTrades],
+  );
+  const sortedEvents = useMemo(
+    () =>
+      events
+        .slice()
+        .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime()),
+    [events],
+  );
   if (showActivity) {
     return (
       <section>
@@ -1076,7 +1237,15 @@ export function PublicLedger({
             {copy.publicLedger.close}
           </button>
         </div>
-        <Timeline events={events.slice(0, 50)} title={copy.publicLedger.liveActivity} />
+        <Timeline
+          copy={copy}
+          events={sortedEvents}
+          phaseFilter={activityFilter}
+          title={copy.publicLedger.liveActivity}
+          tradesById={visibleTradeMap}
+          onOpenTrade={setSelectedTrade}
+          onPhaseChange={setActivityFilter}
+        />
       </section>
     );
   }
@@ -1550,21 +1719,26 @@ export function AdminDesk({
     <section>
       <section className="sg">
         <Metric icon={<Eye className="h-5 w-5" />} label={copy.admin.totalTrades} value={events.length} />
-        <Metric icon={<AlertTriangle className="h-5 w-5" />} label={copy.admin.disputes} value={trades.length} />
+        <Metric icon={<AlertTriangle className="h-5 w-5" />} label={copy.admin.reviews} value={trades.length} />
         <Metric icon={<CheckCircle2 className="h-5 w-5" />} label={copy.admin.resolved} value={resolvedEvents} />
       </section>
 
       <div className="sh">
-        <span className="sh-t text-lg">{copy.admin.disputeQueue}</span>
+        <span className="sh-t text-lg">{copy.admin.reviewQueue}</span>
         <span className="bdg bd2">{copy.admin.activeCount(trades.length)}</span>
       </div>
 
       {trades.length === 0 ? (
-        <EmptyState label={copy.admin.noDisputes} />
+        <EmptyState label={copy.admin.noReviews} />
       ) : (
         <div className="cstack">
           {trades.map((trade) => (
-            <article key={trade.id} className="card border-l-4 border-l-rose-500">
+            <article
+              key={trade.id}
+              className={`card border-l-4 ${
+                trade.status === "AwaitingRelease" ? "border-l-sky-400" : "border-l-rose-500"
+              }`}
+            >
               <div className="mb-3 flex flex-wrap items-center gap-2">
                 <StatusBadge status={trade.status} />
                 <Chip>{listingCategory(trade)}</Chip>
@@ -1616,7 +1790,9 @@ export function AdminDesk({
                 }}
               >
                 <ShieldCheck className="h-4 w-4" />
-                {copy.admin.enterDisputeRoom}
+                {trade.status === "AwaitingRelease"
+                  ? copy.admin.enterReviewRoom
+                  : copy.admin.enterDisputeRoom}
               </button>
             </article>
           ))}
@@ -2479,7 +2655,9 @@ function TradeChatPanel({
         <InfoBox tone={trade.status === "Disputed" ? "danger" : "info"}>
           {trade.status === "Disputed"
             ? copy.chat.disputeActive
-            : copy.chat.tradeRoomInfo}
+            : trade.status === "AwaitingRelease"
+              ? copy.chat.releaseReviewActive
+              : copy.chat.tradeRoomInfo}
         </InfoBox>
         <div className="grid gap-2 rounded-2xl border border-white/10 bg-black/16 p-3">
           <div className="flex items-center justify-between gap-3">
@@ -2494,7 +2672,11 @@ function TradeChatPanel({
               </p>
             </div>
             <span className={`bdg ${trade.status === "Disputed" ? "bd2" : "bv"}`}>
-              {trade.status === "Disputed" ? copy.chat.disputeRoom : copy.chat.tradeRoom}
+              {trade.status === "Disputed"
+                ? copy.chat.disputeRoom
+                : trade.status === "AwaitingRelease"
+                  ? copy.chat.reviewRoom
+                  : copy.chat.tradeRoom}
             </span>
           </div>
           {latestMessage && (
@@ -2752,7 +2934,7 @@ function SellerHandoffCodePanel({
   return (
     <ActionPanel title="Verify Buyer Code" icon={<ShieldCheck className="h-4 w-4" />}>
       <InfoBox tone="warning">
-        Enter the buyer's one-time handoff code only after the in-person exchange is complete.
+        Enter the buyer&apos;s one-time handoff code only after the in-person exchange is complete.
       </InfoBox>
       <form
         className="grid gap-3"
@@ -3219,53 +3401,242 @@ function ProofLink({ label, url }: { label: string; url: string }) {
 }
 
 function Timeline({
-  compact = false,
+  copy,
   events,
+  onOpenTrade,
+  onPhaseChange,
+  phaseFilter,
   title = "Live Activity",
+  tradesById,
 }: {
-  compact?: boolean;
+  copy: WorkspaceCopy;
   events: TradeEvent[];
+  onOpenTrade: (trade: Trade) => void;
+  onPhaseChange: (phase: ActivityPhase) => void;
+  phaseFilter: ActivityPhase;
   title?: string;
+  tradesById: Map<string, Trade>;
 }) {
   const [selectedProfile, setSelectedProfile] = useState<UserReputation | null>(null);
+  const phaseCounts = useMemo(() => {
+    const counts = {
+      All: events.length,
+      Listings: 0,
+      Interest: 0,
+      Funding: 0,
+      Delivery: 0,
+      Disputes: 0,
+      Outcomes: 0,
+    } satisfies Record<ActivityPhase, number>;
+
+    for (const event of events) {
+      counts[activityPhaseForEvent(event)] += 1;
+    }
+
+    return counts;
+  }, [events]);
+
+  const visibleEvents = useMemo(
+    () =>
+      events
+        .filter((event) => {
+          if (phaseFilter === "All") {
+            return true;
+          }
+
+          return activityPhaseForEvent(event) === phaseFilter;
+        })
+        .slice(0, 60),
+    [events, phaseFilter],
+  );
+  const groupedEvents = useMemo(() => {
+    const groups: Array<{ key: string; label: string; events: TradeEvent[] }> = [];
+
+    for (const event of visibleEvents) {
+      const key = activityDayKey(event.createdAt);
+      const currentGroup = groups.at(-1);
+
+      if (!currentGroup || currentGroup.key !== key) {
+        groups.push({
+          key,
+          label: activityDayLabel(event.createdAt),
+          events: [event],
+        });
+        continue;
+      }
+
+      currentGroup.events.push(event);
+    }
+
+    return groups;
+  }, [visibleEvents]);
 
   return (
     <>
-      <section className={compact ? "grid gap-2" : panelClass}>
-        <div className="mb-2 flex items-center gap-2">
-          <Eye className="h-4 w-4 text-slate-400" />
-          <h2 className="font-black text-white">{title}</h2>
+      <section className="grid gap-4">
+        <div className="grid gap-3 rounded-[22px] border border-white/8 bg-black/18 p-3">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <Eye className="h-4 w-4 text-slate-400" />
+              <h2 className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+                {title}
+              </h2>
+            </div>
+            <span className="rounded-full border border-white/8 bg-white/6 px-2.5 py-1 text-[11px] font-semibold text-slate-300">
+              {phaseCounts.All}
+            </span>
+          </div>
+
+          <div className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            {activityPhaseOrder.map((phase) => {
+              const active = phaseFilter === phase;
+
+              return (
+                <button
+                  key={phase}
+                  className={`inline-flex shrink-0 items-center gap-2 rounded-full border px-3 py-2 text-xs font-semibold transition ${
+                    active
+                      ? "border-[rgba(245,166,35,0.28)] bg-[rgba(245,166,35,0.12)] text-[var(--gold-light)]"
+                      : "border-white/8 bg-white/4 text-slate-300"
+                  }`}
+                  type="button"
+                  onClick={() => onPhaseChange(phase)}
+                >
+                  <span>{copy.publicLedger.activityFilters[phase]}</span>
+                  <span
+                    className={`rounded-full px-1.5 py-0.5 text-[10px] font-black ${
+                      active ? "bg-black/18 text-slate-950" : "bg-black/18 text-slate-300"
+                    }`}
+                  >
+                    {phaseCounts[phase]}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
         </div>
-        <div className="grid max-h-[560px] gap-2 overflow-auto pr-1">
-          {events.length === 0 ? (
-            <p className="text-sm text-slate-400">No events yet.</p>
-          ) : (
-            events.map((event) => (
-              <div
-                key={event.id}
-                className="rounded-r-2xl border-l-2 border-[var(--gold)] bg-black/16 px-3 py-2"
-              >
-                <p className="text-sm font-black text-white">
-                  {humanizeUnderscore(event.eventType)}
-                </p>
-                <p className="text-xs leading-5 text-slate-300">{event.notes}</p>
-                <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] font-semibold text-slate-500">
-                  <VerifiedUsername
-                    className="text-slate-400"
-                    onClick={
-                      event.actorProfile
-                        ? () => setSelectedProfile(event.actorProfile ?? null)
-                        : undefined
-                    }
-                    profile={event.actorProfile}
-                    username={event.actor}
-                  />
-                  <span>{dateLabel(event.createdAt)}</span>
+
+        {visibleEvents.length === 0 ? (
+          <section className="rounded-[22px] border border-dashed border-white/10 bg-black/12 px-4 py-6 text-center">
+            <p className="text-sm font-semibold leading-6 text-slate-300">
+              {copy.publicLedger.noActivity}
+            </p>
+            <button
+              className="mt-4 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs font-semibold text-slate-200"
+              type="button"
+              onClick={() => onPhaseChange("All")}
+            >
+              <RefreshCcw className="h-3.5 w-3.5" />
+              {copy.publicLedger.reset}
+            </button>
+          </section>
+        ) : (
+          <div className="grid gap-4">
+            {groupedEvents.map((group) => (
+              <section key={group.key} className="grid gap-3">
+                <div className="flex items-center gap-3">
+                  <span className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-500">
+                    {group.label}
+                  </span>
+                  <div className="h-px flex-1 bg-white/8" />
                 </div>
-              </div>
-            ))
-          )}
-        </div>
+
+                <div className="grid gap-3">
+                  {group.events.map((event) => {
+                    const phase = activityPhaseForEvent(event);
+                    const tone = activityPhaseTone(phase);
+                    const trade = tradesById.get(event.tradeId);
+                    const categoryLabel = trade
+                      ? copy.publicLedger.filters[listingCategory(trade)]
+                      : null;
+                    const location = trade
+                      ? [trade.locationLabel, trade.locationArea].filter(Boolean).join(" / ")
+                      : "";
+                    const secondaryMeta = location || categoryLabel;
+                    const eventDetails = (
+                      <>
+                        <div className="flex items-start gap-2">
+                          <div className="min-w-0 flex-1">
+                            <h3 className="text-[13px] font-black leading-snug text-white">
+                              {humanizeUnderscore(event.eventType)}
+                            </h3>
+                            {trade ? (
+                              <p className="mt-0.5 truncate text-[11px] font-semibold text-slate-300">
+                                {trade.title}
+                              </p>
+                            ) : null}
+                          </div>
+                          {trade ? (
+                            <ExternalLink className="mt-0.5 h-3 w-3 shrink-0 text-slate-500 transition group-hover:text-slate-300" />
+                          ) : null}
+                        </div>
+                        <p className="mt-1 truncate text-[11px] text-slate-400">
+                          {compactEventNote(event.notes, 56)}
+                        </p>
+                      </>
+                    );
+
+                    return (
+                      <article
+                        key={event.id}
+                        className="relative overflow-hidden rounded-[16px] border border-white/10 bg-[linear-gradient(180deg,rgba(12,22,38,0.96),rgba(8,13,23,0.96))] p-2.5 shadow-[0_10px_22px_rgba(2,6,23,0.2)]"
+                      >
+                        <span className={`absolute inset-y-0 left-0 w-[3px] ${tone.rail}`} />
+
+                        <div className="pl-2">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <span
+                                className={`inline-flex rounded-full border px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.16em] ${tone.chip}`}
+                              >
+                                {copy.publicLedger.activityFilters[phase]}
+                              </span>
+                            </div>
+                            <span className="shrink-0 rounded-full border border-white/8 bg-black/24 px-2 py-0.5 text-[10px] font-semibold text-slate-400">
+                              {activityTimeLabel(event.createdAt)}
+                            </span>
+                          </div>
+
+                          {trade ? (
+                            <button
+                              aria-label={`${copy.publicLedger.openTrade}: ${trade.title}`}
+                              className="group mt-2 block w-full rounded-[14px] px-1 py-0.5 text-left transition hover:bg-white/[0.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(245,166,35,0.4)]"
+                              type="button"
+                              onClick={() => onOpenTrade(trade)}
+                            >
+                              {eventDetails}
+                            </button>
+                          ) : (
+                            <div className="mt-2 px-1 py-0.5">{eventDetails}</div>
+                          )}
+
+                          <div className="mt-2 flex flex-wrap items-center gap-2 text-[10px] font-semibold text-slate-500">
+                            <VerifiedUsername
+                              className="text-slate-400"
+                              onClick={
+                                event.actorProfile
+                                  ? () => setSelectedProfile(event.actorProfile ?? null)
+                                  : undefined
+                              }
+                              profile={event.actorProfile}
+                              username={event.actor}
+                            />
+                            {secondaryMeta ? (
+                              <>
+                                <span className={`h-1.5 w-1.5 rounded-full ${tone.dot}`} />
+                                <span className="max-w-[170px] truncate">{secondaryMeta}</span>
+                              </>
+                            ) : null}
+                          </div>
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
+              </section>
+            ))}
+          </div>
+        )}
       </section>
       {selectedProfile && (
         <PublicProfileSheet

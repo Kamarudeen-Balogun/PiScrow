@@ -68,6 +68,10 @@ function piWalletScopeRecoveryMessage(releaseType: EscrowReleaseType) {
   } yet because the ${recipientRole}'s Pi account has not granted wallet access. Ask the ${recipientRole} to sign out of PiScrow, sign in again, approve the wallet permission, then retry this action.`;
 }
 
+function isPiPaymentAlreadyLinkedError(error: unknown) {
+  return error instanceof Error && error.message.includes("payment_already_linked_with_a_tx");
+}
+
 function assertDbOk(error: { message?: string } | null | undefined) {
   if (error) {
     throw new Error(error.message ?? "Could not update escrow release state.");
@@ -90,19 +94,17 @@ function getHorizonServer(network: string | undefined) {
   };
 }
 
-async function submitAppWalletPayment(
-  payment: PiPaymentDTO,
-  memoText: string,
-) {
+async function submitAppWalletPayment(payment: PiPaymentDTO) {
   const walletSeed = getPiWalletPrivateSeed();
   const keypair = StellarSdk.Keypair.fromSecret(walletSeed);
+  const paymentIdentifier = payment.identifier?.trim();
   const fromAddress = payment.from_address?.trim();
   const toAddress = payment.to_address?.trim();
   const network = payment.network?.trim();
 
-  if (!fromAddress || !toAddress || !network) {
+  if (!paymentIdentifier || !fromAddress || !toAddress || !network) {
     throw new Error(
-      "Pi release payment is missing from_address, to_address, or network.",
+      "Pi release payment is missing its identifier, from_address, to_address, or network.",
     );
   }
 
@@ -129,7 +131,7 @@ async function submitAppWalletPayment(
         amount: Number(payment.amount).toString(),
       }),
     )
-    .addMemo(StellarSdk.Memo.text(memoText.slice(0, 28)))
+    .addMemo(StellarSdk.Memo.text(paymentIdentifier))
     .build();
 
   transaction.sign(keypair);
@@ -186,6 +188,49 @@ async function getRecipientForRelease(
   return data as UserRecipientRow;
 }
 
+async function persistCompletedEscrowRelease({
+  payment,
+  paymentId,
+  releasePayment,
+  releaseType,
+  txid,
+}: {
+  payment: PaymentReleaseRow;
+  paymentId: string;
+  releasePayment: PiPaymentDTO;
+  releaseType: EscrowReleaseType;
+  txid: string;
+}) {
+  const supabase = getServiceClientOrThrow();
+  const completedAt = new Date().toISOString();
+  const releaseExplorerLink = piTransactionLink(txid, releasePayment.network);
+  const { error: completedError } = await supabase
+    .from("payments")
+    .update({
+      escrow_status:
+        releaseType === "seller_release" ? "released_to_seller" : "refunded_to_buyer",
+      release_status: "Completed",
+      release_pi_payment_id: paymentId,
+      release_txid: txid,
+      release_transaction_link: releaseExplorerLink,
+      release_completed_at: completedAt,
+      release_failure: null,
+      raw_provider_status: {
+        buyerPaymentStatus: payment,
+        releasePaymentStatus: releasePayment,
+      },
+      updated_at: completedAt,
+    })
+    .eq("id", payment.id);
+
+  assertDbOk(completedError);
+
+  return {
+    completedAt,
+    releaseExplorerLink,
+  };
+}
+
 export async function executeEscrowRelease({
   actor,
   notes,
@@ -208,15 +253,9 @@ export async function executeEscrowRelease({
     };
   }
 
-  if (payment.release_status === "Submitted" && payment.release_txid) {
-    throw new Error(
-      "This release already has a submitted transaction. Refresh before trying again.",
-    );
-  }
-
   if (
     payment.release_status &&
-    !["NotStarted", "Failed", "Cancelled", "Created"].includes(
+    !["NotStarted", "Failed", "Cancelled", "Created", "Submitted"].includes(
       payment.release_status,
     )
   ) {
@@ -303,12 +342,37 @@ export async function executeEscrowRelease({
 
     throw error;
   }
-  const txid =
-    payment.release_txid ??
-    (await submitAppWalletPayment(
+  let txid =
+    releasePayment.transaction?.txid?.trim() ||
+    payment.release_txid ||
+    "";
+
+  if (releasePayment.status?.developer_completed) {
+    if (!txid) {
+      throw new Error("Pi release payment is completed but no transaction hash was returned.");
+    }
+
+    const { releaseExplorerLink } = await persistCompletedEscrowRelease({
+      payment,
+      paymentId,
       releasePayment,
-      releaseMemo(trade.id, releaseType),
-    ));
+      releaseType,
+      txid,
+    });
+
+    return {
+      mode: "completed" as const,
+      payment,
+      releasePayment,
+      releasePiPaymentId: paymentId,
+      releaseTxid: txid,
+      releaseTransactionLink: releaseExplorerLink,
+    };
+  }
+
+  if (!txid) {
+    txid = await submitAppWalletPayment(releasePayment);
+  }
   const transactionLink = piTransactionLink(txid);
 
   const { error: submittedError } = await supabase
@@ -323,37 +387,44 @@ export async function executeEscrowRelease({
 
   assertDbOk(submittedError);
 
-  const completed = await completePiPayment(paymentId, txid);
-  const completedAt = new Date().toISOString();
-  const releaseExplorerLink = piTransactionLink(
-    completed.transaction?.txid ?? txid,
-    completed.network ?? releasePayment.network,
-  );
+  let completed: PiPaymentDTO;
 
-  const { error: completedError } = await supabase
-    .from("payments")
-    .update({
-      escrow_status:
-        releaseType === "seller_release" ? "released_to_seller" : "refunded_to_buyer",
-      release_status: "Completed",
-      release_transaction_link: releaseExplorerLink,
-      release_completed_at: completedAt,
-      raw_provider_status: {
-        buyerPaymentStatus: payment,
-        releasePaymentStatus: completed,
-      },
-      updated_at: completedAt,
-    })
-    .eq("id", payment.id);
+  try {
+    completed = await completePiPayment(paymentId, txid);
+  } catch (error) {
+    if (!isPiPaymentAlreadyLinkedError(error)) {
+      throw error;
+    }
 
-  assertDbOk(completedError);
+    const refreshedPayment = await getPiPayment(paymentId);
+    const refreshedTxid = refreshedPayment.transaction?.txid?.trim() || "";
+
+    if (refreshedPayment.status?.developer_completed && refreshedTxid) {
+      completed = refreshedPayment;
+      txid = refreshedTxid;
+    } else if (refreshedTxid && refreshedTxid !== txid) {
+      txid = refreshedTxid;
+      completed = await completePiPayment(paymentId, txid);
+    } else {
+      throw error;
+    }
+  }
+
+  const finalTxid = completed.transaction?.txid?.trim() || txid;
+  const { releaseExplorerLink } = await persistCompletedEscrowRelease({
+    payment,
+    paymentId,
+    releasePayment: completed,
+    releaseType,
+    txid: finalTxid,
+  });
 
   return {
     mode: "completed" as const,
     payment,
     releasePayment: completed,
     releasePiPaymentId: paymentId,
-    releaseTxid: txid,
+    releaseTxid: finalTxid,
     releaseTransactionLink: releaseExplorerLink,
   };
 }

@@ -44,7 +44,7 @@ export async function POST(
     const user = await requireAppUser(request);
 
     if (!user.isAdmin) {
-      throw new Error("Only admins can resolve disputes.");
+      throw new Error("Only admins can resolve review rooms or disputes.");
     }
 
     const { tradeId } = await context.params;
@@ -99,7 +99,9 @@ export async function POST(
       parsed.data.notes ??
       (parsed.data.status === "Completed"
         ? "Admin released the seller payout after reviewing buyer receipt and party evidence."
-        : "Admin refunded the buyer after reviewing the dispute and party evidence.");
+        : trade.status === "AwaitingRelease"
+          ? "Admin refunded the buyer after reviewing buyer receipt, seller proof, and party evidence."
+          : "Admin refunded the buyer after reviewing the dispute and party evidence.");
     const releaseType: EscrowReleaseType =
       parsed.data.status === "Completed" ? "seller_release" : "buyer_refund";
 
@@ -187,11 +189,15 @@ export async function POST(
     );
     await addTradeChatSystemMessage(
       { ...trade, status: parsed.data.status },
-      `Admin @${user.username} resolved this dispute: ${resolutionNotes}`,
+      `Admin @${user.username} ${
+        trade.status === "AwaitingRelease" ? "completed this review" : "resolved this dispute"
+      }: ${resolutionNotes}`,
     );
     await closeTradeChatRoom(
       { ...trade, status: parsed.data.status },
-      "Dispute resolved. Chat is now read-only for record keeping.",
+      trade.status === "AwaitingRelease"
+        ? "Review completed. Chat is now read-only for record keeping."
+        : "Dispute resolved. Chat is now read-only for record keeping.",
     );
 
     await Promise.all([
@@ -199,7 +205,10 @@ export async function POST(
         userId: trade.seller_user_id,
         tradeId,
         type: "admin_resolved",
-        title: "Admin resolved dispute",
+        title:
+          trade.status === "AwaitingRelease"
+            ? "Admin completed review"
+            : "Admin resolved dispute",
         body:
           parsed.data.status === "Completed"
             ? "Admin released the held Test Pi to the seller after review."
@@ -209,7 +218,10 @@ export async function POST(
         userId: trade.buyer_user_id,
         tradeId,
         type: "admin_resolved",
-        title: "Admin resolved dispute",
+        title:
+          trade.status === "AwaitingRelease"
+            ? "Admin completed review"
+            : "Admin resolved dispute",
         body:
           parsed.data.status === "Completed"
             ? "Admin released the held Test Pi to the seller after review."

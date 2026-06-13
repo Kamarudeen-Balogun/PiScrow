@@ -64,6 +64,7 @@ export function TradeChatModal({
   const canSend =
     !["Completed", "Cancelled"].includes(trade.status) &&
     (!adminNeedsClaim || claimedByMe);
+  const releaseReview = trade.status === "AwaitingRelease";
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -235,7 +236,9 @@ export function TradeChatModal({
             {!loading && messages.length === 0 && (
               <div className="grid min-h-[180px] place-items-center">
                 <div className="max-w-[260px] rounded-3xl border border-dashed border-white/10 bg-white/[0.03] px-5 py-4 text-center text-sm leading-6 text-slate-400">
-                  The trade room is ready. Use it for delivery updates, proof, and dispute evidence.
+                  {releaseReview
+                    ? "The review room is ready. Use it for payout notes, proof, and admin release review."
+                    : "The trade room is ready. Use it for delivery updates, proof, and dispute evidence."}
                 </div>
               </div>
             )}
@@ -356,7 +359,11 @@ export function TradeChatModal({
                   className="ta min-h-[88px]"
                   maxLength={1000}
                   name="body"
-                  placeholder="Write a message, delivery update, or dispute note"
+                  placeholder={
+                    releaseReview
+                      ? "Write a review note, payout update, or proof note"
+                      : "Write a message, delivery update, or dispute note"
+                  }
                 />
                 <label className="flex items-center justify-between gap-3 rounded-2xl border border-dashed border-white/12 bg-white/[0.03] px-3 py-3 text-sm text-slate-300">
                   <span className="inline-flex items-center gap-2 font-semibold">
