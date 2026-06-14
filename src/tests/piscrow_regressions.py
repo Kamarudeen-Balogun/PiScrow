@@ -118,6 +118,7 @@ def assert_payment_amount_and_window_guards() -> None:
     assert "ongoing_payment_found" in escrow_release
     assert "cancelled_payment" in escrow_release
     assert "cancelPiPayment" in escrow_release
+    assert "prevent double payment" in escrow_release
     assert "releasePayment.transaction?.txid?.trim()" in escrow_release
     assert "if (releasePayment.status?.developer_completed)" in escrow_release
     assert ".addMemo(StellarSdk.Memo.text(paymentIdentifier))" in escrow_release

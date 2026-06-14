@@ -284,6 +284,25 @@ function releasePaymentIsCancelled(releasePayment: PiPaymentDTO) {
   return Boolean(releasePayment.status?.cancelled);
 }
 
+function sellerReleaseNeedsManualReview({
+  payment,
+  releasePayment,
+  releaseType,
+}: {
+  payment: PaymentReleaseRow;
+  releasePayment: PiPaymentDTO;
+  releaseType: EscrowReleaseType;
+}) {
+  if (releaseType !== "seller_release") {
+    return false;
+  }
+
+  return Boolean(
+    releasePayment.transaction?.txid?.trim() ||
+      payment.release_txid?.trim(),
+  );
+}
+
 async function cancelUnverifiablePiRelease(paymentRowId: string, releasePayment: PiPaymentDTO) {
   await cancelPiPayment(releasePayment.identifier);
   await resetReleaseState(paymentRowId);
@@ -527,6 +546,12 @@ export async function executeEscrowRelease({
         paymentId = null;
         releasePayment = null;
       } else if (linkedTxCannotVerify(releasePayment)) {
+        if (sellerReleaseNeedsManualReview({ payment, releasePayment, releaseType })) {
+          throw new Error(
+            "Seller payout already has a linked blockchain transaction for this trade. PiScrow stopped automatic retry to prevent double payment. Review this trade manually before sending another payout.",
+          );
+        }
+
         await cancelUnverifiablePiRelease(payment.id, releasePayment);
         paymentId = null;
         releasePayment = null;
@@ -558,6 +583,12 @@ export async function executeEscrowRelease({
           }) &&
           linkedTxCannotVerify(ongoingPayment)
         ) {
+          if (sellerReleaseNeedsManualReview({ payment, releasePayment: ongoingPayment, releaseType })) {
+            throw new Error(
+              "Seller payout already has a linked blockchain transaction for this trade. PiScrow stopped automatic retry to prevent double payment. Review this trade manually before sending another payout.",
+            );
+          }
+
           await cancelUnverifiablePiRelease(payment.id, ongoingPayment);
           paymentId = null;
           releasePayment = null;

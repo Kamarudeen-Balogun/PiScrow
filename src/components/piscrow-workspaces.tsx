@@ -81,6 +81,7 @@ const dangerButtonClass = "btn-d";
 const sectionEyebrowClass = "lbl";
 
 type ListingCategory = "Physical Goods" | "Services" | "Digital Assets";
+type SellerSortFilter = "Completed" | "Funded" | "Disputed" | "All";
 type ActivityPhase =
   | "All"
   | "Listings"
@@ -1082,8 +1083,28 @@ export function SellerDesk({
 }) {
   const copy = getWorkspaceCopy(language);
   const [detailsTrade, setDetailsTrade] = useState<Trade | null>(null);
+  const [sortFilter, setSortFilter] = useState<SellerSortFilter>("All");
   const liveDetailsTrade =
     detailsTrade == null ? null : (trades.find((trade) => trade.id === detailsTrade.id) ?? null);
+  const visibleTrades = useMemo(
+    () =>
+      trades.filter((trade) => {
+        if (sortFilter === "All") {
+          return true;
+        }
+
+        if (sortFilter === "Completed") {
+          return trade.status === "Completed";
+        }
+
+        if (sortFilter === "Funded") {
+          return trade.status === "Funded";
+        }
+
+        return trade.status === "Disputed";
+      }),
+    [sortFilter, trades],
+  );
 
   function openTrade(trade: Trade) {
     onSelect(trade.id);
@@ -1105,11 +1126,24 @@ export function SellerDesk({
         </button>
       </div>
 
-      {trades.length === 0 ? (
+      <div className="fps">
+        {(["Completed", "Funded", "Disputed", "All"] as const).map((item) => (
+          <button
+            key={item}
+            className={`fp${sortFilter === item ? " on" : ""}`}
+            type="button"
+            onClick={() => setSortFilter(item)}
+          >
+            {item}
+          </button>
+        ))}
+      </div>
+
+      {visibleTrades.length === 0 ? (
         <EmptyState label={copy.sellerDesk.noSellerOffers} />
       ) : (
         <div className="cstack">
-          {trades.map((trade) => (
+          {visibleTrades.map((trade) => (
             <button
               key={trade.id}
               className={`card ${statusToneClass(trade)} w-full text-left`}
