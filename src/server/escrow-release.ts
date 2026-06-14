@@ -78,6 +78,12 @@ function assertDbOk(error: { message?: string } | null | undefined) {
   }
 }
 
+function delay(ms: number) {
+  return new Promise<void>((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
 function getHorizonServer(network: string | undefined) {
   const normalizedNetwork = (network ?? "").trim();
   const isMainnet = normalizedNetwork === "Pi Network";
@@ -91,6 +97,97 @@ function getHorizonServer(network: string | undefined) {
   return {
     horizon: new StellarSdk.Server(serverUrl),
     networkPassphrase,
+    serverUrl,
+  };
+}
+
+function releasePaymentMatchesContext({
+  buyerPaymentId,
+  recipientPiUid,
+  releasePayment,
+  releaseType,
+  tradeId,
+}: {
+  buyerPaymentId: string;
+  recipientPiUid: string;
+  releasePayment: PiPaymentDTO;
+  releaseType: EscrowReleaseType;
+  tradeId: string;
+}) {
+  const buyerPaymentMetadata = releasePayment.metadata?.buyerPaymentId;
+  const releaseTypeMetadata = releasePayment.metadata?.releaseType;
+  const tradeIdMetadata = releasePayment.metadata?.tradeId;
+
+  return (
+    releasePayment.user_uid === recipientPiUid &&
+    tradeIdMetadata === tradeId &&
+    buyerPaymentMetadata === buyerPaymentId &&
+    releaseTypeMetadata === releaseType
+  );
+}
+
+async function storedReleaseTxidMatchesPayment(
+  payment: PiPaymentDTO,
+  txid: string,
+) {
+  const paymentIdentifier = payment.identifier?.trim();
+  const fromAddress = payment.from_address?.trim();
+  const network = payment.network?.trim();
+  const normalizedTxid = txid.trim();
+
+  if (!paymentIdentifier || !fromAddress || !network || !normalizedTxid) {
+    return false;
+  }
+
+  const { serverUrl } = getHorizonServer(network);
+  const response = await fetch(
+    `${serverUrl}/transactions/${encodeURIComponent(normalizedTxid)}`,
+    {
+      method: "GET",
+      cache: "no-store",
+    },
+  );
+
+  if (!response.ok) {
+    return false;
+  }
+
+  const transaction = (await response.json()) as {
+    memo?: string;
+    source_account?: string;
+    successful?: boolean;
+  };
+
+  return (
+    transaction.successful !== false &&
+    transaction.memo === paymentIdentifier &&
+    transaction.source_account === fromAddress
+  );
+}
+
+async function recoverLinkedPiPayment(paymentId: string) {
+  let recoveredPayment: PiPaymentDTO | null = null;
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    if (attempt > 0) {
+      await delay(1200 * attempt);
+    }
+
+    recoveredPayment = await getPiPayment(paymentId);
+    const recoveredTxid = recoveredPayment.transaction?.txid?.trim() || "";
+
+    if (recoveredPayment.status?.developer_completed && recoveredTxid) {
+      return { payment: recoveredPayment, txid: recoveredTxid };
+    }
+
+    if (recoveredTxid) {
+      return { payment: recoveredPayment, txid: recoveredTxid };
+    }
+  }
+
+  return {
+    payment: recoveredPayment,
+    txid: recoveredPayment?.transaction?.txid?.trim() || "",
   };
 }
 
@@ -295,8 +392,26 @@ export async function executeEscrowRelease({
   assertDbOk(createdError);
 
   let paymentId = payment.release_pi_payment_id;
+  let releasePayment: PiPaymentDTO | null = null;
 
   try {
+    if (paymentId) {
+      releasePayment = await getPiPayment(paymentId);
+
+      if (
+        !releasePaymentMatchesContext({
+          buyerPaymentId: payment.pi_payment_id,
+          recipientPiUid: recipient.pi_uid,
+          releasePayment,
+          releaseType,
+          tradeId: trade.id,
+        })
+      ) {
+        paymentId = null;
+        releasePayment = null;
+      }
+    }
+
     paymentId =
       paymentId ??
       (await piPlatformCreatePayment({
@@ -331,21 +446,27 @@ export async function executeEscrowRelease({
 
   assertDbOk(paymentIdError);
 
-  let releasePayment: PiPaymentDTO;
+  if (!releasePayment) {
+    try {
+      releasePayment = await getPiPayment(paymentId);
+    } catch (error) {
+      if (isPiWalletScopeError(error)) {
+        throw new Error(piWalletScopeRecoveryMessage(releaseType));
+      }
 
-  try {
-    releasePayment = await getPiPayment(paymentId);
-  } catch (error) {
-    if (isPiWalletScopeError(error)) {
-      throw new Error(piWalletScopeRecoveryMessage(releaseType));
+      throw error;
     }
-
-    throw error;
   }
   let txid =
-    releasePayment.transaction?.txid?.trim() ||
-    payment.release_txid ||
-    "";
+    releasePayment.transaction?.txid?.trim() || "";
+
+  if (!txid && payment.release_txid) {
+    const storedTxid = payment.release_txid.trim();
+
+    if (await storedReleaseTxidMatchesPayment(releasePayment, storedTxid)) {
+      txid = storedTxid;
+    }
+  }
 
   if (releasePayment.status?.developer_completed) {
     if (!txid) {
@@ -396,13 +517,13 @@ export async function executeEscrowRelease({
       throw error;
     }
 
-    const refreshedPayment = await getPiPayment(paymentId);
-    const refreshedTxid = refreshedPayment.transaction?.txid?.trim() || "";
+    const { payment: refreshedPayment, txid: refreshedTxid } =
+      await recoverLinkedPiPayment(paymentId);
 
-    if (refreshedPayment.status?.developer_completed && refreshedTxid) {
+    if (refreshedPayment?.status?.developer_completed && refreshedTxid) {
       completed = refreshedPayment;
       txid = refreshedTxid;
-    } else if (refreshedTxid && refreshedTxid !== txid) {
+    } else if (refreshedTxid) {
       txid = refreshedTxid;
       completed = await completePiPayment(paymentId, txid);
     } else {
