@@ -53,9 +53,13 @@ export async function waitForPiSdk(timeoutMs = piSdkWaitMs) {
 export async function initializePiSdk(
   pi: PiBrowserSDK,
   sandbox: boolean,
+  settleMs = 350,
 ) {
   await Promise.resolve(pi.init({ version: "2.0", sandbox }));
-  await wait(350);
+
+  if (settleMs > 0) {
+    await wait(settleMs);
+  }
 }
 
 export function isPiInitErrorMessage(message: string) {
@@ -128,8 +132,11 @@ export async function authenticateWithPiBrowser(
 
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
-      await initializePiSdk(pi, sandbox);
-      await wait(attempt === 0 ? 0 : 450);
+      await initializePiSdk(pi, sandbox, attempt === 0 ? 0 : 350);
+
+      if (attempt > 0) {
+        await wait(450);
+      }
 
       return await withTimeout<PiAuthResult | PiUser>(
         pi.authenticate([...piAuthScopes], onIncompletePaymentFound),
