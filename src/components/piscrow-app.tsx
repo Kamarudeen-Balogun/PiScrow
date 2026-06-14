@@ -5374,13 +5374,14 @@ function SessionCard({
           className={`btn-gh shrink-0 border-[rgba(245,166,35,0.22)] bg-[rgba(245,166,35,0.12)] text-[var(--gold)] ${
             Boolean(user) || connecting || !canConnect ? "pointer-events-none opacity-70" : ""
           }`}
-          href="/?connect=1"
+          href="/?consent=accept&connect=1"
           onClick={(event) => {
             if (Boolean(user) || connecting || !canConnect) {
               event.preventDefault();
               return;
             }
 
+            event.preventDefault();
             onConnect();
           }}
           prefetch={false}
@@ -5443,13 +5444,14 @@ function SignInPanel({
         <Link
           aria-disabled={connecting || !canConnect}
           className={`btn-g ${connecting || !canConnect ? "pointer-events-none opacity-70" : ""}`}
-          href="/?connect=1"
+          href="/?consent=accept&connect=1"
           onClick={(event) => {
             if (connecting || !canConnect) {
               event.preventDefault();
               return;
             }
 
+            event.preventDefault();
             onConnect();
           }}
           prefetch={false}
