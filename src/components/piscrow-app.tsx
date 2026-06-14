@@ -121,6 +121,11 @@ type HandoffCodePayload = TradePayload & {
   code?: string;
 };
 
+type HandoffVerifyPayload = TradePayload & {
+  outcome?: "completed" | "review_required";
+  message?: string;
+};
+
 type ProfilePayload = {
   profile: UserReputation;
   telegram?: TelegramLinkStatus;
@@ -4312,7 +4317,7 @@ export function PiScrowApp({
           "Verifying handoff code",
           "PiScrow is verifying the one-time code and releasing escrow automatically if it matches.",
         );
-        const payload = await apiRequest<TradePayload>(
+        const payload = await apiRequest<HandoffVerifyPayload>(
           `/api/trades/${trade.id}/handoff-code/verify`,
           piAccessToken,
           {
@@ -4324,11 +4329,20 @@ export function PiScrowApp({
           },
         );
         applyTradePayload(payload);
-        pushNotice(
-          "Trade completed",
-          "Handoff code verified. PiScrow released escrow to the seller.",
-          "success",
-        );
+        if (payload.outcome === "review_required") {
+          pushNotice(
+            "Admin review required",
+            payload.message ??
+              "PiScrow paused automatic seller payout and moved this trade into admin review to prevent double payment.",
+            "warning",
+          );
+        } else {
+          pushNotice(
+            "Trade completed",
+            "Handoff code verified. PiScrow released escrow to the seller.",
+            "success",
+          );
+        }
       } catch (error) {
         setFormError(
           error instanceof Error ? error.message : "Could not verify the handoff code.",

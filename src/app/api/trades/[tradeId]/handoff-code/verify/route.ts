@@ -31,13 +31,17 @@ export async function POST(
     }
 
     const trade = await getTradeForAction(tradeId);
-    await verifyTradeHandoffCode({
+    const result = await verifyTradeHandoffCode({
       code: parsed.data.code,
       trade,
       user,
     });
 
-    return secureJson(await listTradesForUser(user));
+    return secureJson({
+      ...(await listTradesForUser(user)),
+      outcome: result.outcome,
+      message: result.outcome === "review_required" ? result.message : undefined,
+    });
   } catch (error) {
     return jsonError(error);
   }

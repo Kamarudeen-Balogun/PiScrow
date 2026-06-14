@@ -1,5 +1,6 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 
+import { getAdminUsernames, type AppUser } from "@/server/auth";
 import { createNotification } from "@/server/notifications";
 import { getCompletedPaymentForTrade } from "@/server/pi-payments";
 import { addTradeChatSystemMessage, closeTradeChatRoom } from "@/server/trade-chat";
@@ -9,7 +10,6 @@ import {
   type TradeRow,
 } from "@/server/trades";
 import { executeEscrowRelease, markEscrowReleaseFailed } from "@/server/escrow-release";
-import type { AppUser } from "@/server/auth";
 import type {
   Trade,
   TradeHandoffCodeStatus,
@@ -46,6 +46,19 @@ type GenerateHandoffCodeResult = {
   code: string;
   summary: TradeHandoffCodeSummary;
 };
+
+type VerifyTradeHandoffCodeResult =
+  | {
+      outcome: "completed";
+      releaseResult: Awaited<ReturnType<typeof executeEscrowRelease>>;
+    }
+  | {
+      outcome: "review_required";
+      message: string;
+    };
+
+const sellerReleaseManualReviewUserMessage =
+  "Automatic seller payout was paused for admin review. PiScrow found an existing linked blockchain transaction for this trade and stopped retrying to prevent double payment.";
 
 function handoffCodeSecret() {
   const secret = process.env.PISCROW_HANDOFF_CODE_SECRET?.trim() || "";
@@ -345,6 +358,113 @@ export async function invalidateTradeHandoffCode(
   );
 }
 
+function sellerReleaseNeedsAdminReview(error: unknown) {
+  return error instanceof Error && error.message.includes("prevent double payment");
+}
+
+async function routeHandoffReleaseToAdminReview(
+  trade: TradeRow,
+  user: AppUser,
+) {
+  const supabase = getServiceClientOrThrow();
+  const now = new Date().toISOString();
+  const { data: updatedTrade, error: tradeError } = await supabase
+    .from("trades")
+    .update({
+      status: "AwaitingRelease",
+      updated_at: now,
+    })
+    .eq("id", trade.id)
+    .eq("status", "Funded")
+    .select("id")
+    .maybeSingle();
+
+  if (tradeError) {
+    throw new Error(tradeError.message);
+  }
+
+  if (!updatedTrade) {
+    const { data: currentTrade, error: currentTradeError } = await supabase
+      .from("trades")
+      .select("status")
+      .eq("id", trade.id)
+      .maybeSingle();
+
+    if (currentTradeError) {
+      throw new Error(currentTradeError.message);
+    }
+
+    return currentTrade?.status === "AwaitingRelease";
+  }
+
+  await invalidateTradeHandoffCode(
+    trade.id,
+    "automatic handoff payout was paused for admin review",
+    user.id,
+  ).catch(() => undefined);
+
+  await insertTradeEvent(
+    trade.id,
+    user.id,
+    "Automatic seller payout routed to review",
+    "Seller verified the handoff code, but PiScrow found an existing linked blockchain transaction for the seller payout and stopped retrying to prevent double payment. Admin review is now required.",
+    {
+      reason: "linked_blockchain_transaction_found",
+      requestedBy: "handoff_auto_release",
+    },
+  );
+  await addTradeChatSystemMessage(
+    { ...trade, status: "AwaitingRelease", updated_at: now },
+    `Seller @${user.username} verified the buyer handoff code, but PiScrow found an existing linked blockchain transaction for the seller payout. Automatic retry was stopped to prevent double payment. Admin review is now required.`,
+  );
+
+  const adminUsernames = getAdminUsernames();
+  let adminIds: string[] = [];
+
+  if (adminUsernames.length > 0) {
+    const { data: admins, error } = await supabase
+      .from("users")
+      .select("id")
+      .in("pi_username", adminUsernames);
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    adminIds = (admins ?? [])
+      .map((admin) => admin.id as string)
+      .filter(Boolean);
+  }
+
+  await Promise.all([
+    createNotification({
+      userId: trade.buyer_user_id,
+      tradeId: trade.id,
+      type: "seller_release_review_required",
+      title: "Trade moved to admin review",
+      body: "PiScrow paused automatic seller payout after finding a linked blockchain transaction. Admin review is now required to avoid duplicate payout.",
+    }),
+    createNotification({
+      userId: trade.seller_user_id,
+      tradeId: trade.id,
+      type: "seller_release_review_required",
+      title: "Seller payout needs admin review",
+      body: "PiScrow found a linked blockchain transaction for this payout and stopped retrying to prevent double payment. Admin review is now required.",
+    }),
+    ...adminIds.map((adminId) =>
+      createNotification({
+        userId: adminId,
+        tradeId: trade.id,
+        type: "seller_release_review_required",
+        title: "Seller payout review required",
+        body: `Trade ${trade.id.slice(0, 8)} was moved into release review after handoff verification because PiScrow found a linked blockchain transaction for the seller payout.`,
+      }),
+    ),
+  ]);
+
+  return true;
+}
+
 export async function verifyTradeHandoffCode({
   code,
   trade,
@@ -353,7 +473,7 @@ export async function verifyTradeHandoffCode({
   code: string;
   trade: TradeRow;
   user: AppUser;
-}) {
+}): Promise<VerifyTradeHandoffCodeResult> {
   assertHandoffTradeEligible(trade);
 
   if (trade.seller_user_id !== user.id) {
@@ -440,6 +560,18 @@ export async function verifyTradeHandoffCode({
       releaseType: "seller_release",
       failure: error instanceof Error ? error.message : "Automatic seller release failed after handoff code verification.",
     }).catch(() => undefined);
+
+    if (sellerReleaseNeedsAdminReview(error)) {
+      const routedToReview = await routeHandoffReleaseToAdminReview(trade, user);
+
+      if (routedToReview) {
+        return {
+          outcome: "review_required",
+          message: sellerReleaseManualReviewUserMessage,
+        };
+      }
+    }
+
     throw error;
   }
 
@@ -510,7 +642,10 @@ export async function verifyTradeHandoffCode({
     }),
   ]);
 
-  return releaseResult;
+  return {
+    outcome: "completed",
+    releaseResult,
+  };
 }
 
 export function mapTradeWithHandoffCode(

@@ -146,9 +146,15 @@ def assert_payment_amount_and_window_guards() -> None:
 def assert_handoff_code_release_recovery() -> None:
     handoff = read("src/server/trade-handoff.ts")
     escrow_release = read("src/server/escrow-release.ts")
+    handoff_verify_route = read("src/app/api/trades/[tradeId]/handoff-code/verify/route.ts")
 
     assert "verify_attempt_count: row.verify_attempt_count + 1" in handoff
     assert handoff.index("executeEscrowRelease({") < handoff.index("used_at: now")
+    assert "Automatic seller payout routed to review" in handoff
+    assert 'status: "AwaitingRelease"' in handoff
+    assert "seller_release_review_required" in handoff
+    assert 'outcome: "review_required"' in handoff
+    assert 'outcome: result.outcome' in handoff_verify_route
     assert '["NotStarted", "Failed", "Cancelled", "Created", "Submitted"]' in escrow_release
     assert "persistCompletedEscrowRelease" in escrow_release
     assert "releasePayment.transaction?.txid?.trim() ||" in escrow_release
