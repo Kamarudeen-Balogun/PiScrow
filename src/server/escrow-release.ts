@@ -191,6 +191,47 @@ async function recoverLinkedPiPayment(paymentId: string) {
   };
 }
 
+async function waitForPiPaymentVerification(paymentId: string, fallbackTxid: string) {
+  let observedPayment: PiPaymentDTO | null = null;
+  let observedTxid = fallbackTxid.trim();
+
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    if (attempt > 0) {
+      await delay(Math.min(1500 * attempt, 6000));
+    }
+
+    observedPayment = await getPiPayment(paymentId);
+    observedTxid = observedPayment.transaction?.txid?.trim() || observedTxid;
+
+    if (observedPayment.status?.developer_completed && observedTxid) {
+      return {
+        payment: observedPayment,
+        txid: observedTxid,
+        verified: true,
+      };
+    }
+
+    if (
+      observedTxid &&
+      (observedPayment.status?.transaction_verified || observedPayment.transaction?.verified)
+    ) {
+      return {
+        payment: observedPayment,
+        txid: observedTxid,
+        verified: true,
+      };
+    }
+  }
+
+  return {
+    payment: observedPayment,
+    txid: observedTxid,
+    verified: Boolean(
+      observedPayment?.status?.transaction_verified || observedPayment?.transaction?.verified,
+    ),
+  };
+}
+
 async function submitAppWalletPayment(payment: PiPaymentDTO) {
   const walletSeed = getPiWalletPrivateSeed();
   const keypair = StellarSdk.Keypair.fromSecret(walletSeed);
@@ -507,6 +548,31 @@ export async function executeEscrowRelease({
     .eq("id", payment.id);
 
   assertDbOk(submittedError);
+
+  const verification = await waitForPiPaymentVerification(paymentId, txid);
+
+  if (verification.payment?.status?.developer_completed && verification.txid) {
+    const { releaseExplorerLink } = await persistCompletedEscrowRelease({
+      payment,
+      paymentId,
+      releasePayment: verification.payment,
+      releaseType,
+      txid: verification.txid,
+    });
+
+    return {
+      mode: "completed" as const,
+      payment,
+      releasePayment: verification.payment,
+      releasePiPaymentId: paymentId,
+      releaseTxid: verification.txid,
+      releaseTransactionLink: releaseExplorerLink,
+    };
+  }
+
+  if (verification.verified && verification.txid) {
+    txid = verification.txid;
+  }
 
   let completed: PiPaymentDTO;
 
