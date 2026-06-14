@@ -1,6 +1,7 @@
 import StellarSdk from "stellar-sdk";
 
 import {
+  cancelPiPayment,
   completePiPayment,
   getPiPayment,
   getPiWalletPrivateSeed,
@@ -70,6 +71,28 @@ function piWalletScopeRecoveryMessage(releaseType: EscrowReleaseType) {
 
 function isPiPaymentAlreadyLinkedError(error: unknown) {
   return error instanceof Error && error.message.includes("payment_already_linked_with_a_tx");
+}
+
+function parsePiPlatformErrorBody(error: unknown) {
+  if (!(error instanceof Error)) {
+    return null;
+  }
+
+  const match = error.message.match(/\{.*\}$/s);
+
+  if (!match) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(match[0]) as {
+      error?: string;
+      error_message?: string;
+      payment?: PiPaymentDTO;
+    };
+  } catch {
+    return null;
+  }
 }
 
 function assertDbOk(error: { message?: string } | null | undefined) {
@@ -230,6 +253,36 @@ async function waitForPiPaymentVerification(paymentId: string, fallbackTxid: str
       observedPayment?.status?.transaction_verified || observedPayment?.transaction?.verified,
     ),
   };
+}
+
+async function resetReleaseState(paymentRowId: string) {
+  const supabase = getServiceClientOrThrow();
+  const { error } = await supabase
+    .from("payments")
+    .update({
+      release_pi_payment_id: null,
+      release_txid: null,
+      release_transaction_link: null,
+      release_completed_at: null,
+      release_failure: null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", paymentRowId);
+
+  assertDbOk(error);
+}
+
+function linkedTxCannotVerify(releasePayment: PiPaymentDTO) {
+  return Boolean(
+    releasePayment.transaction?.txid &&
+      !releasePayment.transaction?.verified &&
+      !releasePayment.status?.transaction_verified,
+  );
+}
+
+async function cancelUnverifiablePiRelease(paymentRowId: string, releasePayment: PiPaymentDTO) {
+  await cancelPiPayment(releasePayment.identifier);
+  await resetReleaseState(paymentRowId);
 }
 
 async function submitAppWalletPayment(payment: PiPaymentDTO) {
@@ -434,46 +487,77 @@ export async function executeEscrowRelease({
 
   let paymentId = payment.release_pi_payment_id;
   let releasePayment: PiPaymentDTO | null = null;
+  const createPaymentArgs = {
+    amount: releaseAmount,
+    memo: releaseMemo(trade.id, releaseType),
+    metadata: {
+      product: "PiScrow escrow release",
+      tradeId: trade.id,
+      buyerPaymentId: payment.pi_payment_id,
+      releaseType,
+      adminUsername: normalizePiUsername(actor.username),
+      notes,
+    },
+    uid: recipient.pi_uid,
+  };
 
-  try {
-    if (paymentId) {
-      releasePayment = await getPiPayment(paymentId);
+  while (true) {
+    try {
+      if (paymentId) {
+        releasePayment = await getPiPayment(paymentId);
 
-      if (
-        !releasePaymentMatchesContext({
-          buyerPaymentId: payment.pi_payment_id,
-          recipientPiUid: recipient.pi_uid,
-          releasePayment,
-          releaseType,
-          tradeId: trade.id,
-        })
-      ) {
-        paymentId = null;
-        releasePayment = null;
+        if (
+          !releasePaymentMatchesContext({
+            buyerPaymentId: payment.pi_payment_id,
+            recipientPiUid: recipient.pi_uid,
+            releasePayment,
+            releaseType,
+            tradeId: trade.id,
+          })
+        ) {
+          paymentId = null;
+          releasePayment = null;
+        } else if (linkedTxCannotVerify(releasePayment)) {
+          await cancelUnverifiablePiRelease(payment.id, releasePayment);
+          paymentId = null;
+          releasePayment = null;
+        }
       }
-    }
 
-    paymentId =
-      paymentId ??
-      (await piPlatformCreatePayment({
-        amount: releaseAmount,
-        memo: releaseMemo(trade.id, releaseType),
-        metadata: {
-          product: "PiScrow escrow release",
-          tradeId: trade.id,
-          buyerPaymentId: payment.pi_payment_id,
-          releaseType,
-          adminUsername: normalizePiUsername(actor.username),
-          notes,
-        },
-        uid: recipient.pi_uid,
-      }));
-  } catch (error) {
-    if (isPiWalletScopeError(error)) {
-      throw new Error(piWalletScopeRecoveryMessage(releaseType));
-    }
+      paymentId =
+        paymentId ??
+        (await piPlatformCreatePayment(createPaymentArgs));
 
-    throw error;
+      break;
+    } catch (error) {
+      if (isPiWalletScopeError(error)) {
+        throw new Error(piWalletScopeRecoveryMessage(releaseType));
+      }
+
+      const piError = parsePiPlatformErrorBody(error);
+
+      if (piError?.error === "ongoing_payment_found" && piError.payment) {
+        const ongoingPayment = piError.payment;
+
+        if (
+          releasePaymentMatchesContext({
+            buyerPaymentId: payment.pi_payment_id,
+            recipientPiUid: recipient.pi_uid,
+            releasePayment: ongoingPayment,
+            releaseType,
+            tradeId: trade.id,
+          }) &&
+          linkedTxCannotVerify(ongoingPayment)
+        ) {
+          await cancelUnverifiablePiRelease(payment.id, ongoingPayment);
+          paymentId = null;
+          releasePayment = null;
+          continue;
+        }
+      }
+
+      throw error;
+    }
   }
 
   const { error: paymentIdError } = await supabase

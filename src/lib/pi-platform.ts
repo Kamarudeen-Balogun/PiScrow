@@ -190,6 +190,12 @@ export async function completePiPayment(paymentId: string, txid: string) {
   });
 }
 
+export async function cancelPiPayment(paymentId: string) {
+  return piPlatformRequest<PiPaymentDTO>(`/v2/payments/${paymentId}/cancel`, {
+    method: "POST",
+  });
+}
+
 export function piTransactionLink(txid: string, network?: string) {
   const base = isPiMainnetNetwork(network)
     ? piBlockExplorerBase
