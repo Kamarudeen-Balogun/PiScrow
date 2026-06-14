@@ -118,6 +118,7 @@ export type TradePaymentSummary = {
   releaseTargetPiUsername?: string;
   releaseRequestedAt?: string;
   releaseCompletedAt?: string;
+  releaseFailure?: string;
   createdAt: string;
   updatedAt: string;
 };

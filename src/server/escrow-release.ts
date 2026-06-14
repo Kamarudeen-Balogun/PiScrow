@@ -26,6 +26,7 @@ type PaymentReleaseRow = {
   release_status: string | null;
   release_pi_payment_id: string | null;
   release_txid: string | null;
+  release_transaction_link: string | null;
   release_amount_test_pi: number | string | null;
 };
 
@@ -272,6 +273,39 @@ async function resetReleaseState(paymentRowId: string) {
   assertDbOk(error);
 }
 
+async function persistLinkedPiReleaseEvidence({
+  payment,
+  releasePayment,
+}: {
+  payment: PaymentReleaseRow;
+  releasePayment: PiPaymentDTO;
+}) {
+  const releasePaymentId = releasePayment.identifier?.trim() || "";
+  const txid = releasePayment.transaction?.txid?.trim() || "";
+  const transactionLink =
+    releasePayment.transaction?._link?.trim() ||
+    (txid ? piTransactionLink(txid, releasePayment.network) : null);
+
+  if (!releasePaymentId && !txid && !transactionLink) {
+    return;
+  }
+
+  const supabase = getServiceClientOrThrow();
+  const { error } = await supabase
+    .from("payments")
+    .update({
+      release_pi_payment_id: releasePaymentId || payment.release_pi_payment_id || null,
+      release_txid: txid || payment.release_txid || null,
+      release_transaction_link:
+        transactionLink || payment.release_transaction_link || null,
+      release_status: payment.release_status === "Completed" ? "Completed" : "Submitted",
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", payment.id);
+
+  assertDbOk(error);
+}
+
 function linkedTxCannotVerify(releasePayment: PiPaymentDTO) {
   return Boolean(
     releasePayment.transaction?.txid &&
@@ -360,7 +394,7 @@ async function getCompletedPaymentRow(tradeId: string) {
   const { data, error } = await supabase
     .from("payments")
     .select(
-      "id, pi_payment_id, seller_amount_test_pi, buyer_total_test_pi, status, escrow_status, release_type, release_status, release_pi_payment_id, release_txid, release_amount_test_pi",
+      "id, pi_payment_id, seller_amount_test_pi, buyer_total_test_pi, status, escrow_status, release_type, release_status, release_pi_payment_id, release_txid, release_transaction_link, release_amount_test_pi",
     )
     .eq("trade_id", tradeId)
     .eq("status", "Completed")
@@ -547,6 +581,10 @@ export async function executeEscrowRelease({
         releasePayment = null;
       } else if (linkedTxCannotVerify(releasePayment)) {
         if (sellerReleaseNeedsManualReview({ payment, releasePayment, releaseType })) {
+          await persistLinkedPiReleaseEvidence({
+            payment,
+            releasePayment,
+          });
           throw new Error(
             "Seller payout already has a linked blockchain transaction for this trade. PiScrow stopped automatic retry to prevent double payment. Review this trade manually before sending another payout.",
           );
@@ -584,6 +622,10 @@ export async function executeEscrowRelease({
           linkedTxCannotVerify(ongoingPayment)
         ) {
           if (sellerReleaseNeedsManualReview({ payment, releasePayment: ongoingPayment, releaseType })) {
+            await persistLinkedPiReleaseEvidence({
+              payment,
+              releasePayment: ongoingPayment,
+            });
             throw new Error(
               "Seller payout already has a linked blockchain transaction for this trade. PiScrow stopped automatic retry to prevent double payment. Review this trade manually before sending another payout.",
             );

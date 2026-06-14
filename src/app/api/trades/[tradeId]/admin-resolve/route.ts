@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { piTransactionLink } from "@/lib/pi-platform";
 import { jsonError, requireAppUser } from "@/server/auth";
 import {
   executeEscrowRelease,
@@ -28,6 +29,10 @@ const adminActionSchema = z.discriminatedUnion("action", [
     action: z.literal("resolve"),
     status: z.enum(["Completed", "Cancelled"]),
     notes: z.string().trim().max(600).optional(),
+  }),
+  z.object({
+    action: z.literal("mark_already_paid"),
+    notes: z.string().trim().min(8).max(600).optional(),
   }),
   z.object({
     action: z.enum(["request_buyer_followup", "request_seller_followup"]),
@@ -60,7 +65,10 @@ export async function POST(
     const supabase = getServiceClientOrThrow();
     const now = new Date().toISOString();
 
-    if (parsed.data.action !== "resolve") {
+    if (
+      parsed.data.action !== "resolve" &&
+      parsed.data.action !== "mark_already_paid"
+    ) {
       const targetIsBuyer = parsed.data.action === "request_buyer_followup";
       const targetUserId = targetIsBuyer ? trade.buyer_user_id : trade.seller_user_id;
       const targetRole = targetIsBuyer ? "buyer" : "seller";
@@ -91,6 +99,149 @@ export async function POST(
         title: "Admin needs your update",
         body: parsed.data.notes,
       });
+
+      return secureJson(await listTradesForUser(user));
+    }
+
+    if (parsed.data.action === "mark_already_paid") {
+      if (trade.status !== "AwaitingRelease") {
+        throw new Error("Already-paid payout confirmation is only available in release review.");
+      }
+
+      const { data: payment, error: paymentError } = await supabase
+        .from("payments")
+        .select(
+          "id, seller_amount_test_pi, release_pi_payment_id, release_txid, release_transaction_link, release_requested_at",
+        )
+        .eq("trade_id", tradeId)
+        .eq("status", "Completed")
+        .maybeSingle();
+
+      if (paymentError) {
+        throw new Error(paymentError.message);
+      }
+
+      if (!payment) {
+        throw new Error("Buyer funding is not complete yet for this trade.");
+      }
+
+      const linkedTxid = payment.release_txid?.trim() || "";
+      const linkedPaymentId = payment.release_pi_payment_id?.trim() || "";
+
+      if (!linkedTxid || !linkedPaymentId) {
+        throw new Error("PiScrow could not confirm an existing linked seller payout for this trade.");
+      }
+
+      const resolutionNotes =
+        parsed.data.notes ??
+        "Admin confirmed the seller payout was already sent on-chain from existing linked payout evidence. PiScrow closed the review without sending another payout.";
+      const releaseAmount = Number(payment.seller_amount_test_pi ?? trade.amount_test_pi);
+      const releaseExplorerLink =
+        payment.release_transaction_link?.trim() ||
+        piTransactionLink(linkedTxid);
+
+      const { error: releaseUpdateError } = await supabase
+        .from("payments")
+        .update({
+          escrow_status: "released_to_seller",
+          release_type: "seller_release",
+          release_status: "Completed",
+          release_amount_test_pi: releaseAmount,
+          release_target_user_id: trade.seller_user_id,
+          release_target_pi_username: trade.seller_pi_username,
+          release_requested_by_user_id: user.id,
+          release_requested_at: payment.release_requested_at ?? now,
+          release_transaction_link: releaseExplorerLink,
+          release_completed_at: now,
+          release_failure: null,
+          updated_at: now,
+        })
+        .eq("id", payment.id);
+
+      if (releaseUpdateError) {
+        throw new Error(releaseUpdateError.message);
+      }
+
+      await invalidateTradeHandoffCode(
+        tradeId,
+        "trade completed by admin already-paid confirmation",
+        user.id,
+      ).catch(() => undefined);
+
+      const { error: tradeError } = await supabase
+        .from("trades")
+        .update({
+          status: "Completed",
+          completed_at: now,
+          cancelled_at: null,
+          updated_at: now,
+        })
+        .eq("id", tradeId);
+
+      if (tradeError) {
+        throw new Error(tradeError.message);
+      }
+
+      await supabase
+        .from("disputes")
+        .update({
+          status: "Resolved",
+          resolution: resolutionNotes,
+          resolved_at: now,
+        })
+        .eq("trade_id", tradeId)
+        .eq("status", "Open");
+
+      await supabase.from("admin_actions").insert({
+        trade_id: tradeId,
+        admin_pi_username: user.username,
+        action_type: "mark_already_paid",
+        notes: resolutionNotes,
+        metadata: {
+          releasePath: "seller_release",
+          releasePiPaymentId: linkedPaymentId,
+          releaseTxid: linkedTxid,
+          resolvedFromLinkedPayout: true,
+        },
+      });
+
+      await insertTradeEvent(
+        tradeId,
+        user.id,
+        "Admin confirmed seller payout already completed",
+        resolutionNotes,
+        {
+          releasePath: "seller_release",
+          releasePiPaymentId: linkedPaymentId,
+          releaseTxid: linkedTxid,
+          resolvedFromLinkedPayout: true,
+        },
+      );
+      await addTradeChatSystemMessage(
+        { ...trade, status: "Completed", completed_at: now, updated_at: now },
+        `Admin @${user.username} confirmed the seller payout was already completed on-chain and closed this review without sending another payout: ${resolutionNotes}`,
+      );
+      await closeTradeChatRoom(
+        { ...trade, status: "Completed", completed_at: now, updated_at: now },
+        "Review completed. Seller payout was confirmed from existing on-chain evidence. Chat is now read-only for record keeping.",
+      );
+
+      await Promise.all([
+        createNotification({
+          userId: trade.seller_user_id,
+          tradeId,
+          type: "admin_resolved",
+          title: "Admin completed review",
+          body: "Admin confirmed the seller payout was already completed on-chain and closed the review without sending another payout.",
+        }),
+        createNotification({
+          userId: trade.buyer_user_id,
+          tradeId,
+          type: "admin_resolved",
+          title: "Admin completed review",
+          body: "Admin confirmed the seller payout was already completed on-chain and closed the review without sending another payout.",
+        }),
+      ]);
 
       return secureJson(await listTradesForUser(user));
     }

@@ -40,7 +40,10 @@ export async function POST(
     return secureJson({
       ...(await listTradesForUser(user)),
       outcome: result.outcome,
-      message: result.outcome === "review_required" ? result.message : undefined,
+      message:
+        result.outcome === "review_required" || result.outcome === "already_reviewing"
+          ? result.message
+          : undefined,
     });
   } catch (error) {
     return jsonError(error);

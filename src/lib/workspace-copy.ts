@@ -50,6 +50,8 @@ export type WorkspaceCopy = {
     enterReviewRoom: string;
     releaseToSeller: string;
     refundBuyer: string;
+    markAlreadyPaid: string;
+    metrics: string;
   };
   trade: {
     deleteTrade: string;
@@ -209,6 +211,8 @@ const en: WorkspaceCopy = {
     enterReviewRoom: "Enter Review Room",
     releaseToSeller: "Release to seller",
     refundBuyer: "Refund buyer",
+    markAlreadyPaid: "Mark already paid on-chain",
+    metrics: "Metrics",
   },
   trade: {
     deleteTrade: "Delete trade",
@@ -376,6 +380,8 @@ const pcm: WorkspaceCopy = {
     enterReviewRoom: "Enter review room",
     releaseToSeller: "Release to seller",
     refundBuyer: "Refund buyer",
+    markAlreadyPaid: "Mark already paid on-chain",
+    metrics: "Metrics",
   },
   trade: {
     deleteTrade: "Delete trade",

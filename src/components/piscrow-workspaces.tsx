@@ -1719,6 +1719,7 @@ export function AdminDesk({
   verificationRequests,
   onApproveVerification,
   onClaimChat,
+  onConfirmAlreadyPaid,
   onOpenChat,
   onRefreshVerifications,
   onRunReview,
@@ -1737,6 +1738,7 @@ export function AdminDesk({
   verificationRequests: UserReputation[];
   onApproveVerification: (request: UserReputation) => void;
   onClaimChat: (trade: Trade) => void;
+  onConfirmAlreadyPaid: (trade: Trade) => void;
   onOpenChat: (trade: Trade) => void;
   onRefreshVerifications: () => void;
   onRunReview: (trade: Trade) => void;
@@ -1745,9 +1747,41 @@ export function AdminDesk({
   const copy = getWorkspaceCopy(language);
   const [selectedTrade, setSelectedTrade] = useState<Trade | null>(null);
   const [selectedProfile, setSelectedProfile] = useState<UserReputation | null>(null);
+  const [showMetrics, setShowMetrics] = useState(false);
+  const [metricsPhaseFilter, setMetricsPhaseFilter] = useState<ActivityPhase>("Funding");
   const resolvedEvents = events.filter((event) =>
     /complete|resolved|cancel/i.test(event.eventType),
   ).length;
+  const payoutRiskTrades = useMemo(
+    () =>
+      trades.filter((trade) => {
+        const payment = trade.payment;
+
+        return Boolean(
+          payment &&
+            trade.status === "AwaitingRelease" &&
+            (
+              payment.releaseStatus === "Failed" ||
+              payment.releaseStatus === "Submitted" ||
+              payment.releaseStatus === "Created" ||
+              payment.releaseTxid ||
+              payment.releasePiPaymentId
+            ),
+        );
+      }),
+    [trades],
+  );
+  const payoutRiskTimeline = useMemo(
+    () =>
+      events.filter((event) =>
+        payoutRiskTrades.some((trade) => trade.id === event.tradeId),
+      ),
+    [events, payoutRiskTrades],
+  );
+  const payoutRiskTradeMap = useMemo(
+    () => new Map(payoutRiskTrades.map((trade) => [trade.id, trade])),
+    [payoutRiskTrades],
+  );
 
   return (
     <section>
@@ -1759,7 +1793,12 @@ export function AdminDesk({
 
       <div className="sh">
         <span className="sh-t text-lg">{copy.admin.reviewQueue}</span>
-        <span className="bdg bd2">{copy.admin.activeCount(trades.length)}</span>
+        <div className="flex items-center gap-3">
+          <span className="bdg bd2">{copy.admin.activeCount(trades.length)}</span>
+          <button className="sh-a" type="button" onClick={() => setShowMetrics(true)}>
+            {copy.admin.metrics}
+          </button>
+        </div>
       </div>
 
       {trades.length === 0 ? (
@@ -1857,10 +1896,115 @@ export function AdminDesk({
           chatRoom={chatRooms.find((room) => room.tradeId === selectedTrade.id)}
           onClose={() => setSelectedTrade(null)}
           onClaimChat={onClaimChat}
+          onConfirmAlreadyPaid={onConfirmAlreadyPaid}
           onOpenChat={onOpenChat}
           onResolve={onResolve}
           onRunReview={onRunReview}
         />
+      )}
+      {showMetrics && (
+        <BottomSheet onClose={() => setShowMetrics(false)}>
+          <section className="grid gap-4">
+            <div className="pr-10">
+              <p className={sectionEyebrowClass}>Admin metrics</p>
+              <h2 className="text-2xl font-black text-white">Payout Risk Queue</h2>
+              <p className="mt-2 text-sm leading-6 text-slate-300">
+                Read-only operations view for trades that may need manual payout review.
+              </p>
+            </div>
+
+            <section className="sg">
+              <Metric
+                icon={<AlertTriangle className="h-5 w-5" />}
+                label="Risk trades"
+                value={payoutRiskTrades.length}
+              />
+              <Metric
+                icon={<HandCoins className="h-5 w-5" />}
+                label="Linked payouts"
+                value={payoutRiskTrades.filter((trade) => trade.payment?.releaseTxid).length}
+              />
+              <Metric
+                icon={<Eye className="h-5 w-5" />}
+                label="Failed releases"
+                value={payoutRiskTrades.filter((trade) => trade.payment?.releaseStatus === "Failed").length}
+              />
+            </section>
+
+            <section className="grid gap-3">
+              {payoutRiskTrades.length === 0 ? (
+                <InfoBox tone="info">
+                  No payout-risk trades are waiting in the current admin review queue.
+                </InfoBox>
+              ) : (
+                payoutRiskTrades.map((trade) => (
+                  <article
+                    key={trade.id}
+                    className="grid gap-3 rounded-2xl border border-white/10 bg-black/14 p-3"
+                  >
+                    <div className="flex flex-wrap items-center gap-2">
+                      <StatusBadge status={trade.status} />
+                      <Chip tone={trade.payment?.releaseStatus === "Failed" ? "danger" : "info"}>
+                        {trade.payment?.releaseStatus ?? "NotStarted"}
+                      </Chip>
+                      {trade.payment?.releaseTxid && <Chip tone="warning">Linked tx</Chip>}
+                    </div>
+                    <div>
+                      <h3 className="text-base font-black text-white">{trade.title}</h3>
+                      <p className="mt-1 text-sm text-slate-400">
+                        @{trade.sellerPiUsername}
+                        {trade.buyerPiUsername ? ` -> @${trade.buyerPiUsername}` : ""}
+                      </p>
+                    </div>
+                    <TradeTransactionPanel trade={trade} emphasis="admin" />
+                    <PayoutEvidencePanel compact trade={trade} />
+                    {trade.status === "AwaitingRelease" &&
+                      trade.payment?.releaseTxid &&
+                      trade.payment?.releasePiPaymentId && (
+                        <button
+                          className={secondaryButtonClass}
+                          type="button"
+                          onClick={() => {
+                            setShowMetrics(false);
+                            onConfirmAlreadyPaid(trade);
+                          }}
+                        >
+                          {copy.admin.markAlreadyPaid}
+                        </button>
+                      )}
+                    <button
+                      className={trade.status === "AwaitingRelease" &&
+                        trade.payment?.releaseTxid &&
+                        trade.payment?.releasePiPaymentId
+                        ? primaryButtonClass
+                        : secondaryButtonClass}
+                      type="button"
+                      onClick={() => {
+                        setShowMetrics(false);
+                        setSelectedTrade(trade);
+                      }}
+                    >
+                      Open trade review
+                    </button>
+                  </article>
+                ))
+              )}
+            </section>
+
+            <Timeline
+              copy={copy}
+              events={payoutRiskTimeline}
+              phaseFilter={metricsPhaseFilter}
+              title="Trade Timeline"
+              tradesById={payoutRiskTradeMap}
+              onOpenTrade={(trade) => {
+                setShowMetrics(false);
+                setSelectedTrade(trade);
+              }}
+              onPhaseChange={setMetricsPhaseFilter}
+            />
+          </section>
+        </BottomSheet>
       )}
       {selectedProfile && (
         <PublicProfileSheet
@@ -2407,6 +2551,7 @@ function AdminTradeSheet({
   trade,
   onClose,
   onClaimChat,
+  onConfirmAlreadyPaid,
   onOpenChat,
   onResolve,
   onRunReview,
@@ -2421,6 +2566,7 @@ function AdminTradeSheet({
   trade: Trade;
   onClose: () => void;
   onClaimChat: (trade: Trade) => void;
+  onConfirmAlreadyPaid: (trade: Trade) => void;
   onOpenChat: (trade: Trade) => void;
   onResolve: (trade: Trade, status: "Completed" | "Cancelled") => void;
   onRunReview: (trade: Trade) => void;
@@ -2430,6 +2576,7 @@ function AdminTradeSheet({
       <SheetTradeHeader trade={trade} />
       <TradeEconomics trade={trade} />
       <TradeTransactionPanel trade={trade} emphasis="admin" />
+      <PayoutEvidencePanel trade={trade} />
       <ReviewRecommendationPanel
         copy={copy}
         loading={loading}
@@ -2456,6 +2603,11 @@ function AdminTradeSheet({
           {copy.admin.refundBuyer}
         </button>
       </div>
+      {trade.status === "AwaitingRelease" && trade.payment?.releaseTxid && trade.payment?.releasePiPaymentId && (
+        <button className={secondaryButtonClass} type="button" onClick={() => onConfirmAlreadyPaid(trade)}>
+          {copy.admin.markAlreadyPaid}
+        </button>
+      )}
     </BottomSheet>
   );
 }
@@ -3277,6 +3429,99 @@ function TradeTransactionPanel({
         </InfoBox>
       )}
     </ActionPanel>
+  );
+}
+
+function PayoutEvidencePanel({
+  trade,
+  compact = false,
+}: {
+  trade: Trade;
+  compact?: boolean;
+}) {
+  const payment = trade.payment;
+
+  if (!payment) {
+    return null;
+  }
+
+  const fields = [
+    { label: "Trade ID", value: trade.id },
+    { label: "Seller", value: `@${trade.sellerPiUsername}` },
+    {
+      label: "Buyer",
+      value: trade.buyerPiUsername ? `@${trade.buyerPiUsername}` : "Not assigned",
+    },
+    { label: "Buyer funding payment ID", value: payment.piPaymentId },
+    { label: "Buyer funding tx", value: payment.buyerPaymentTxid ?? "Not linked" },
+    {
+      label: "Seller release payment ID",
+      value: payment.releasePiPaymentId ?? "Not linked",
+    },
+    {
+      label: "Seller release tx",
+      value: payment.releaseTxid ?? "Not linked",
+    },
+    {
+      label: "Release status",
+      value: payment.releaseStatus ?? "NotStarted",
+    },
+  ];
+
+  return (
+    <section className="grid gap-3 rounded-2xl border border-white/10 bg-black/14 p-3">
+      <div className="flex items-center gap-2 text-slate-400">
+        <Eye className="h-4 w-4" />
+        <h2 className="font-black text-white">Trade-linked payout evidence</h2>
+      </div>
+      <div className={`grid gap-3 ${compact ? "" : "sm:grid-cols-2"}`}>
+        {fields.map((field) => (
+          <div
+            key={field.label}
+            className="rounded-2xl border border-white/8 bg-black/14 p-3"
+          >
+            <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-500">
+              {field.label}
+            </p>
+            <p className="mt-2 break-all text-sm font-semibold leading-6 text-slate-200">
+              {field.value}
+            </p>
+          </div>
+        ))}
+      </div>
+      {(payment.buyerPaymentLink || payment.releaseTransactionLink) && (
+        <div className="flex flex-wrap gap-2">
+          {payment.buyerPaymentLink && (
+            <a
+              className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/6 px-3 py-1.5 text-xs font-bold text-slate-100 transition hover:bg-white/10"
+              href={payment.buyerPaymentLink}
+              rel="noreferrer"
+              target="_blank"
+            >
+              Buyer funding link
+              <ExternalLink className="h-3.5 w-3.5" />
+            </a>
+          )}
+          {payment.releaseTransactionLink && (
+            <a
+              className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/6 px-3 py-1.5 text-xs font-bold text-slate-100 transition hover:bg-white/10"
+              href={payment.releaseTransactionLink}
+              rel="noreferrer"
+              target="_blank"
+            >
+              Seller release link
+              <ExternalLink className="h-3.5 w-3.5" />
+            </a>
+          )}
+        </div>
+      )}
+      {payment.releaseFailure && (
+        <InfoBox tone="warning">
+          <span className="font-bold text-white">Latest release failure:</span>{" "}
+          {payment.releaseFailure}
+        </InfoBox>
+      )}
+    </section>
   );
 }
 

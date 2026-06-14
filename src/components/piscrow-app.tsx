@@ -122,7 +122,7 @@ type HandoffCodePayload = TradePayload & {
 };
 
 type HandoffVerifyPayload = TradePayload & {
-  outcome?: "completed" | "review_required";
+  outcome?: "completed" | "review_required" | "already_reviewing";
   message?: string;
 };
 
@@ -4329,12 +4329,20 @@ export function PiScrowApp({
           },
         );
         applyTradePayload(payload);
-        if (payload.outcome === "review_required") {
+        if (
+          payload.outcome === "review_required" ||
+          payload.outcome === "already_reviewing"
+        ) {
           pushNotice(
-            "Admin review required",
+            payload.outcome === "already_reviewing"
+              ? "Payout already under review"
+              : "Admin review required",
             payload.message ??
-              "PiScrow paused automatic seller payout and moved this trade into admin review to prevent double payment.",
+              (payload.outcome === "already_reviewing"
+                ? "PiScrow already moved this seller payout into admin review after detecting linked blockchain activity. Do not retry the handoff code."
+                : "PiScrow paused automatic seller payout and moved this trade into admin review to prevent double payment."),
             "warning",
+            { persistent: true },
           );
         } else {
           pushNotice(
@@ -4604,38 +4612,60 @@ export function PiScrowApp({
     }
   }
 
-  function adminResolve(trade: Trade, status: "Completed" | "Cancelled") {
+  function adminResolve(
+    trade: Trade,
+    status: "Completed" | "Cancelled" | "AlreadyPaid",
+  ) {
     askConfirmation({
       title:
         status === "Completed"
           ? "Release seller payout?"
-          : "Refund buyer from escrow?",
+          : status === "Cancelled"
+            ? "Refund buyer from escrow?"
+            : "Mark seller as already paid?",
       body:
         status === "Completed"
           ? "PiScrow will release the held Test Pi from escrow to the seller after this review."
-          : "PiScrow will refund the held Test Pi from escrow back to the buyer after this review.",
+          : status === "Cancelled"
+            ? "PiScrow will refund the held Test Pi from escrow back to the buyer after this review."
+            : "Use this only when PiScrow already has linked payout evidence for this trade. It will close the review without sending another payout.",
       confirmLabel:
-        status === "Completed" ? "Release payout" : "Refund buyer",
+        status === "Completed"
+          ? "Release payout"
+          : status === "Cancelled"
+            ? "Refund buyer"
+            : "Mark already paid",
       tone: status === "Cancelled" ? "danger" : "warning",
       onConfirm: () => adminResolveConfirmed(trade, status),
     });
   }
 
-  function adminResolveConfirmed(trade: Trade, status: "Completed" | "Cancelled") {
+  function adminResolveConfirmed(
+    trade: Trade,
+    status: "Completed" | "Cancelled" | "AlreadyPaid",
+  ) {
     setFormError("");
 
     const notes =
       status === "Completed"
         ? "Admin approved the seller release path after reviewing buyer receipt and party evidence."
+        : status === "AlreadyPaid"
+          ? "Admin confirmed the seller payout was already completed on-chain from existing linked payout evidence and closed the review without sending another payout."
         : trade.status === "AwaitingRelease"
           ? "Admin approved the buyer refund path after reviewing buyer receipt, seller proof, and party evidence."
           : "Admin approved the buyer refund path after reviewing the dispute and party evidence.";
 
     showBlockingAction(
-      status === "Completed" ? "Releasing seller payout" : "Refunding buyer",
+      status === "Completed"
+        ? "Releasing seller payout"
+        : status === "Cancelled"
+          ? "Refunding buyer"
+          : "Confirming linked seller payout",
       status === "Completed"
         ? "PiScrow is signing and submitting the escrow payout transaction."
-        : "PiScrow is signing and submitting the escrow refund transaction.",
+        : status === "Cancelled"
+          ? "PiScrow is signing and submitting the escrow refund transaction."
+          : "PiScrow is closing this review from existing linked payout evidence without sending another payout.",
     );
 
     if (piConnected && piAccessToken) {
@@ -4645,8 +4675,8 @@ export function PiScrowApp({
         {
           method: "POST",
           body: JSON.stringify({
-            action: "resolve",
-            status,
+            action: status === "AlreadyPaid" ? "mark_already_paid" : "resolve",
+            ...(status === "AlreadyPaid" ? {} : { status }),
             notes,
           }),
         },
@@ -4661,11 +4691,17 @@ export function PiScrowApp({
         })
         .then(() => {
           pushNotice(
-            status === "Completed" ? "Payout completed" : "Refund completed",
+            status === "Completed"
+              ? "Payout completed"
+              : status === "Cancelled"
+                ? "Refund completed"
+                : "Linked payout confirmed",
             status === "Completed"
               ? "Held Test Pi was released to the seller after admin review."
-              : "Held Test Pi was refunded to the buyer after admin review.",
-            status === "Completed" ? "success" : "warning",
+              : status === "Cancelled"
+                ? "Held Test Pi was refunded to the buyer after admin review."
+                : "Admin confirmed the seller payout was already completed on-chain and PiScrow did not send another payout.",
+            status === "Completed" || status === "AlreadyPaid" ? "success" : "warning",
           );
         })
         .catch((error) => {
@@ -4679,25 +4715,26 @@ export function PiScrowApp({
       return;
     }
 
-    const releaseTxid = `demo-${status === "Completed" ? "release" : "refund"}-${trade.id}-${Date.now()}`;
+    const resolvedStatus = status === "AlreadyPaid" ? "Completed" : status;
+    const releaseTxid = `demo-${status === "Completed" ? "release" : status === "Cancelled" ? "refund" : "linked"}-${trade.id}-${Date.now()}`;
     const now = new Date().toISOString();
-    updateTrade(trade.id, status, {
+    updateTrade(trade.id, resolvedStatus, {
       payment: {
         ...ensureDemoPaymentSummary(trade),
         escrowStatus:
-          status === "Completed" ? "released_to_seller" : "refunded_to_buyer",
+          status === "Cancelled" ? "refunded_to_buyer" : "released_to_seller",
         releaseType:
-          status === "Completed" ? "seller_release" : "buyer_refund",
+          status === "Cancelled" ? "buyer_refund" : "seller_release",
         releaseStatus: "Completed",
         releasePiPaymentId: `demo-release-payment-${trade.id}`,
         releaseTxid,
         releaseTransactionLink: demoTransactionLink(releaseTxid),
         releaseAmountTestPi:
-          status === "Completed"
+          status !== "Cancelled"
             ? trade.payment?.sellerAmountTestPi ?? trade.amountTestPi
             : trade.payment?.buyerTotalTestPi ?? calculateBuyerTotal(trade.amountTestPi),
         releaseTargetPiUsername:
-          status === "Completed" ? trade.sellerPiUsername : trade.buyerPiUsername,
+          status === "Cancelled" ? trade.buyerPiUsername : trade.sellerPiUsername,
         releaseRequestedAt: now,
         releaseCompletedAt: now,
         updatedAt: now,
@@ -4707,20 +4744,20 @@ export function PiScrowApp({
       current?.id === trade.id
         ? {
             ...current,
-            status,
-            completedAt: status === "Completed" ? now : current.completedAt,
+            status: resolvedStatus,
+            completedAt: status !== "Cancelled" ? now : current.completedAt,
             cancelledAt: status === "Cancelled" ? now : current.cancelledAt,
             updatedAt: now,
           }
         : current,
     );
-    if (status === "Completed" || status === "Cancelled") {
+    if (status === "Completed" || status === "Cancelled" || status === "AlreadyPaid") {
       setTrades((current) =>
         current.map((item) =>
           item.id === trade.id
             ? {
                 ...item,
-                completedAt: status === "Completed" ? now : item.completedAt,
+                completedAt: status !== "Cancelled" ? now : item.completedAt,
                 cancelledAt: status === "Cancelled" ? now : item.cancelledAt,
                 updatedAt: now,
               }
@@ -4732,16 +4769,24 @@ export function PiScrowApp({
       trade.id,
       status === "Completed"
         ? "Admin approved seller release"
-        : "Admin approved buyer refund",
+        : status === "Cancelled"
+          ? "Admin approved buyer refund"
+          : "Admin confirmed seller payout already completed",
       notes,
       user?.username ?? "admin",
     );
     pushNotice(
-      status === "Completed" ? "Payout completed" : "Refund completed",
+      status === "Completed"
+        ? "Payout completed"
+        : status === "Cancelled"
+          ? "Refund completed"
+          : "Linked payout confirmed",
       status === "Completed"
         ? "Held Test Pi was released to the seller after admin review."
-        : "Held Test Pi was refunded to the buyer after admin review.",
-      status === "Completed" ? "success" : "warning",
+        : status === "Cancelled"
+          ? "Held Test Pi was refunded to the buyer after admin review."
+          : "Admin confirmed the seller payout was already completed on-chain and PiScrow did not send another payout.",
+      status === "Completed" || status === "AlreadyPaid" ? "success" : "warning",
     );
     hideBlockingAction();
   }
@@ -4968,6 +5013,7 @@ export function PiScrowApp({
                   verificationRequests={verificationRequests}
                   onApproveVerification={(request) => void approveVerifiedBadge(request)}
                   onClaimChat={claimTradeChat}
+                  onConfirmAlreadyPaid={(trade) => adminResolve(trade, "AlreadyPaid")}
                   onOpenChat={openTradeChat}
                   onRefreshVerifications={() => void refreshVerificationRequests()}
                   onRunReview={runReviewRecommendation}

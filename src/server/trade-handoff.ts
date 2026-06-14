@@ -53,12 +53,14 @@ type VerifyTradeHandoffCodeResult =
       releaseResult: Awaited<ReturnType<typeof executeEscrowRelease>>;
     }
   | {
-      outcome: "review_required";
+      outcome: "review_required" | "already_reviewing";
       message: string;
     };
 
 const sellerReleaseManualReviewUserMessage =
   "Automatic seller payout was paused for admin review. PiScrow found an existing linked blockchain transaction for this trade and stopped retrying to prevent double payment.";
+const sellerReleaseAlreadyReviewingUserMessage =
+  "This trade is already under admin release review. Do not retry the handoff code. Admin will confirm whether the seller payout should be sent or whether the seller was already paid.";
 
 function handoffCodeSecret() {
   const secret = process.env.PISCROW_HANDOFF_CODE_SECRET?.trim() || "";
@@ -158,6 +160,10 @@ function assertHandoffTradeEligible(trade: TradeRow) {
   if (!trade.buyer_user_id || !trade.seller_user_id) {
     throw new Error("Both buyer and seller must be assigned before generating a handoff code.");
   }
+}
+
+function handoffTradeCanReturnReviewOutcome(trade: TradeRow) {
+  return trade.status === "AwaitingRelease";
 }
 
 async function assertEscrowFundingReady(trade: TradeRow) {
@@ -474,11 +480,18 @@ export async function verifyTradeHandoffCode({
   trade: TradeRow;
   user: AppUser;
 }): Promise<VerifyTradeHandoffCodeResult> {
-  assertHandoffTradeEligible(trade);
-
   if (trade.seller_user_id !== user.id) {
     throw new Error("Only the seller can verify the buyer handoff code.");
   }
+
+  if (handoffTradeCanReturnReviewOutcome(trade)) {
+    return {
+      outcome: "already_reviewing",
+      message: sellerReleaseAlreadyReviewingUserMessage,
+    };
+  }
+
+  assertHandoffTradeEligible(trade);
 
   await assertEscrowFundingReady(trade);
 

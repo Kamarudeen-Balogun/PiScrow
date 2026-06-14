@@ -109,6 +109,7 @@ type PaymentRow = {
   release_target_pi_username: string | null;
   release_requested_at: string | null;
   release_completed_at: string | null;
+  release_failure: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -326,6 +327,7 @@ function mapPayment(row: PaymentRow): TradePaymentSummary {
     releaseTargetPiUsername: row.release_target_pi_username ?? undefined,
     releaseRequestedAt: row.release_requested_at ?? undefined,
     releaseCompletedAt: row.release_completed_at ?? undefined,
+    releaseFailure: row.release_failure ?? undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -342,7 +344,7 @@ async function getCompletedPaymentMap(tradeIds: string[]) {
   const { data, error } = await supabase
     .from("payments")
     .select(
-      "id, trade_id, pi_payment_id, amount_test_pi, seller_amount_test_pi, platform_fee_test_pi, buyer_total_test_pi, buyer_payment_txid, buyer_payment_link, escrow_status, release_type, release_status, release_pi_payment_id, release_txid, release_transaction_link, release_amount_test_pi, release_target_pi_username, release_requested_at, release_completed_at, created_at, updated_at",
+      "id, trade_id, pi_payment_id, amount_test_pi, seller_amount_test_pi, platform_fee_test_pi, buyer_total_test_pi, buyer_payment_txid, buyer_payment_link, escrow_status, release_type, release_status, release_pi_payment_id, release_txid, release_transaction_link, release_amount_test_pi, release_target_pi_username, release_requested_at, release_completed_at, release_failure, created_at, updated_at",
     )
     .in("trade_id", uniqueIds)
     .eq("status", "Completed")

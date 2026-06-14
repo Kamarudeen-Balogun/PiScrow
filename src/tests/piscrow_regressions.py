@@ -79,6 +79,8 @@ def assert_authorization_guards() -> None:
 
     assert "if (!user.isAdmin)" in admin_route
     assert "Only admins can resolve review rooms or disputes." in admin_route
+    assert 'z.literal("mark_already_paid")' in admin_route
+    assert "mark_already_paid" in admin_route
     assert "if (!user.isAdmin)" in review_route
     assert "Only admins can run review recommendations." in review_route
     assert "assertBuyerIsEligibleForListing(trade, user)" in interest_route
@@ -147,6 +149,7 @@ def assert_handoff_code_release_recovery() -> None:
     handoff = read("src/server/trade-handoff.ts")
     escrow_release = read("src/server/escrow-release.ts")
     handoff_verify_route = read("src/app/api/trades/[tradeId]/handoff-code/verify/route.ts")
+    app = read("src/components/piscrow-app.tsx")
 
     assert "verify_attempt_count: row.verify_attempt_count + 1" in handoff
     assert handoff.index("executeEscrowRelease({") < handoff.index("used_at: now")
@@ -154,10 +157,16 @@ def assert_handoff_code_release_recovery() -> None:
     assert 'status: "AwaitingRelease"' in handoff
     assert "seller_release_review_required" in handoff
     assert 'outcome: "review_required"' in handoff
+    assert 'outcome: "already_reviewing"' in handoff
+    assert "sellerReleaseAlreadyReviewingUserMessage" in handoff
     assert 'outcome: result.outcome' in handoff_verify_route
+    assert '"review_required" || result.outcome === "already_reviewing"' in handoff_verify_route
     assert '["NotStarted", "Failed", "Cancelled", "Created", "Submitted"]' in escrow_release
     assert "persistCompletedEscrowRelease" in escrow_release
+    assert "persistLinkedPiReleaseEvidence" in escrow_release
     assert "releasePayment.transaction?.txid?.trim() ||" in escrow_release
+    assert 'outcome?: "completed" | "review_required" | "already_reviewing"' in app
+    assert "Payout already under review" in app
 
 
 def assert_trade_chat_guards() -> None:
@@ -198,11 +207,19 @@ def assert_review_room_copy_consistency() -> None:
     admin_resolve = read("src/app/api/trades/[tradeId]/admin-resolve/route.ts")
     chat_route = read("src/app/api/trades/[tradeId]/chat/route.ts")
     app = read("src/components/piscrow-app.tsx")
+    workspaces = read("src/components/piscrow-workspaces.tsx")
+    workspace_copy = read("src/lib/workspace-copy.ts")
 
     assert "Only admins can resolve review rooms or disputes." in admin_resolve
     assert "Admin completed review" in admin_resolve
+    assert "Admin confirmed seller payout already completed" in admin_resolve
     assert "Admin added review update" in chat_route
     assert "release-ready or disputed trades" in app
+    assert "Payout Risk Queue" in workspaces
+    assert "Mark already paid on-chain" in workspace_copy
+    assert "onConfirmAlreadyPaid" in workspaces
+    assert "Trade-linked payout evidence" in workspaces
+    assert "Seller release payment ID" in workspaces
 
 
 def assert_demo_payment_visibility() -> None:
