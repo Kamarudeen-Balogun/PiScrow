@@ -78,14 +78,14 @@ function parsePiPlatformErrorBody(error: unknown) {
     return null;
   }
 
-  const match = error.message.match(/\{.*\}$/s);
+  const jsonStart = error.message.indexOf("{");
 
-  if (!match) {
+  if (jsonStart === -1) {
     return null;
   }
 
   try {
-    return JSON.parse(match[0]) as {
+    return JSON.parse(error.message.slice(jsonStart)) as {
       error?: string;
       error_message?: string;
       payment?: PiPaymentDTO;
