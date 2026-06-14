@@ -280,6 +280,10 @@ function linkedTxCannotVerify(releasePayment: PiPaymentDTO) {
   );
 }
 
+function releasePaymentIsCancelled(releasePayment: PiPaymentDTO) {
+  return Boolean(releasePayment.status?.cancelled);
+}
+
 async function cancelUnverifiablePiRelease(paymentRowId: string, releasePayment: PiPaymentDTO) {
   await cancelPiPayment(releasePayment.identifier);
   await resetReleaseState(paymentRowId);
@@ -506,22 +510,27 @@ export async function executeEscrowRelease({
       if (paymentId) {
         releasePayment = await getPiPayment(paymentId);
 
-        if (
-          !releasePaymentMatchesContext({
-            buyerPaymentId: payment.pi_payment_id,
-            recipientPiUid: recipient.pi_uid,
-            releasePayment,
-            releaseType,
-            tradeId: trade.id,
-          })
-        ) {
-          paymentId = null;
-          releasePayment = null;
-        } else if (linkedTxCannotVerify(releasePayment)) {
-          await cancelUnverifiablePiRelease(payment.id, releasePayment);
-          paymentId = null;
-          releasePayment = null;
-        }
+      if (
+        !releasePaymentMatchesContext({
+          buyerPaymentId: payment.pi_payment_id,
+          recipientPiUid: recipient.pi_uid,
+          releasePayment,
+          releaseType,
+          tradeId: trade.id,
+        })
+      ) {
+        await resetReleaseState(payment.id);
+        paymentId = null;
+        releasePayment = null;
+      } else if (releasePaymentIsCancelled(releasePayment)) {
+        await resetReleaseState(payment.id);
+        paymentId = null;
+        releasePayment = null;
+      } else if (linkedTxCannotVerify(releasePayment)) {
+        await cancelUnverifiablePiRelease(payment.id, releasePayment);
+        paymentId = null;
+        releasePayment = null;
+      }
       }
 
       paymentId =
@@ -584,6 +593,16 @@ export async function executeEscrowRelease({
   }
   let txid =
     releasePayment.transaction?.txid?.trim() || "";
+
+  if (releasePaymentIsCancelled(releasePayment)) {
+    await resetReleaseState(payment.id);
+    return executeEscrowRelease({
+      actor,
+      notes,
+      releaseType,
+      trade,
+    });
+  }
 
   if (!txid && payment.release_txid) {
     const storedTxid = payment.release_txid.trim();
@@ -663,6 +682,18 @@ export async function executeEscrowRelease({
   try {
     completed = await completePiPayment(paymentId, txid);
   } catch (error) {
+    const piError = parsePiPlatformErrorBody(error);
+
+    if (piError?.error === "cancelled_payment") {
+      await resetReleaseState(payment.id);
+      return executeEscrowRelease({
+        actor,
+        notes,
+        releaseType,
+        trade,
+      });
+    }
+
     if (!isPiPaymentAlreadyLinkedError(error)) {
       throw error;
     }

@@ -116,6 +116,7 @@ def assert_payment_amount_and_window_guards() -> None:
     assert "submitAppWalletPayment" in escrow_release
     assert "payment_already_linked_with_a_tx" in escrow_release
     assert "ongoing_payment_found" in escrow_release
+    assert "cancelled_payment" in escrow_release
     assert "cancelPiPayment" in escrow_release
     assert "releasePayment.transaction?.txid?.trim()" in escrow_release
     assert "if (releasePayment.status?.developer_completed)" in escrow_release
