@@ -1,7 +1,21 @@
 import type { NextConfig } from "next";
 
+const defaultAllowedDevOrigins = [
+  "localhost",
+  "127.0.0.1",
+  "10.88.38.93",
+  "chip-chaplain-tapeless.ngrok-free.dev",
+];
+
+const extraAllowedDevOrigins = (process.env.ALLOWED_DEV_ORIGINS ?? "")
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
 const nextConfig: NextConfig = {
-  allowedDevOrigins: ["chip-chaplain-tapeless.ngrok-free.dev"],
+  allowedDevOrigins: [
+    ...new Set([...defaultAllowedDevOrigins, ...extraAllowedDevOrigins]),
+  ],
   reactCompiler: true,
   async headers() {
     return [
