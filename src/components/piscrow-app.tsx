@@ -1280,7 +1280,8 @@ export function PiScrowApp({
   >(() => readStoredHandoffCodeCache());
   const [paymentState, setPaymentState] = useState("No payment started.");
   const [appRefreshing, setAppRefreshing] = useState(false);
-  const [ledgerLoading, setLedgerLoading] = useState(false);
+  const [ledgerLoading, setLedgerLoading] = useState(!allowDemo);
+  const [workspaceTradeLoading, setWorkspaceTradeLoading] = useState(!allowDemo);
   const [notices, setNotices] = useState<AppNotice[]>([]);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null);
@@ -1788,6 +1789,7 @@ export function PiScrowApp({
       }
 
       workspaceRefreshInFlightRef.current = true;
+      setWorkspaceTradeLoading(true);
 
       try {
         const profilePromise = shouldIncludeProfile
@@ -1851,6 +1853,7 @@ export function PiScrowApp({
         }
       } finally {
         workspaceRefreshInFlightRef.current = false;
+        setWorkspaceTradeLoading(false);
       }
     },
     [activeMode, allowDemo, piAccessToken, user],
@@ -4895,6 +4898,7 @@ export function PiScrowApp({
                   language={language}
                   trades={buyerTrades}
                   interests={interests}
+                  loading={workspaceTradeLoading}
                   currentUserId={user?.id ?? user?.uid}
                   currentUsername={normalizedUsername}
                   activeValue={activeValue}
@@ -4929,6 +4933,7 @@ export function PiScrowApp({
                       language={language}
                       trades={sellerTrades}
                       interests={interests}
+                      loading={workspaceTradeLoading}
                       currentUserId={user?.id ?? user?.uid}
                       currentUsername={normalizedUsername}
                       onNewListing={() => {
@@ -5005,6 +5010,7 @@ export function PiScrowApp({
                   chatRooms={chatRooms}
                   currentUserId={user?.id ?? user?.uid}
                   language={language}
+                  loading={workspaceTradeLoading}
                   trades={adminTrades}
                   events={events}
                   reviewLoadingTradeId={reviewLoadingTradeId}

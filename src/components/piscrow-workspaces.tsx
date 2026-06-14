@@ -865,6 +865,7 @@ export function BuyerDesk({
   language,
   trades,
   interests,
+  loading,
   currentUsername,
   currentUserId,
   activeValue,
@@ -885,6 +886,7 @@ export function BuyerDesk({
   language: LanguageCode;
   trades: Trade[];
   interests: TradeInterest[];
+  loading: boolean;
   currentUsername: string;
   currentUserId?: string;
   activeValue: number;
@@ -978,7 +980,9 @@ export function BuyerDesk({
         </button>
       </div>
 
-      {visibleTrades.length === 0 ? (
+      {loading && visibleTrades.length === 0 ? (
+        <TradeCardSkeletonList />
+      ) : visibleTrades.length === 0 ? (
         <EmptyState
           label={
             tab === "interests"
@@ -1053,6 +1057,7 @@ export function SellerDesk({
   language,
   trades,
   interests,
+  loading,
   currentUsername,
   currentUserId,
   onNewListing,
@@ -1070,6 +1075,7 @@ export function SellerDesk({
   language: LanguageCode;
   trades: Trade[];
   interests: TradeInterest[];
+  loading: boolean;
   currentUsername: string;
   currentUserId?: string;
   onNewListing: () => void;
@@ -1139,7 +1145,9 @@ export function SellerDesk({
         ))}
       </div>
 
-      {visibleTrades.length === 0 ? (
+      {loading && visibleTrades.length === 0 ? (
+        <TradeCardSkeletonList />
+      ) : visibleTrades.length === 0 ? (
         <EmptyState label={copy.sellerDesk.noSellerOffers} />
       ) : (
         <div className="cstack">
@@ -1323,7 +1331,9 @@ export function PublicLedger({
           </button>
         </div>
       </div>
-      {visibleTrades.length === 0 ? (
+      {loading && visibleTrades.length === 0 ? (
+        <LedgerSkeletonList />
+      ) : visibleTrades.length === 0 ? (
         <EmptyState label={copy.publicLedger.noMatches} />
       ) : (
         <div className="cstack">
@@ -1357,6 +1367,80 @@ export function PublicLedger({
         />
       )}
     </section>
+  );
+}
+
+function LedgerSkeletonList() {
+  return (
+    <div aria-hidden="true" className="cstack">
+      {Array.from({ length: 4 }).map((_, index) => (
+        <div
+          key={`ledger-skeleton-${index}`}
+          className="card w-full animate-pulse"
+        >
+          <div className="min-w-0 overflow-hidden">
+            <div className="mb-3 flex flex-wrap items-center gap-[5px]">
+              <div className="h-6 w-24 rounded-full bg-white/8" />
+              <div className="h-6 w-20 rounded-full bg-white/8" />
+              <div className="h-6 w-16 rounded-full bg-white/8" />
+            </div>
+            <div className="h-5 w-3/4 rounded bg-white/10" />
+            <div className="mt-3 flex items-center gap-2">
+              <div className="h-4 w-32 rounded bg-white/8" />
+              <div className="h-5 w-5 rounded-full bg-white/8" />
+            </div>
+            <div className="mt-3 flex items-start gap-1">
+              <div className="h-3.5 w-3.5 rounded bg-white/8" />
+              <div className="h-4 w-2/5 rounded bg-white/8" />
+            </div>
+            <div className="mt-5 flex items-end justify-between gap-3">
+              <div className="min-w-0">
+                <div className="mb-1 h-3 w-16 rounded bg-white/8" />
+                <div className="h-6 w-24 rounded bg-white/10" />
+              </div>
+              <div className="h-4 w-28 rounded bg-white/8" />
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function TradeCardSkeletonList() {
+  return (
+    <div aria-hidden="true" className="cstack">
+      {Array.from({ length: 4 }).map((_, index) => (
+        <div
+          key={`trade-skeleton-${index}`}
+          className="card w-full animate-pulse"
+        >
+          <div className="min-w-0 overflow-hidden">
+            <div className="mb-3 flex flex-wrap items-center gap-[5px]">
+              <div className="h-6 w-24 rounded-full bg-white/8" />
+              <div className="h-6 w-20 rounded-full bg-white/8" />
+              <div className="h-6 w-16 rounded-full bg-white/8" />
+            </div>
+            <div className="h-5 w-3/4 rounded bg-white/10" />
+            <div className="mt-3 flex items-center gap-2">
+              <div className="h-4 w-32 rounded bg-white/8" />
+              <div className="h-5 w-5 rounded-full bg-white/8" />
+            </div>
+            <div className="mt-3 flex items-start gap-1">
+              <div className="h-3.5 w-3.5 rounded bg-white/8" />
+              <div className="h-4 w-2/5 rounded bg-white/8" />
+            </div>
+            <div className="mt-5 flex items-end justify-between gap-3">
+              <div className="min-w-0">
+                <div className="mb-1 h-3 w-16 rounded bg-white/8" />
+                <div className="h-6 w-24 rounded bg-white/10" />
+              </div>
+              <div className="h-4 w-28 rounded bg-white/8" />
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -1711,6 +1795,7 @@ export function AdminDesk({
   chatRooms,
   currentUserId,
   language,
+  loading,
   trades,
   events,
   reviewLoadingTradeId,
@@ -1730,6 +1815,7 @@ export function AdminDesk({
   chatRooms: TradeChatRoom[];
   currentUserId?: string;
   language: LanguageCode;
+  loading: boolean;
   trades: Trade[];
   events: TradeEvent[];
   reviewLoadingTradeId: string;
@@ -1801,7 +1887,9 @@ export function AdminDesk({
         </div>
       </div>
 
-      {trades.length === 0 ? (
+      {loading && trades.length === 0 ? (
+        <TradeCardSkeletonList />
+      ) : trades.length === 0 ? (
         <EmptyState label={copy.admin.noReviews} />
       ) : (
         <div className="cstack">
