@@ -213,6 +213,7 @@ const consentStorageKey = "piscrow-consent-v1";
 const languageStorageKey = "piscrow-language-v1";
 const piSessionStorageKey = "piscrow-pi-session-v2";
 const telegramLinkStateStorageKey = "piscrow-telegram-link-v1";
+const connectDebugStorageKey = "piscrow-connect-debug-v1";
 const consentVersion = "2026-06-07";
 const nextPublicMaintenanceEnabled =
   process.env.NEXT_PUBLIC_PISCROW_MAINTENANCE_ENABLED === "true";
@@ -351,6 +352,18 @@ function readStoredPiSession() {
   }
 
   return stored;
+}
+
+function readStoredConnectDebugMode() {
+  if (typeof window === "undefined") {
+    return false;
+  }
+
+  try {
+    return window.localStorage.getItem(connectDebugStorageKey) === "1";
+  } catch {
+    return false;
+  }
 }
 
 function readStoredTelegramLinkState() {
@@ -1250,11 +1263,13 @@ function isLanguageCode(value: string | null): value is LanguageCode {
 export function PiScrowApp({
   consentAction,
   connectAction,
+  debugMode: initialDebugMode = false,
   allowDemo = false,
   forceMaintenance = false,
 }: {
   consentAction?: string;
   connectAction?: string;
+  debugMode?: boolean;
   allowDemo?: boolean;
   forceMaintenance?: boolean;
 }) {
@@ -1366,6 +1381,10 @@ export function PiScrowApp({
   const [feedbackStatus, setFeedbackStatus] = useState<FeedbackStatus>(null);
   const [blockingAction, setBlockingAction] = useState<BlockingAction | null>(null);
   const [payoutReadyLoading, setPayoutReadyLoading] = useState(false);
+  const [debugMode, setDebugMode] = useState<boolean>(() =>
+    initialDebugMode || readStoredConnectDebugMode(),
+  );
+  const [debugEvents, setDebugEvents] = useState<string[]>([]);
   const [consentState, setConsentState] = useState<ConsentState>(
     () => initialConsentState,
   );
@@ -1395,6 +1414,26 @@ export function PiScrowApp({
     activeChatTrade == null
       ? null
       : trades.find((trade) => trade.id === activeChatTrade.id) ?? activeChatTrade;
+
+  const pushDebugEvent = useCallback(
+    (message: string) => {
+      if (!debugMode) {
+        return;
+      }
+
+      const entry = `${new Date().toLocaleTimeString()} ${message}`;
+      setDebugEvents((current) => [...current.slice(-11), entry]);
+    },
+    [debugMode],
+  );
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(connectDebugStorageKey, debugMode ? "1" : "0");
+    } catch {
+      // Ignore local storage failures in strict browser modes.
+    }
+  }, [debugMode]);
 
   const selectedTrade =
     trades.find((trade) => trade.id === selectedTradeId) ??
@@ -2187,6 +2226,7 @@ export function PiScrowApp({
     }
 
     connectActionHandledRef.current = true;
+    pushDebugEvent("connectAction fallback triggered");
 
     const timer = window.setTimeout(() => {
       void connectPiRef.current();
@@ -2194,7 +2234,7 @@ export function PiScrowApp({
     }, 0);
 
     return () => window.clearTimeout(timer);
-  }, [allowDemo, connectAction, connectingPi, consentState, piConnected, user]);
+  }, [allowDemo, connectAction, connectingPi, consentState, piConnected, pushDebugEvent, user]);
 
   useEffect(() => {
     if (notices.length === 0) {
@@ -2577,9 +2617,11 @@ export function PiScrowApp({
   }
 
   async function connectPi() {
+    pushDebugEvent("connectPi() entered");
     setFormError("");
 
     if (consentState !== "accepted") {
+      pushDebugEvent(`connectPi blocked by consent state: ${consentState}`);
       const key =
         consentState === "checking" ? "checkingConsent" : "acceptConsentRequired";
       const message = copy.auth[key];
@@ -2590,12 +2632,16 @@ export function PiScrowApp({
 
     setConnectingPi(true);
     setAuthMessage({ key: "preparing" });
+    pushDebugEvent("waiting for Pi SDK");
     showBlockingAction(
       "Connecting Pi account",
       "PiScrow is preparing Pi Browser authentication for your private workspace.",
     );
 
     const pi = await waitForPiSdk().catch((error) => {
+      pushDebugEvent(
+        `waitForPiSdk failed: ${error instanceof Error ? error.message : "unknown error"}`,
+      );
       const message = resolvePiAuthMessage(error, copy.auth);
       setAuthMessage({ text: message });
       pushNotice(copy.notices.piSdkTitle, message, "warning");
@@ -2605,15 +2651,18 @@ export function PiScrowApp({
     });
 
     if (!pi) {
+      pushDebugEvent("Pi SDK unavailable");
       return;
     }
 
     try {
+      pushDebugEvent("Pi SDK resolved");
       setAuthMessage({ key: "sdkReady" });
       showBlockingAction(
         "Approve in Pi Browser",
         "PiScrow is ready. Approve the Pi Browser sign-in request to continue.",
       );
+      pushDebugEvent("starting Pi authenticate");
       const authResult = await authenticateWithPiBrowser(
         pi,
         nextPublicSandbox,
@@ -2621,6 +2670,7 @@ export function PiScrowApp({
           void recoverIncompletePayment(payment);
         },
       );
+      pushDebugEvent("Pi authenticate resolved");
       const piUser = "user" in authResult ? authResult.user : authResult;
       const accessToken = "accessToken" in authResult ? authResult.accessToken : "";
 
@@ -2628,6 +2678,7 @@ export function PiScrowApp({
       setPiConnected(Boolean(accessToken));
 
       if (!accessToken) {
+        pushDebugEvent("authenticate returned without access token");
         clearPersistedAuthState();
         setUser(null);
         setTelegram(defaultTelegramStatus);
@@ -2644,6 +2695,7 @@ export function PiScrowApp({
       const session = await apiRequest<{ user: SessionUser }>("/api/auth/pi", accessToken, {
         method: "POST",
       });
+      pushDebugEvent("workspace session loaded");
       setUser(session.user);
       persistPiSession(session.user, accessToken);
       setMode("ledger");
@@ -2662,6 +2714,9 @@ export function PiScrowApp({
         "success",
       );
     } catch (error) {
+      pushDebugEvent(
+        `connectPi failed: ${error instanceof Error ? error.message : "unknown error"}`,
+      );
       clearPersistedAuthState();
       setPiConnected(false);
       setPiAccessToken("");
@@ -2681,6 +2736,7 @@ export function PiScrowApp({
       setAuthMessage({ text: message });
       pushNotice(copy.notices.connectionFailedTitle, message, "warning");
     } finally {
+      pushDebugEvent("connectPi() finished");
       setConnectingPi(false);
       hideBlockingAction();
     }
@@ -4946,6 +5002,9 @@ export function PiScrowApp({
                 canConnect={canConnectPi}
                 connecting={connectingPi}
                 copy={copy}
+                debugMode={debugMode}
+                onDebugEvent={pushDebugEvent}
+                onToggleDebugMode={() => setDebugMode((current) => !current)}
                 profile={profileStats}
                 user={user}
                 onConnect={connectPi}
@@ -4961,6 +5020,9 @@ export function PiScrowApp({
                   canConnect={canConnectPi}
                   connecting={connectingPi}
                   copy={copy}
+                  debugMode={debugMode}
+                  onDebugEvent={pushDebugEvent}
+                  onToggleDebugMode={() => setDebugMode((current) => !current)}
                   onConnect={connectPi}
                 />
               )}
@@ -5137,6 +5199,7 @@ export function PiScrowApp({
             onModeChange={changeMode}
           />
         )}
+        {debugMode ? <DebugPanel events={debugEvents} /> : null}
       </section>
     </main>
   );
@@ -5338,6 +5401,9 @@ function SessionCard({
   canConnect,
   connecting,
   copy,
+  debugMode,
+  onDebugEvent,
+  onToggleDebugMode,
   profile,
   user,
   onConnect,
@@ -5346,6 +5412,9 @@ function SessionCard({
   canConnect: boolean;
   connecting: boolean;
   copy: AppCopy;
+  debugMode: boolean;
+  onDebugEvent?: (message: string) => void;
+  onToggleDebugMode: () => void;
   profile?: UserReputation | null;
   user: SessionUser | null;
   onConnect: () => void;
@@ -5375,7 +5444,8 @@ function SessionCard({
             Boolean(user) || connecting || !canConnect ? "pointer-events-none opacity-70" : ""
           }`}
           href="/?consent=accept&connect=1"
-          onClick={(event) => {
+          onTouchEnd={(event) => {
+            onDebugEvent?.("session connect touchend");
             if (Boolean(user) || connecting || !canConnect) {
               event.preventDefault();
               return;
@@ -5384,9 +5454,16 @@ function SessionCard({
             event.preventDefault();
             onConnect();
           }}
-          prefetch={false}
-          replace
-          scroll={false}
+          onClick={(event) => {
+            onDebugEvent?.("session connect click");
+            if (Boolean(user) || connecting || !canConnect) {
+              event.preventDefault();
+              return;
+            }
+
+            event.preventDefault();
+            onConnect();
+          }}
           tabIndex={Boolean(user) || connecting || !canConnect ? -1 : undefined}
         >
           {user ? (
@@ -5402,6 +5479,13 @@ function SessionCard({
       <p className="rounded-xl border border-white/8 bg-black/15 px-3 py-3 text-sm leading-6 text-slate-300">
         {authState}
       </p>
+      <button
+        className="justify-self-start rounded-full border border-white/10 bg-white/6 px-3 py-1.5 text-[11px] font-black uppercase tracking-[0.12em] text-slate-200"
+        type="button"
+        onClick={onToggleDebugMode}
+      >
+        {debugMode ? "Hide Pi debug" : "Show Pi debug"}
+      </button>
     </aside>
   );
 }
@@ -5411,12 +5495,18 @@ function SignInPanel({
   canConnect,
   connecting,
   copy,
+  debugMode,
+  onDebugEvent,
+  onToggleDebugMode,
   onConnect,
 }: {
   authState: string;
   canConnect: boolean;
   connecting: boolean;
   copy: AppCopy;
+  debugMode: boolean;
+  onDebugEvent?: (message: string) => void;
+  onToggleDebugMode: () => void;
   onConnect: () => void;
 }) {
   return (
@@ -5440,12 +5530,20 @@ function SignInPanel({
       <p className="rounded-2xl border border-white/8 bg-black/20 px-4 py-3 text-sm font-semibold leading-6 text-slate-200 shadow-[inset_0_1px_0_rgba(255,255,255,0.02)]">
         {authState}
       </p>
+      <button
+        className="justify-self-start rounded-full border border-white/10 bg-white/6 px-3 py-1.5 text-[11px] font-black uppercase tracking-[0.12em] text-slate-200"
+        type="button"
+        onClick={onToggleDebugMode}
+      >
+        {debugMode ? "Hide Pi debug" : "Show Pi debug"}
+      </button>
       <div className="grid gap-3 sm:grid-cols-2">
         <Link
           aria-disabled={connecting || !canConnect}
           className={`btn-g ${connecting || !canConnect ? "pointer-events-none opacity-70" : ""}`}
           href="/?consent=accept&connect=1"
-          onClick={(event) => {
+          onTouchEnd={(event) => {
+            onDebugEvent?.("signin connect touchend");
             if (connecting || !canConnect) {
               event.preventDefault();
               return;
@@ -5454,9 +5552,16 @@ function SignInPanel({
             event.preventDefault();
             onConnect();
           }}
-          prefetch={false}
-          replace
-          scroll={false}
+          onClick={(event) => {
+            onDebugEvent?.("signin connect click");
+            if (connecting || !canConnect) {
+              event.preventDefault();
+              return;
+            }
+
+            event.preventDefault();
+            onConnect();
+          }}
           tabIndex={connecting || !canConnect ? -1 : undefined}
         >
           {connecting ? (
@@ -5877,6 +5982,27 @@ function NotificationStack({
           <p>{notice.body}</p>
         </article>
       ))}
+    </section>
+  );
+}
+
+function DebugPanel({ events }: { events: string[] }) {
+  return (
+    <section className="fixed bottom-4 left-4 right-4 z-[70] max-h-[40vh] overflow-y-auto rounded-2xl border border-amber-400/25 bg-[rgba(11,23,40,0.96)] p-3 text-xs text-amber-50 shadow-[0_24px_60px_rgba(0,0,0,0.42)] backdrop-blur">
+      <p className="font-black uppercase tracking-[0.16em] text-amber-200">
+        Pi Connect Debug
+      </p>
+      <div className="mt-2 grid gap-1">
+        {events.length === 0 ? (
+          <p className="text-amber-100/80">No events yet.</p>
+        ) : (
+          events.map((event) => (
+            <p key={event} className="break-words font-mono text-[11px] leading-5">
+              {event}
+            </p>
+          ))
+        )}
+      </div>
     </section>
   );
 }
