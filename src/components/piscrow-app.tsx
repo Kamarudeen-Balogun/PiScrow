@@ -223,6 +223,29 @@ const workspaceFallbackSyncIntervalMs = 60_000;
 const activeChatRefreshIntervalMs = 5_000;
 const realtimeSyncChannelName = "piscrow-app-sync";
 
+function readStoredConsentState(): ConsentState {
+  if (typeof window === "undefined") {
+    return "pending";
+  }
+
+  try {
+    const stored = window.localStorage.getItem(consentStorageKey);
+    const parsed = stored
+      ? (JSON.parse(stored) as { status?: ConsentState; version?: string })
+      : null;
+
+    if (parsed?.version !== consentVersion) {
+      return "pending";
+    }
+
+    return parsed.status === "accepted" || parsed.status === "rejected"
+      ? parsed.status
+      : "pending";
+  } catch {
+    return "pending";
+  }
+}
+
 function readStoredHandoffCodeCache() {
   if (typeof window === "undefined") {
     return {};
@@ -1239,9 +1262,14 @@ export function PiScrowApp({
       return "en";
     }
   });
-  const [authMessage, setAuthMessage] = useState<AuthMessageState>({
-    key: allowDemo ? "demo" : "initial",
-  });
+  const [authMessage, setAuthMessage] = useState<AuthMessageState>(() => ({
+    key:
+      allowDemo
+        ? "demo"
+        : readStoredConsentState() === "rejected"
+          ? "consentRejected"
+          : "initial",
+  }));
   const [mode, setMode] = useState<ViewMode>("ledger");
   const [trades, setTrades] = useState<Trade[]>(allowDemo ? demoTrades : []);
   const [interests, setInterests] = useState<TradeInterest[]>(
@@ -1317,7 +1345,7 @@ export function PiScrowApp({
   const [blockingAction, setBlockingAction] = useState<BlockingAction | null>(null);
   const [payoutReadyLoading, setPayoutReadyLoading] = useState(false);
   const [consentState, setConsentState] = useState<ConsentState>(
-    allowDemo ? "accepted" : "checking",
+    () => (allowDemo ? "accepted" : readStoredConsentState()),
   );
   const demoSessionRef = useRef(allowDemo);
   const restoredPiSessionRef = useRef(false);
@@ -2040,7 +2068,11 @@ export function PiScrowApp({
         setFormError("");
         setNotices([]);
         seenSavedNotificationIdsRef.current = new Set();
-        setConsentState("checking");
+        const savedConsentState = readStoredConsentState();
+        setConsentState(savedConsentState);
+        setAuthMessage({
+          key: savedConsentState === "rejected" ? "consentRejected" : "initial",
+        });
         return;
       }
 
@@ -2077,40 +2109,6 @@ export function PiScrowApp({
 
     return () => window.clearTimeout(timer);
   }, [allowDemo, clearPersistedAuthState]);
-
-  useEffect(() => {
-    if (allowDemo) {
-      return;
-    }
-
-    const timer = window.setTimeout(() => {
-      try {
-        const stored = window.localStorage.getItem(consentStorageKey);
-        const parsed = stored
-          ? (JSON.parse(stored) as { status?: ConsentState; version?: string })
-          : null;
-        const savedState =
-          parsed?.version === consentVersion ? parsed.status : undefined;
-
-        if (savedState === "accepted") {
-          setConsentState("accepted");
-          return;
-        }
-
-        if (savedState === "rejected") {
-          setConsentState("rejected");
-          setAuthMessage({ key: "consentRejected" });
-          return;
-        }
-
-        setConsentState("pending");
-      } catch {
-        setConsentState("pending");
-      }
-    }, 0);
-
-    return () => window.clearTimeout(timer);
-  }, [allowDemo]);
 
   useEffect(() => {
     if (notices.length === 0) {
@@ -2719,8 +2717,6 @@ export function PiScrowApp({
         }
 
         setPiAccessToken(storedSession.accessToken);
-        setPiConnected(true);
-        setUser(storedSession.user);
         setAuthMessage({ key: "preparing" });
 
         const session = await apiRequest<{ user: SessionUser }>(

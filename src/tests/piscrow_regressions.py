@@ -259,6 +259,7 @@ def assert_telegram_link_flow() -> None:
     assert "PiScrow Telegram link confirmed." in telegram
     assert 'const piAuthScopes = ["username", "payments", "wallet_address"] as const;' in pi_browser
     assert 'piSessionStorageKey = "piscrow-pi-session-v2"' in app
+    assert "function readStoredConsentState()" in app
     assert "Telegram is temporarily rate limiting bot setup" in telegram
     assert "Trade: ${tradeTitle}" in telegram
     assert "Ref: ${notification.tradeId.slice(0, 8)}" in telegram
