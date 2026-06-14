@@ -223,6 +223,15 @@ const workspaceFallbackSyncIntervalMs = 60_000;
 const activeChatRefreshIntervalMs = 5_000;
 const realtimeSyncChannelName = "piscrow-app-sync";
 
+function createClientId(prefix: string) {
+  const randomPart =
+    typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+
+  return `${prefix}-${randomPart}`;
+}
+
 function readStoredConsentState(): ConsentState {
   if (typeof window === "undefined") {
     return "pending";
@@ -1668,7 +1677,7 @@ export function PiScrowApp({
       setChatMessages((current) => [
         ...current,
         {
-          id: `chat-system-${crypto.randomUUID()}`,
+          id: createClientId("chat-system"),
           roomId: room.id,
           tradeId: trade.id,
           senderPiUsername: "system",
@@ -1692,7 +1701,7 @@ export function PiScrowApp({
     setChatMessages((current) => [
       ...current,
       {
-        id: `chat-message-${crypto.randomUUID()}`,
+        id: createClientId("chat-message"),
         roomId: room.id,
         tradeId: trade.id,
         createdAt: new Date().toISOString(),
@@ -1710,7 +1719,7 @@ export function PiScrowApp({
     const persistent = options.persistent ?? false;
     setNotices((current) => [
       {
-        id: `notice-${crypto.randomUUID()}`,
+        id: createClientId("notice"),
         title,
         body,
         tone,
@@ -3323,7 +3332,7 @@ export function PiScrowApp({
         ? "private"
         : "public";
     const trade: Trade = {
-      id: `trade-${crypto.randomUUID()}`,
+      id: createClientId("trade"),
       sellerUserId: user.uid,
       sellerPiUsername: normalizeUsername(user.username),
       visibility,
@@ -3422,7 +3431,7 @@ export function PiScrowApp({
 
     const now = new Date().toISOString();
     const interest: TradeInterest = {
-      id: `interest-${crypto.randomUUID()}`,
+      id: createClientId("interest"),
       tradeId: trade.id,
       buyerUserId: user.uid,
       buyerPiUsername: normalizeUsername(user.username),
@@ -4554,7 +4563,7 @@ export function PiScrowApp({
       setChatMessages((current) => [
         ...current,
         {
-          id: `chat-claim-${crypto.randomUUID()}`,
+          id: createClientId("chat-claim"),
           roomId: room.id,
           tradeId: trade.id,
           senderPiUsername: "system",
