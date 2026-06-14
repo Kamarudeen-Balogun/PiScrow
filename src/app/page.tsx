@@ -5,6 +5,7 @@ export default async function Home({
 }: {
   searchParams?: Promise<{
     consent?: string;
+    connect?: string;
     demo?: string;
     maintenance?: string;
   }>;
@@ -14,6 +15,7 @@ export default async function Home({
   return (
     <PiScrowApp
       consentAction={params?.consent}
+      connectAction={params?.connect}
       allowDemo={params?.demo === "1"}
       forceMaintenance={params?.maintenance === "1"}
     />

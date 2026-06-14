@@ -1249,10 +1249,12 @@ function isLanguageCode(value: string | null): value is LanguageCode {
 
 export function PiScrowApp({
   consentAction,
+  connectAction,
   allowDemo = false,
   forceMaintenance = false,
 }: {
   consentAction?: string;
+  connectAction?: string;
   allowDemo?: boolean;
   forceMaintenance?: boolean;
 }) {
@@ -1367,6 +1369,8 @@ export function PiScrowApp({
   const [consentState, setConsentState] = useState<ConsentState>(
     () => initialConsentState,
   );
+  const connectActionHandledRef = useRef(false);
+  const connectPiRef = useRef<() => Promise<void>>(async () => {});
   const demoSessionRef = useRef(allowDemo);
   const restoredPiSessionRef = useRef(false);
   const workspaceRefreshInFlightRef = useRef(false);
@@ -2164,6 +2168,33 @@ export function PiScrowApp({
       }
     };
   }, [allowDemo, consentAction, acceptConsent, rejectConsent]);
+
+  useEffect(() => {
+    connectPiRef.current = connectPi;
+  });
+
+  useEffect(() => {
+    if (
+      allowDemo ||
+      connectAction !== "1" ||
+      connectActionHandledRef.current ||
+      connectingPi ||
+      consentState !== "accepted" ||
+      piConnected ||
+      user
+    ) {
+      return;
+    }
+
+    connectActionHandledRef.current = true;
+
+    const timer = window.setTimeout(() => {
+      void connectPiRef.current();
+      window.history.replaceState({}, "", "/");
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, [allowDemo, connectAction, connectingPi, consentState, piConnected, user]);
 
   useEffect(() => {
     if (notices.length === 0) {
@@ -5338,11 +5369,24 @@ function SessionCard({
             )}
           </div>
         </div>
-        <button
-          className="btn-gh shrink-0 border-[rgba(245,166,35,0.22)] bg-[rgba(245,166,35,0.12)] text-[var(--gold)]"
-          type="button"
-          onClick={onConnect}
-          disabled={Boolean(user) || connecting || !canConnect}
+        <Link
+          aria-disabled={Boolean(user) || connecting || !canConnect}
+          className={`btn-gh shrink-0 border-[rgba(245,166,35,0.22)] bg-[rgba(245,166,35,0.12)] text-[var(--gold)] ${
+            Boolean(user) || connecting || !canConnect ? "pointer-events-none opacity-70" : ""
+          }`}
+          href="/?connect=1"
+          onClick={(event) => {
+            if (Boolean(user) || connecting || !canConnect) {
+              event.preventDefault();
+              return;
+            }
+
+            onConnect();
+          }}
+          prefetch={false}
+          replace
+          scroll={false}
+          tabIndex={Boolean(user) || connecting || !canConnect ? -1 : undefined}
         >
           {user ? (
             <CheckCircle2 className="h-4 w-4" />
@@ -5352,7 +5396,7 @@ function SessionCard({
             <UserRoundCheck className="h-4 w-4" />
           )}
           {user ? copy.connected : connecting ? copy.connecting : copy.connect}
-        </button>
+        </Link>
       </div>
       <p className="rounded-xl border border-white/8 bg-black/15 px-3 py-3 text-sm leading-6 text-slate-300">
         {authState}
@@ -5396,11 +5440,22 @@ function SignInPanel({
         {authState}
       </p>
       <div className="grid gap-3 sm:grid-cols-2">
-        <button
-          className="btn-g"
-          type="button"
-          onClick={onConnect}
-          disabled={connecting || !canConnect}
+        <Link
+          aria-disabled={connecting || !canConnect}
+          className={`btn-g ${connecting || !canConnect ? "pointer-events-none opacity-70" : ""}`}
+          href="/?connect=1"
+          onClick={(event) => {
+            if (connecting || !canConnect) {
+              event.preventDefault();
+              return;
+            }
+
+            onConnect();
+          }}
+          prefetch={false}
+          replace
+          scroll={false}
+          tabIndex={connecting || !canConnect ? -1 : undefined}
         >
           {connecting ? (
             <LoaderCircle className="h-4 w-4 animate-spin" />
@@ -5408,7 +5463,7 @@ function SignInPanel({
             <UserRoundCheck className="h-4 w-4" />
           )}
           {connecting ? `${copy.connecting}...` : copy.connectPiAccount}
-        </button>
+        </Link>
         <Link
           className="btn-gh"
           href="/?demo=1"
