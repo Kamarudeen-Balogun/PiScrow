@@ -1248,12 +1248,21 @@ function isLanguageCode(value: string | null): value is LanguageCode {
 }
 
 export function PiScrowApp({
+  consentAction,
   allowDemo = false,
   forceMaintenance = false,
 }: {
+  consentAction?: string;
   allowDemo?: boolean;
   forceMaintenance?: boolean;
 }) {
+  const initialConsentState: ConsentState = allowDemo
+    ? "accepted"
+    : consentAction === "accept"
+      ? "accepted"
+      : consentAction === "reject"
+        ? "rejected"
+        : readStoredConsentState();
   const [user, setUser] = useState<SessionUser | null>(
     allowDemo ? { ...demoUser, isAdmin: true } : null,
   );
@@ -1275,9 +1284,11 @@ export function PiScrowApp({
     key:
       allowDemo
         ? "demo"
-        : readStoredConsentState() === "rejected"
+        : initialConsentState === "rejected"
           ? "consentRejected"
-          : "initial",
+          : initialConsentState === "accepted"
+            ? "consentAccepted"
+            : "initial",
   }));
   const [mode, setMode] = useState<ViewMode>("ledger");
   const [trades, setTrades] = useState<Trade[]>(allowDemo ? demoTrades : []);
@@ -1354,7 +1365,7 @@ export function PiScrowApp({
   const [blockingAction, setBlockingAction] = useState<BlockingAction | null>(null);
   const [payoutReadyLoading, setPayoutReadyLoading] = useState(false);
   const [consentState, setConsentState] = useState<ConsentState>(
-    () => (allowDemo ? "accepted" : readStoredConsentState()),
+    () => initialConsentState,
   );
   const demoSessionRef = useRef(allowDemo);
   const restoredPiSessionRef = useRef(false);
@@ -1944,7 +1955,7 @@ export function PiScrowApp({
     }
   }, [allowDemo, cachePublicLedger, events, loadCachedPublicLedger, pushNotice, trades]);
 
-  function acceptConsent() {
+  const acceptConsent = useCallback(() => {
     setConsentState("accepted");
     setAuthMessage({ key: "consentAccepted" });
 
@@ -1966,9 +1977,13 @@ export function PiScrowApp({
       copy.notices.consentAcceptedBody,
       "success",
     );
-  }
+  }, [
+    copy.notices.consentAcceptedBody,
+    copy.notices.consentAcceptedTitle,
+    pushNotice,
+  ]);
 
-  function rejectConsent() {
+  const rejectConsent = useCallback(() => {
     setConsentState("rejected");
     setUser(null);
     setPiConnected(false);
@@ -1997,7 +2012,12 @@ export function PiScrowApp({
       copy.notices.loginBlockedBody,
       "warning",
     );
-  }
+  }, [
+    clearPersistedAuthState,
+    copy.notices.loginBlockedBody,
+    copy.notices.loginBlockedTitle,
+    pushNotice,
+  ]);
 
   function signOutPiSession() {
     setUser(null);
@@ -2118,6 +2138,32 @@ export function PiScrowApp({
 
     return () => window.clearTimeout(timer);
   }, [allowDemo, clearPersistedAuthState]);
+
+  useEffect(() => {
+    if (allowDemo) {
+      return;
+    }
+
+    let timer: number | null = null;
+
+    if (consentAction === "accept") {
+      timer = window.setTimeout(() => {
+        acceptConsent();
+        window.history.replaceState({}, "", "/");
+      }, 0);
+    } else if (consentAction === "reject") {
+      timer = window.setTimeout(() => {
+        rejectConsent();
+        window.history.replaceState({}, "", "/");
+      }, 0);
+    }
+
+    return () => {
+      if (timer !== null) {
+        window.clearTimeout(timer);
+      }
+    };
+  }, [allowDemo, consentAction, acceptConsent, rejectConsent]);
 
   useEffect(() => {
     if (notices.length === 0) {
@@ -4877,8 +4923,6 @@ export function PiScrowApp({
                 <ConsentGate
                   consentState={consentState}
                   copy={copy}
-                  onAccept={acceptConsent}
-                  onReject={rejectConsent}
                 />
               ) : (
                 <SignInPanel
@@ -5444,13 +5488,9 @@ function DemoModeBanner({ copy }: { copy: AppCopy }) {
 function ConsentGate({
   consentState,
   copy,
-  onAccept,
-  onReject,
 }: {
   consentState: ConsentState;
   copy: AppCopy;
-  onAccept: () => void;
-  onReject: () => void;
 }) {
   const rejected = consentState === "rejected";
   const checking = consentState === "checking";
@@ -5498,23 +5538,29 @@ function ConsentGate({
           </p>
         </div>
         <div className="grid gap-2 sm:grid-cols-2">
-          <button
-            className="btn-g"
-            disabled={checking}
-            type="button"
-            onClick={onAccept}
+          <Link
+            aria-disabled={checking}
+            className={`btn-g ${checking ? "pointer-events-none opacity-70" : ""}`}
+            href="/?consent=accept"
+            prefetch={false}
+            replace
+            scroll={false}
+            tabIndex={checking ? -1 : undefined}
           >
             <ShieldCheck className="h-4 w-4" />
             {copy.agreeContinue}
-          </button>
-          <button
-            className="btn-gh"
-            disabled={checking}
-            type="button"
-            onClick={onReject}
+          </Link>
+          <Link
+            aria-disabled={checking}
+            className={`btn-gh ${checking ? "pointer-events-none opacity-70" : ""}`}
+            href="/?consent=reject"
+            prefetch={false}
+            replace
+            scroll={false}
+            tabIndex={checking ? -1 : undefined}
           >
             {copy.reject}
-          </button>
+          </Link>
         </div>
         <div className="grid gap-2 sm:grid-cols-2">
           <Link
