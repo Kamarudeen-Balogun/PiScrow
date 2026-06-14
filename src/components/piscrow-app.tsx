@@ -213,10 +213,11 @@ const consentStorageKey = "piscrow-consent-v1";
 const languageStorageKey = "piscrow-language-v1";
 const piSessionStorageKey = "piscrow-pi-session-v2";
 const telegramLinkStateStorageKey = "piscrow-telegram-link-v1";
-const connectDebugStorageKey = "piscrow-connect-debug-v1";
 const consentVersion = "2026-06-07";
 const nextPublicMaintenanceEnabled =
   process.env.NEXT_PUBLIC_PISCROW_MAINTENANCE_ENABLED === "true";
+const nextPublicConnectDebugEnabled =
+  process.env.NEXT_PUBLIC_PISCROW_CONNECT_DEBUG === "true";
 const nextPublicMaintenanceMessage =
   process.env.NEXT_PUBLIC_PISCROW_MAINTENANCE_MESSAGE?.trim() ||
   "PiScrow is receiving updates. The app remains online, but some actions may be slower than usual.";
@@ -352,18 +353,6 @@ function readStoredPiSession() {
   }
 
   return stored;
-}
-
-function readStoredConnectDebugMode() {
-  if (typeof window === "undefined") {
-    return false;
-  }
-
-  try {
-    return window.localStorage.getItem(connectDebugStorageKey) === "1";
-  } catch {
-    return false;
-  }
 }
 
 function readStoredTelegramLinkState() {
@@ -1263,13 +1252,11 @@ function isLanguageCode(value: string | null): value is LanguageCode {
 export function PiScrowApp({
   consentAction,
   connectAction,
-  debugMode: initialDebugMode = false,
   allowDemo = false,
   forceMaintenance = false,
 }: {
   consentAction?: string;
   connectAction?: string;
-  debugMode?: boolean;
   allowDemo?: boolean;
   forceMaintenance?: boolean;
 }) {
@@ -1381,9 +1368,6 @@ export function PiScrowApp({
   const [feedbackStatus, setFeedbackStatus] = useState<FeedbackStatus>(null);
   const [blockingAction, setBlockingAction] = useState<BlockingAction | null>(null);
   const [payoutReadyLoading, setPayoutReadyLoading] = useState(false);
-  const [debugMode, setDebugMode] = useState<boolean>(() =>
-    initialDebugMode || readStoredConnectDebugMode(),
-  );
   const [debugEvents, setDebugEvents] = useState<string[]>([]);
   const [consentState, setConsentState] = useState<ConsentState>(
     () => initialConsentState,
@@ -1415,25 +1399,14 @@ export function PiScrowApp({
       ? null
       : trades.find((trade) => trade.id === activeChatTrade.id) ?? activeChatTrade;
 
-  const pushDebugEvent = useCallback(
-    (message: string) => {
-      if (!debugMode) {
-        return;
-      }
-
-      const entry = `${new Date().toLocaleTimeString()} ${message}`;
-      setDebugEvents((current) => [...current.slice(-11), entry]);
-    },
-    [debugMode],
-  );
-
-  useEffect(() => {
-    try {
-      window.localStorage.setItem(connectDebugStorageKey, debugMode ? "1" : "0");
-    } catch {
-      // Ignore local storage failures in strict browser modes.
+  const pushDebugEvent = useCallback((message: string) => {
+    if (!nextPublicConnectDebugEnabled) {
+      return;
     }
-  }, [debugMode]);
+
+    const entry = `${new Date().toLocaleTimeString()} ${message}`;
+    setDebugEvents((current) => [...current.slice(-11), entry]);
+  }, []);
 
   const selectedTrade =
     trades.find((trade) => trade.id === selectedTradeId) ??
@@ -5002,9 +4975,6 @@ export function PiScrowApp({
                 canConnect={canConnectPi}
                 connecting={connectingPi}
                 copy={copy}
-                debugMode={debugMode}
-                onDebugEvent={pushDebugEvent}
-                onToggleDebugMode={() => setDebugMode((current) => !current)}
                 profile={profileStats}
                 user={user}
                 onConnect={connectPi}
@@ -5020,9 +4990,6 @@ export function PiScrowApp({
                   canConnect={canConnectPi}
                   connecting={connectingPi}
                   copy={copy}
-                  debugMode={debugMode}
-                  onDebugEvent={pushDebugEvent}
-                  onToggleDebugMode={() => setDebugMode((current) => !current)}
                   onConnect={connectPi}
                 />
               )}
@@ -5199,7 +5166,7 @@ export function PiScrowApp({
             onModeChange={changeMode}
           />
         )}
-        {debugMode ? <DebugPanel events={debugEvents} /> : null}
+        {nextPublicConnectDebugEnabled ? <DebugPanel events={debugEvents} /> : null}
       </section>
     </main>
   );
@@ -5401,9 +5368,6 @@ function SessionCard({
   canConnect,
   connecting,
   copy,
-  debugMode,
-  onDebugEvent,
-  onToggleDebugMode,
   profile,
   user,
   onConnect,
@@ -5412,9 +5376,6 @@ function SessionCard({
   canConnect: boolean;
   connecting: boolean;
   copy: AppCopy;
-  debugMode: boolean;
-  onDebugEvent?: (message: string) => void;
-  onToggleDebugMode: () => void;
   profile?: UserReputation | null;
   user: SessionUser | null;
   onConnect: () => void;
@@ -5445,7 +5406,6 @@ function SessionCard({
           }`}
           href="/?consent=accept&connect=1"
           onTouchEnd={(event) => {
-            onDebugEvent?.("session connect touchend");
             if (Boolean(user) || connecting || !canConnect) {
               event.preventDefault();
               return;
@@ -5455,7 +5415,6 @@ function SessionCard({
             onConnect();
           }}
           onClick={(event) => {
-            onDebugEvent?.("session connect click");
             if (Boolean(user) || connecting || !canConnect) {
               event.preventDefault();
               return;
@@ -5479,13 +5438,6 @@ function SessionCard({
       <p className="rounded-xl border border-white/8 bg-black/15 px-3 py-3 text-sm leading-6 text-slate-300">
         {authState}
       </p>
-      <button
-        className="justify-self-start rounded-full border border-white/10 bg-white/6 px-3 py-1.5 text-[11px] font-black uppercase tracking-[0.12em] text-slate-200"
-        type="button"
-        onClick={onToggleDebugMode}
-      >
-        {debugMode ? "Hide Pi debug" : "Show Pi debug"}
-      </button>
     </aside>
   );
 }
@@ -5495,18 +5447,12 @@ function SignInPanel({
   canConnect,
   connecting,
   copy,
-  debugMode,
-  onDebugEvent,
-  onToggleDebugMode,
   onConnect,
 }: {
   authState: string;
   canConnect: boolean;
   connecting: boolean;
   copy: AppCopy;
-  debugMode: boolean;
-  onDebugEvent?: (message: string) => void;
-  onToggleDebugMode: () => void;
   onConnect: () => void;
 }) {
   return (
@@ -5530,20 +5476,12 @@ function SignInPanel({
       <p className="rounded-2xl border border-white/8 bg-black/20 px-4 py-3 text-sm font-semibold leading-6 text-slate-200 shadow-[inset_0_1px_0_rgba(255,255,255,0.02)]">
         {authState}
       </p>
-      <button
-        className="justify-self-start rounded-full border border-white/10 bg-white/6 px-3 py-1.5 text-[11px] font-black uppercase tracking-[0.12em] text-slate-200"
-        type="button"
-        onClick={onToggleDebugMode}
-      >
-        {debugMode ? "Hide Pi debug" : "Show Pi debug"}
-      </button>
       <div className="grid gap-3 sm:grid-cols-2">
         <Link
           aria-disabled={connecting || !canConnect}
           className={`btn-g ${connecting || !canConnect ? "pointer-events-none opacity-70" : ""}`}
           href="/?consent=accept&connect=1"
           onTouchEnd={(event) => {
-            onDebugEvent?.("signin connect touchend");
             if (connecting || !canConnect) {
               event.preventDefault();
               return;
@@ -5553,7 +5491,6 @@ function SignInPanel({
             onConnect();
           }}
           onClick={(event) => {
-            onDebugEvent?.("signin connect click");
             if (connecting || !canConnect) {
               event.preventDefault();
               return;
